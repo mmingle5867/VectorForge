@@ -1,0 +1,196 @@
+// =============================================================================
+// VectorForge - Prisma Schema
+// =============================================================================
+// Database: Neon Postgres (PostgreSQL)
+// Run `npx prisma db push` or `npx prisma migrate dev` to sync
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// User Model
+// =============================================================================
+// Synced from Clerk via webhook. Stores user profile data.
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  batches  Batch[]
+  settings UserSettings?
+
+  @@map("users")
+}
+
+// =============================================================================
+// UserSettings Model
+// =============================================================================
+// Per-user global settings for processing defaults.
+
+model UserSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Upscaling defaults
+  defaultUpscaleFactor  Int    @default(2) // 1, 2, or 4
+  smartUpscaleThreshold Int    @default(2000) // px - upscale only if below this
+
+  // Path configuration (relative paths only)
+  baseAssetsPath String @default("./base-assets")
+  outputPath     String @default("./output")
+
+  // Default substitution variables (JSON key-value pairs)
+  // Inherited by new batches as starting template
+  defaultSubstitutions Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// =============================================================================
+// Batch Model
+// =============================================================================
+// Represents a single upload/processing batch.
+
+model Batch {
+  id     String @id @default(cuid())
+  userId String
+
+  // Batch metadata
+  name   String? // Optional batch name/label
+  status BatchStatus @default(PENDING)
+
+  // Progress tracking
+  totalItems     Int @default(0)
+  completedItems Int @default(0)
+  failedItems    Int @default(0)
+  currentItemId  String? // ID of item currently being processed
+
+  // Processing configuration for this batch
+  upscaleFactor         Int  @default(2)
+  smartUpscaleThreshold Int  @default(2000)
+  useBaseAssets         Boolean @default(true)
+
+  // Substitution data for this batch (JSON key-value pairs)
+  substitutionData Json @default("{}")
+
+  // Output paths (relative)
+  outputPath String?
+  zipPath    String?
+
+  // Timestamps
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items BatchItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("batches")
+}
+
+// =============================================================================
+// BatchItem Model
+// =============================================================================
+// Represents a single file within a batch.
+
+model BatchItem {
+  id      String @id @default(cuid())
+  batchId String
+
+  // File identification
+  originalFilename String
+  baseName         String // User-editable base name for output naming
+  sequenceNumber   Int    @default(1) // For incremental naming (_001, _002)
+
+  // SKU
+  sku String? // Format: DIGI-001-[basename]-[sequencenumber]
+
+  // Processing status
+  status        BatchItemStatus @default(PENDING)
+  progress      Int     @default(0)   // 0-100 percentage complete
+  currentStep   String?               // e.g. "Upscaling image", "Converting with VTracer"
+  errorMsg      String?
+
+  // Image metadata
+  originalWidth  Int?
+  originalHeight Int?
+  originalSize   Int? // bytes
+  mimeType       String?
+
+  // Upscaling
+  upscaleFactor    Int     @default(2)
+  upscaleApplied   Boolean @default(false)
+  upscaledWidth    Int?
+  upscaledHeight   Int?
+
+  // File paths (relative)
+  uploadPath       String? // Original uploaded file
+  upscaledPath     String? // Upscaled version
+  svgPath          String? // Converted SVG
+  aiPath           String? // AI format (if generated)
+  dxfPath          String? // DXF format (if generated)
+  epsPath          String? // EPS format (if generated)
+  previewPath      String? // Thumbnail preview
+  outputFolderPath String? // Unzipped output folder
+  zipPath          String? // ZIP file for this item
+  skuFilePath      String? // Blank SKU .txt file
+  metadataPath     String? // listing-info.txt
+
+  // Processing timestamps
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@index([status])
+  @@map("batch_items")
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum BatchStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum BatchItemStatus {
+  PENDING
+  UPSCALING
+  CONVERTING
+  GENERATING_FILES
+  ZIPPING
+  COMPLETED
+  FAILED
+}

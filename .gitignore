@@ -1,0 +1,101 @@
+# Dependencies
+
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Build / Coverage
+
+/coverage
+/build
+/.next/
+/out/
+
+# TypeScript
+
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment Files
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Vercel
+
+/.vercel
+
+# Prisma
+
+prisma/migrations/
+node_modules/.prisma/
+
+# Application Data
+
+/uploads
+/output
+/base-assets
+/logs
+
+# Logs
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# VS Code
+
+.vscode/settings.json
+.vscode/launch.json
+
+# Windows
+
+Thumbs.db
+Desktop.ini
+
+# Mac
+
+.DS_Store
+
+# Certificates / Keys
+
+*.pem
+*.key
+*.crt
+*.pfx
+
+# Temporary Files
+
+*.tmp
+*.temp
+
+# Archive Files
+
+*.zip
+*.rar
+*.7z
+
+# Database Files (if local DB used later)
+
+*.sqlite
+*.db
+
+# Generated Reports
+
+report.html
+reports/
+
+# Codex / AI Generated Scratch Files
+
+PATCH_TOOL_PATH_CHECK.tmp
+*.bak
+*.orig
+
+# other files to ignore - password and temporary
+env.txt
+processing-log.txt

@@ -108,14 +108,14 @@ const processingWorker = new Worker<ProcessingJobData>(
         conversionOptions = {
           colorMode,
           hierarchical: 'stacked' as const,
-          filterSpeckle: 4,
+          filterSpeckle: 6,
           colorPrecision: 6,
           layerDifference: 16,
-          cornerThreshold: 60,
+          cornerThreshold: 70,
           lengthThreshold: 4.0,
           maxIterations: 10,
           spliceThreshold: 45,
-          pathPrecision: 2,
+          pathPrecision: 3,
         };
       }
 

@@ -25,10 +25,10 @@ export interface VTracerSettings {
 export const VTRACER_PRESETS: Record<string, Omit<VTracerSettings, 'preset'>> = {
   balanced: {
     colorPrecision: 6,
-    filterSpeckle: 4,
+    filterSpeckle: 6,
     gradientStep: 16,
     curveFitting: 'spline',
-    cornerThreshold: 60,
+    cornerThreshold: 70,
     segmentLength: 4,
     spliceThreshold: 45,
   },

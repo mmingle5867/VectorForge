@@ -177,24 +177,24 @@ export interface ConversionOptions {
 export const DEFAULT_CONVERSION_OPTIONS: ConversionOptions = {
   colorMode: 'binary',
   hierarchical: 'stacked',
-  filterSpeckle: 4,
+  filterSpeckle: 6,
   colorPrecision: 6,
   layerDifference: 16,
-  cornerThreshold: 60,
+  cornerThreshold: 70,
   lengthThreshold: 4.0,
   maxIterations: 10,
   spliceThreshold: 45,
-  pathPrecision: 2,
+  pathPrecision: 3,
 };
 
 /** Full color mode conversion options (when CNC mode is disabled) */
 export const FULL_COLOR_CONVERSION_OPTIONS: ConversionOptions = {
   colorMode: 'color',
   hierarchical: 'stacked',
-  filterSpeckle: 4,
+  filterSpeckle: 6,
   colorPrecision: 6,
   layerDifference: 16,
-  cornerThreshold: 60,
+  cornerThreshold: 70,
   lengthThreshold: 4.0,
   maxIterations: 10,
   spliceThreshold: 45,

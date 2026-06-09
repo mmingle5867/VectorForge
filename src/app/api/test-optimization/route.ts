@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
 
           // Get raw RGBA pixel data using sharp
           const sharpImg = sharp(originalBuffer);
-          const rgbaData = await sharpImg.ensureAlpha().raw().toBuffer();
+          const rgbaData = await sharpImg.ensureAlpha().blur(1.0).raw().toBuffer();
 
           const config = new vtracer.TracerConfig();
           config.setColorMode(vtracer.ColorMode.Color);

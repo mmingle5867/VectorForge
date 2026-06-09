@@ -41,7 +41,7 @@ export async function convertToSvg(
     const metadata = await sharpImage.metadata();
     const width = metadata.width || 0;
     const height = metadata.height || 0;
-    const rgbaData = await sharpImage.ensureAlpha().raw().toBuffer();
+    const rgbaData = await sharpImage.ensureAlpha().blur(1.0).raw().toBuffer();
 
     // VTracer conversion using wasm_vtracer
     let vtracer: typeof import('wasm_vtracer');

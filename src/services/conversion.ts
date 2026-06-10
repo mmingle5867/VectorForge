@@ -10,6 +10,7 @@ import sharp from 'sharp';
 import { logger } from '@/lib/logger';
 import type { ConversionOptions, GeneratedFile } from '@/lib/types';
 import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
+import { normalizeSvgRoot } from '@/lib/svg-normalize';
 
 /**
  * Convert a raster image to SVG using VTracer.
@@ -87,7 +88,14 @@ export async function convertToSvg(
     const optimized = optimize(svgString, {
       multipass: true,
       plugins: [
-        'preset-default',
+        {
+          name: 'preset-default',
+          params: {
+            overrides: {
+              mergePaths: false,
+            },
+          },
+        },
         'removeDimensions',
         {
           name: 'addAttributesToSVGElement',
@@ -98,7 +106,9 @@ export async function convertToSvg(
       ],
     });
 
-    await fs.writeFile(svgPath, optimized.data, 'utf-8');
+    const normalizedSvg = normalizeSvgRoot(optimized.data, width, height);
+
+    await fs.writeFile(svgPath, normalizedSvg, 'utf-8');
 
     const stats = await fs.stat(svgPath);
 

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
@@ -31,6 +31,129 @@ interface BatchInfo {
   smartUpscaleThreshold: number;
 }
 
+interface TuneSettings {
+  blur: number;
+  pathPrecision: number;
+  cornerThreshold: number;
+  filterSpeckle: number;
+  lengthThreshold: number;
+  spliceThreshold: number;
+  colorPrecision: number;
+  layerDifference: number;
+}
+
+interface TunePreview {
+  svgBase64: string;
+  svgSize: number;
+  debugSvgPath?: string;
+  diagnostics: {
+    svgLength: number;
+    pathCount: number;
+    rootSvgTag: string;
+    viewBox: string;
+    width: string;
+    height: string;
+    firstPathTag: string;
+    fillNoneCount: number;
+    strokeCount: number;
+    opacityZeroCount: number;
+    hasVisibleFill: boolean;
+    hasVisibleStroke: boolean;
+  };
+  originalWidth: number;
+  originalHeight: number;
+  traceWidth: number;
+  traceHeight: number;
+  upscaleApplied: boolean;
+  upscaleFactor: number;
+  processingTimeMs: number;
+}
+
+const DEFAULT_TUNE_SETTINGS: TuneSettings = {
+  blur: 1.0,
+  pathPrecision: 3,
+  cornerThreshold: 70,
+  filterSpeckle: 6,
+  lengthThreshold: 4,
+  spliceThreshold: 45,
+  colorPrecision: 6,
+  layerDifference: 16,
+};
+
+const TUNE_CONTROLS: Array<{
+  key: keyof TuneSettings;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  help: string;
+}> = [
+  {
+    key: 'blur',
+    label: 'Preprocessing Blur',
+    min: 0,
+    max: 3,
+    step: 0.25,
+    help: 'Smooths raster edges before tracing. Try 0.75-1.25 for stair-stepping.',
+  },
+  {
+    key: 'pathPrecision',
+    label: 'Path Precision',
+    min: 0,
+    max: 6,
+    step: 1,
+    help: 'Decimal precision for SVG paths. Higher preserves smoother coordinates.',
+  },
+  {
+    key: 'cornerThreshold',
+    label: 'Corner Threshold',
+    min: 30,
+    max: 90,
+    step: 5,
+    help: 'Higher detects fewer hard corners and rounds more curves.',
+  },
+  {
+    key: 'filterSpeckle',
+    label: 'Filter Speckle',
+    min: 0,
+    max: 20,
+    step: 1,
+    help: 'Removes small noisy shapes. Higher is cleaner but may remove small details.',
+  },
+  {
+    key: 'lengthThreshold',
+    label: 'Length Threshold',
+    min: 2,
+    max: 12,
+    step: 0.5,
+    help: 'Minimum path segment length. Higher simplifies paths and can reduce jagged detail.',
+  },
+  {
+    key: 'spliceThreshold',
+    label: 'Splice Threshold',
+    min: 20,
+    max: 80,
+    step: 5,
+    help: 'Controls path merging. Higher creates fewer paths but can lose detail.',
+  },
+  {
+    key: 'colorPrecision',
+    label: 'Color Precision',
+    min: 1,
+    max: 12,
+    step: 1,
+    help: 'Controls color detail retained before tracing. Use 6 for most designs.',
+  },
+  {
+    key: 'layerDifference',
+    label: 'Layer Difference',
+    min: 4,
+    max: 32,
+    step: 1,
+    help: 'Controls color/gradient layer separation. Higher can create smoother tonal steps.',
+  },
+];
+
 export default function ReviewPage() {
   const router = useRouter();
   const params = useParams();
@@ -44,6 +167,12 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [globalUpscale, setGlobalUpscale] = useState<number>(2);
   const [substitutions, setSubstitutions] = useState<SubstitutionRow[]>([]);
+  const [tuneItem, setTuneItem] = useState<BatchItem | null>(null);
+  const [tuneSettings, setTuneSettings] = useState<TuneSettings>(DEFAULT_TUNE_SETTINGS);
+  const [tunePreview, setTunePreview] = useState<TunePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [svgZoom, setSvgZoom] = useState(1);
 
   // Fetch batch items
   useEffect(() => {
@@ -95,6 +224,53 @@ export default function ReviewPage() {
     setItems((prev) =>
       prev.map((item) => ({ ...item, upscaleFactor: globalUpscale }))
     );
+  };
+
+  const openTunePanel = (item: BatchItem) => {
+    setTuneItem(item);
+    setTuneSettings(DEFAULT_TUNE_SETTINGS);
+    setTunePreview(null);
+    setPreviewError(null);
+    setSvgZoom(1);
+  };
+
+  const updateTuneSetting = (key: keyof TuneSettings, value: number) => {
+    setTuneSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const previewSvgDataUrl = tunePreview
+    ? `data:image/svg+xml;base64,${tunePreview.svgBase64}`
+    : '';
+
+  const generatePreview = async () => {
+    if (!tuneItem) return;
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${tuneItem.id}/preview-tune`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tuneSettings),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setPreviewError(data.error || 'Failed to generate preview');
+        return;
+      }
+
+      setTunePreview(data.preview);
+      setSvgZoom(1);
+    } catch {
+      setPreviewError('Failed to generate preview');
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   // Save changes
@@ -294,6 +470,13 @@ export default function ReviewPage() {
                   <option value={4}>4x</option>
                 </select>
               </div>
+
+              <button
+                onClick={() => openTunePanel(item)}
+                className="w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+              >
+                Preview/Tune
+              </button>
             </div>
           </div>
         ))}
@@ -332,6 +515,271 @@ export default function ReviewPage() {
             >
               {converting ? 'Starting...' : 'Start Conversion'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {tuneItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-lg bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Preview/Tune</h2>
+                <p className="text-sm text-gray-500">{tuneItem.originalFilename}</p>
+              </div>
+              <button
+                onClick={() => setTuneItem(null)}
+                className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-[calc(92vh-73px)] overflow-y-auto">
+              <div className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-[minmax(280px,420px)_minmax(0,1fr)]">
+                <div className="space-y-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-gray-800">Original</h3>
+                    {tuneItem.originalWidth && tuneItem.originalHeight && (
+                      <span className="text-xs text-gray-500">
+                        {tuneItem.originalWidth} x {tuneItem.originalHeight}px
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                    <img
+                      src={tuneItem.previewUrl}
+                      alt={tuneItem.originalFilename}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setTuneSettings(DEFAULT_TUNE_SETTINGS)}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Restore Defaults
+                    </button>
+                    <button
+                      onClick={generatePreview}
+                      disabled={previewLoading}
+                      className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {previewLoading ? 'Generating...' : 'Generate Preview'}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-gray-900">Temporary Settings</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-x-5 gap-y-4 md:grid-cols-2">
+                    {TUNE_CONTROLS.map((control) => (
+                      <div key={control.key} className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <label className="text-xs font-medium text-gray-700">
+                              {control.label}
+                            </label>
+                            <p className="mt-0.5 text-[11px] leading-4 text-gray-500">
+                              {control.help}
+                            </p>
+                          </div>
+                          <input
+                            type="number"
+                            min={control.min}
+                            max={control.max}
+                            step={control.step}
+                            value={tuneSettings[control.key]}
+                            onChange={(e) =>
+                              updateTuneSetting(control.key, Number(e.target.value))
+                            }
+                            className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <input
+                          type="range"
+                          min={control.min}
+                          max={control.max}
+                          step={control.step}
+                          value={tuneSettings[control.key]}
+                          onChange={(e) =>
+                            updateTuneSetting(control.key, Number(e.target.value))
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                        <div className="flex justify-between text-[10px] text-gray-400">
+                          <span>{control.min}</span>
+                          <span>{control.max}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {previewError && (
+                    <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {previewError}
+                    </div>
+                  )}
+
+                  <p className="mt-3 text-xs leading-5 text-gray-500">
+                    These settings are temporary for visual testing only. Nothing is saved or queued.
+                  </p>
+                </div>
+              </div>
+
+              <div className="border-t border-gray-200 p-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-800">SVG Preview</h3>
+                    {tunePreview && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {formatBytes(tunePreview.svgSize)} - {tunePreview.processingTimeMs}ms - traced at{' '}
+                        {tunePreview.traceWidth} x {tunePreview.traceHeight}px
+                        {tunePreview.upscaleApplied
+                          ? ` after ${tunePreview.upscaleFactor}x smart upscale`
+                          : ' without smart upscale'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={previewSvgDataUrl}
+                      download={tuneItem ? `${tuneItem.baseName || tuneItem.id}-preview.svg` : 'preview.svg'}
+                      className={`rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 ${
+                        tunePreview ? '' : 'pointer-events-none opacity-50'
+                      }`}
+                    >
+                      Download Preview SVG
+                    </a>
+                    <button
+                      onClick={() => setSvgZoom((prev) => Math.max(0.25, Number((prev - 0.25).toFixed(2))))}
+                      disabled={!tunePreview}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Zoom Out
+                    </button>
+                    <span className="w-14 text-center text-xs font-medium text-gray-600">
+                      {Math.round(svgZoom * 100)}%
+                    </span>
+                    <button
+                      onClick={() => setSvgZoom((prev) => Math.min(6, Number((prev + 0.25).toFixed(2))))}
+                      disabled={!tunePreview}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Zoom In
+                    </button>
+                    <button
+                      onClick={() => setSvgZoom(1)}
+                      disabled={!tunePreview}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Reset Zoom
+                    </button>
+                  </div>
+                </div>
+
+                {tunePreview && (
+                  <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-700 md:grid-cols-4">
+                      <div>
+                        <span className="font-medium">SVG length:</span>{' '}
+                        {tunePreview.diagnostics.svgLength}
+                      </div>
+                      <div>
+                        <span className="font-medium">Paths:</span>{' '}
+                        {tunePreview.diagnostics.pathCount}
+                      </div>
+                      <div>
+                        <span className="font-medium">fill none:</span>{' '}
+                        {tunePreview.diagnostics.fillNoneCount}
+                      </div>
+                      <div>
+                        <span className="font-medium">stroke:</span>{' '}
+                        {tunePreview.diagnostics.strokeCount}
+                      </div>
+                      <div>
+                        <span className="font-medium">opacity 0:</span>{' '}
+                        {tunePreview.diagnostics.opacityZeroCount}
+                      </div>
+                      <div>
+                        <span className="font-medium">visible fill:</span>{' '}
+                        {tunePreview.diagnostics.hasVisibleFill ? 'yes' : 'no'}
+                      </div>
+                      <div>
+                        <span className="font-medium">visible stroke:</span>{' '}
+                        {tunePreview.diagnostics.hasVisibleStroke ? 'yes' : 'no'}
+                      </div>
+                      <div>
+                        <span className="font-medium">debug file:</span>{' '}
+                        {tunePreview.debugSvgPath || 'not saved'}
+                      </div>
+                      <div>
+                        <span className="font-medium">viewBox:</span>{' '}
+                        {tunePreview.diagnostics.viewBox || 'none'}
+                      </div>
+                      <div>
+                        <span className="font-medium">width:</span>{' '}
+                        {tunePreview.diagnostics.width || 'none'}
+                      </div>
+                      <div>
+                        <span className="font-medium">height:</span>{' '}
+                        {tunePreview.diagnostics.height || 'none'}
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <div>
+                        <p className="mb-1 text-xs font-medium text-gray-700">Root SVG tag</p>
+                        <pre className="max-h-20 overflow-auto rounded border border-gray-200 bg-white p-2 text-[11px] text-gray-700">
+                          {tunePreview.diagnostics.rootSvgTag || 'none'}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-xs font-medium text-gray-700">First path tag</p>
+                        <pre className="max-h-24 overflow-auto rounded border border-gray-200 bg-white p-2 text-[11px] text-gray-700">
+                          {tunePreview.diagnostics.firstPathTag || 'none'}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  className="h-[58vh] min-h-[480px] overflow-auto rounded-lg border border-gray-200"
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    backgroundImage:
+                      'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
+                    backgroundSize: '24px 24px',
+                    backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0px',
+                  }}
+                >
+                  <div className="flex min-h-full min-w-full items-center justify-center p-8">
+                    {previewLoading ? (
+                      <div className="rounded-md bg-white/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
+                        Generating preview...
+                      </div>
+                    ) : tunePreview ? (
+                      <img
+                        src={previewSvgDataUrl}
+                        alt="Generated SVG preview"
+                        style={{
+                          width: tunePreview.traceWidth * svgZoom,
+                          height: tunePreview.traceHeight * svgZoom,
+                          maxWidth: 'none',
+                        }}
+                      />
+                    ) : (
+                      <div className="rounded-md bg-white/90 px-6 py-4 text-center text-sm text-gray-500 shadow-sm">
+                        Adjust settings, then generate a preview for this item.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -11,15 +11,30 @@ import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
 import { normalizeSvgRoot } from '@/lib/svg-normalize';
 
 const previewTuneSchema = z.object({
-  blur: z.number().min(0).max(5),
+  preUpscaleBlur: z.number().min(0).max(5).default(0),
+  blur: z.number().min(0).max(20),
+  blurPasses: z.number().int().min(1).max(3).default(1),
   pathPrecision: z.number().int().min(0).max(8),
   cornerThreshold: z.number().min(0).max(180),
-  filterSpeckle: z.number().int().min(0).max(128),
-  lengthThreshold: z.number().min(1).max(20),
+  filterSpeckle: z.number().int().min(0).max(20),
+  lengthThreshold: z.number().min(3.5).max(10),
   spliceThreshold: z.number().min(0).max(180),
-  colorPrecision: z.number().int().min(1).max(12),
-  layerDifference: z.number().int().min(0).max(128),
+  colorPrecision: z.number().int().min(1).max(8),
+  layerDifference: z.number().int().min(0).max(255),
 });
+
+const FIELD_RANGES: Record<string, string> = {
+  preUpscaleBlur: '0-5',
+  blur: '0-20',
+  blurPasses: '1-3',
+  pathPrecision: '0-8',
+  cornerThreshold: '0-180',
+  filterSpeckle: '0-20',
+  lengthThreshold: '3.5-10',
+  spliceThreshold: '0-180',
+  colorPrecision: '1-8',
+  layerDifference: '0-255',
+};
 
 const TRACE_BORDER_PX = 2;
 
@@ -72,8 +87,22 @@ export async function POST(
     const parsed = previewTuneSchema.safeParse(await req.json());
 
     if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const field = issue?.path[0]?.toString();
+      const allowedRange = field ? FIELD_RANGES[field] : undefined;
+      const message =
+        field && allowedRange
+          ? `${field} must be between ${allowedRange}`
+          : issue?.message || 'Invalid preview settings';
+
       return NextResponse.json(
-        { success: false, error: parsed.error.message },
+        {
+          success: false,
+          message,
+          error: message,
+          field,
+          allowedRange,
+        },
         { status: 400 }
       );
     }
@@ -121,6 +150,9 @@ export async function POST(
     const traceHeight = resizedHeight + TRACE_BORDER_PX * 2;
 
     let sharpImage = sharp(imageBuffer).ensureAlpha();
+    if (settings.preUpscaleBlur > 0) {
+      sharpImage = sharpImage.blur(settings.preUpscaleBlur);
+    }
     if (upscaleApplied) {
       sharpImage = sharpImage.resize(resizedWidth, resizedHeight, {
         kernel: sharp.kernel.lanczos3,
@@ -128,7 +160,9 @@ export async function POST(
       });
     }
     if (settings.blur > 0) {
-      sharpImage = sharpImage.blur(settings.blur);
+      for (let pass = 0; pass < settings.blurPasses; pass += 1) {
+        sharpImage = sharpImage.blur(settings.blur);
+      }
     }
     sharpImage = sharpImage.extend({
       top: TRACE_BORDER_PX,

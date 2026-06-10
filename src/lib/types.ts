@@ -166,7 +166,7 @@ export interface ConversionOptions {
   hierarchical: 'stacked' | 'cutout';
   filterSpeckle: number; // 0-128, default 4
   colorPrecision: number; // 1-8, default 6
-  layerDifference: number; // 0-128, default 16
+  layerDifference: number; // 0-255, default 16
   cornerThreshold: number; // 0-180, default 60
   lengthThreshold: number; // 3.5-10, default 4.0
   maxIterations: number; // 1-20, default 10

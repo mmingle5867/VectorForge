@@ -9,12 +9,12 @@
 
 export interface VTracerSettings {
   preset: 'balanced' | 'maximumQuality' | 'optimizedForSize' | 'custom';
-  colorPrecision: number;     // 4–12
+  colorPrecision: number;     // 1–8
   filterSpeckle: number;      // 0–20
-  gradientStep: number;       // 8–30
+  gradientStep: number;       // 0–64
   curveFitting: 'spline' | 'polygon';
   cornerThreshold: number;    // 30–90
-  segmentLength: number;      // 2–12
+  segmentLength: number;      // 3.5–10
   spliceThreshold: number;    // 20–80
 }
 
@@ -33,12 +33,12 @@ export const VTRACER_PRESETS: Record<string, Omit<VTracerSettings, 'preset'>> = 
     spliceThreshold: 45,
   },
   maximumQuality: {
-    colorPrecision: 10,
+    colorPrecision: 8,
     filterSpeckle: 2,
     gradientStep: 24,
     curveFitting: 'spline',
     cornerThreshold: 70,
-    segmentLength: 2,
+    segmentLength: 3.5,
     spliceThreshold: 30,
   },
   optimizedForSize: {
@@ -76,8 +76,8 @@ export const VTRACER_PARAMETERS: ParameterDef[] = [
     key: 'colorPrecision',
     label: 'Color Precision',
     tooltip: 'Controls how many colors are preserved. Higher = more accurate colors but larger file size.',
-    min: 4,
-    max: 12,
+    min: 1,
+    max: 8,
     step: 1,
   },
   {
@@ -93,8 +93,8 @@ export const VTRACER_PARAMETERS: ParameterDef[] = [
     key: 'gradientStep',
     label: 'Gradient Step',
     tooltip: 'Number of layers for gradients. Higher = smoother gradients but more SVG paths.',
-    min: 8,
-    max: 30,
+    min: 0,
+    max: 64,
     step: 1,
   },
   {
@@ -110,9 +110,9 @@ export const VTRACER_PARAMETERS: ParameterDef[] = [
     key: 'segmentLength',
     label: 'Segment Length',
     tooltip: 'Minimum path segment length. Lower = more detail. Higher = simpler, smaller SVGs.',
-    min: 2,
-    max: 12,
-    step: 1,
+    min: 3.5,
+    max: 10,
+    step: 0.5,
     unit: 'px',
   },
   {
@@ -131,11 +131,11 @@ export const VTRACER_PARAMETERS: ParameterDef[] = [
 // ============================================================================
 
 export const PARAMETER_RANGES: Record<string, { min: number; max: number; step?: number }> = {
-  colorPrecision: { min: 4, max: 12 },
+  colorPrecision: { min: 1, max: 8 },
   filterSpeckle: { min: 0, max: 20 },
-  gradientStep: { min: 8, max: 30 },
+  gradientStep: { min: 0, max: 64 },
   cornerThreshold: { min: 30, max: 90 },
-  segmentLength: { min: 2, max: 12 },
+  segmentLength: { min: 3.5, max: 10, step: 0.5 },
   spliceThreshold: { min: 20, max: 80 },
 };
 

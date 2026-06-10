@@ -8,6 +8,8 @@ import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '@/lib/logger';
+import config from '@/lib/config';
+import { createFixedCanvasRaster } from './raster-export';
 
 // ============================================================================
 // Types
@@ -204,10 +206,13 @@ export async function generateMarketplacePreview(
         .toBuffer();
     }
 
-    // Step 4: Save as JPEG
-    await sharp(compositeBuffer)
-      .jpeg({ quality: 90 })
-      .toFile(outputPath);
+    // Step 4: Save as fixed-size JPEG export canvas
+    await createFixedCanvasRaster(compositeBuffer, outputPath, {
+      width: config.processing.rasterExportWidth,
+      height: config.processing.rasterExportHeight,
+      format: 'jpg',
+      quality: 90,
+    });
 
     const stats = await fs.stat(outputPath);
 

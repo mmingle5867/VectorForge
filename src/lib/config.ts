@@ -19,6 +19,8 @@ export const config = {
     maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50', 10),
     supportedFormats: ['image/jpeg', 'image/png', 'image/webp', 'image/tiff'],
     maxFileSize: 50 * 1024 * 1024, // 50MB per file
+    rasterExportWidth: parseInt(process.env.RASTER_EXPORT_WIDTH || '2000', 10),
+    rasterExportHeight: parseInt(process.env.RASTER_EXPORT_HEIGHT || '2000', 10),
   },
 
   // SKU format

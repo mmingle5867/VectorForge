@@ -21,6 +21,8 @@ const previewTuneSchema = z.object({
   layerDifference: z.number().int().min(0).max(128),
 });
 
+const TRACE_BORDER_PX = 2;
+
 function getSvgDiagnostics(svg: string) {
   const rootSvgTag = svg.match(/<svg\b[^>]*>/i)?.[0] || '';
   const firstPathTag = svg.match(/<path\b[^>]*>/i)?.[0] || '';
@@ -113,12 +115,14 @@ export async function POST(
       upscaleFactor > 1 &&
       (originalWidth < item.batch.smartUpscaleThreshold ||
         originalHeight < item.batch.smartUpscaleThreshold);
-    const traceWidth = upscaleApplied ? originalWidth * upscaleFactor : originalWidth;
-    const traceHeight = upscaleApplied ? originalHeight * upscaleFactor : originalHeight;
+    const resizedWidth = upscaleApplied ? originalWidth * upscaleFactor : originalWidth;
+    const resizedHeight = upscaleApplied ? originalHeight * upscaleFactor : originalHeight;
+    const traceWidth = resizedWidth + TRACE_BORDER_PX * 2;
+    const traceHeight = resizedHeight + TRACE_BORDER_PX * 2;
 
     let sharpImage = sharp(imageBuffer).ensureAlpha();
     if (upscaleApplied) {
-      sharpImage = sharpImage.resize(traceWidth, traceHeight, {
+      sharpImage = sharpImage.resize(resizedWidth, resizedHeight, {
         kernel: sharp.kernel.lanczos3,
         withoutEnlargement: false,
       });
@@ -126,6 +130,13 @@ export async function POST(
     if (settings.blur > 0) {
       sharpImage = sharpImage.blur(settings.blur);
     }
+    sharpImage = sharpImage.extend({
+      top: TRACE_BORDER_PX,
+      bottom: TRACE_BORDER_PX,
+      left: TRACE_BORDER_PX,
+      right: TRACE_BORDER_PX,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    });
 
     const rgbaData = await sharpImage.raw().toBuffer();
 

@@ -12,6 +12,8 @@ import type { ConversionOptions, GeneratedFile } from '@/lib/types';
 import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
 import { normalizeSvgRoot } from '@/lib/svg-normalize';
 
+const TRACE_BORDER_PX = 2;
+
 /**
  * Convert a raster image to SVG using VTracer.
  * VTracer is the primary and preferred converter for best quality/speed balance.
@@ -42,7 +44,20 @@ export async function convertToSvg(
     const metadata = await sharpImage.metadata();
     const width = metadata.width || 0;
     const height = metadata.height || 0;
-    const rgbaData = await sharpImage.ensureAlpha().blur(1.0).raw().toBuffer();
+    const traceWidth = width + TRACE_BORDER_PX * 2;
+    const traceHeight = height + TRACE_BORDER_PX * 2;
+    const rgbaData = await sharpImage
+      .ensureAlpha()
+      .blur(1.0)
+      .extend({
+        top: TRACE_BORDER_PX,
+        bottom: TRACE_BORDER_PX,
+        left: TRACE_BORDER_PX,
+        right: TRACE_BORDER_PX,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      })
+      .raw()
+      .toBuffer();
 
     // VTracer conversion using wasm_vtracer
     let vtracer: typeof import('wasm_vtracer');
@@ -78,8 +93,8 @@ export async function convertToSvg(
 
     const svgString = vtracer.convertImageToSvg(
       new Uint8Array(rgbaData.buffer, rgbaData.byteOffset, rgbaData.byteLength),
-      width,
-      height,
+      traceWidth,
+      traceHeight,
       config
     );
 
@@ -106,7 +121,7 @@ export async function convertToSvg(
       ],
     });
 
-    const normalizedSvg = normalizeSvgRoot(optimized.data, width, height);
+    const normalizedSvg = normalizeSvgRoot(optimized.data, traceWidth, traceHeight);
 
     await fs.writeFile(svgPath, normalizedSvg, 'utf-8');
 

@@ -21,6 +21,7 @@ export const config = {
     maxFileSize: 50 * 1024 * 1024, // 50MB per file
     rasterExportWidth: parseInt(process.env.RASTER_EXPORT_WIDTH || '2000', 10),
     rasterExportHeight: parseInt(process.env.RASTER_EXPORT_HEIGHT || '2000', 10),
+    pngExportArtworkColor: process.env.PNG_EXPORT_ARTWORK_COLOR || '#000000',
   },
 
   // SKU format

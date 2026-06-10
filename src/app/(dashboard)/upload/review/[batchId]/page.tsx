@@ -72,6 +72,7 @@ interface TunePreview {
 }
 
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
 
 const DEFAULT_TUNE_SETTINGS: TuneSettings = {
   preUpscaleBlur: 0,
@@ -203,6 +204,8 @@ export default function ReviewPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewStatus, setPreviewStatus] = useState<PreviewStatus>('idle');
   const [previewStatusMessage, setPreviewStatusMessage] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [svgZoom, setSvgZoom] = useState(1);
 
   // Fetch batch items
@@ -264,6 +267,8 @@ export default function ReviewPage() {
     setPreviewError(null);
     setPreviewStatus('idle');
     setPreviewStatusMessage(null);
+    setSaveStatus('idle');
+    setSaveMessage(null);
     setSvgZoom(1);
   };
 
@@ -318,6 +323,47 @@ export default function ReviewPage() {
       setPreviewStatusMessage(`Preview failed: ${message}`);
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const approveAndSaveItem = async () => {
+    if (!tuneItem || !tunePreview) return;
+
+    setSaveStatus('saving');
+    setSaveMessage('Saving approved SVG, PNG, and JPG...');
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${tuneItem.id}/approve-save`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tuneSettings),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        const message = data.message || data.error || 'Failed to save approved item';
+        setSaveStatus('error');
+        setSaveMessage(message);
+        return;
+      }
+
+      const warningText =
+        Array.isArray(data.warnings) && data.warnings.length > 0
+          ? ` ${data.warnings.join(' ')}`
+          : '';
+      setSaveStatus('success');
+      setSaveMessage(`Saved SVG, PNG, and JPG.${warningText}`);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === tuneItem.id ? { ...item, status: 'COMPLETED' } : item
+        )
+      );
+    } catch {
+      setSaveStatus('error');
+      setSaveMessage('Failed to save approved item');
     }
   };
 
@@ -687,6 +733,15 @@ export default function ReviewPage() {
                     <h3 className="text-sm font-semibold text-gray-800">SVG Preview</h3>
                   </div>
                   <div className="flex items-center gap-2">
+                    {tunePreview && (
+                      <button
+                        onClick={approveAndSaveItem}
+                        disabled={saveStatus === 'saving'}
+                        className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {saveStatus === 'saving' ? 'Saving...' : 'Approve & Save This Item'}
+                      </button>
+                    )}
                     <a
                       href={previewSvgDataUrl}
                       download={tuneItem ? `${tuneItem.baseName || tuneItem.id}-preview.svg` : 'preview.svg'}
@@ -722,6 +777,20 @@ export default function ReviewPage() {
                     </button>
                   </div>
                 </div>
+
+                {saveMessage && (
+                  <div
+                    className={`mb-4 rounded-md border p-3 text-sm ${
+                      saveStatus === 'success'
+                        ? 'border-green-200 bg-green-50 text-green-800'
+                        : saveStatus === 'error'
+                          ? 'border-red-200 bg-red-50 text-red-700'
+                          : 'border-gray-200 bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    {saveMessage}
+                  </div>
+                )}
 
                 <div
                   className="h-[58vh] min-h-[480px] overflow-auto rounded-lg border border-gray-200"

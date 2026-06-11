@@ -28,6 +28,7 @@ const EXTENDED_KEYS = [
   'watermarkOpacity',
   'backgroundFilename',
   'watermarkFilename',
+  'copyBaseAssetsToOutput',
   'cncMode',
   'preUpscaleBlur',
   'preprocessingBlur',
@@ -194,6 +195,7 @@ export async function GET() {
         watermarkOpacity: extended.watermarkOpacity ?? 80,
         backgroundFilename: extended.backgroundFilename ?? 'preview-background.jpg',
         watermarkFilename: extended.watermarkFilename ?? 'watermark.png',
+        copyBaseAssetsToOutput: extended.copyBaseAssetsToOutput ?? false,
         cncMode: extended.cncMode ?? true,
         manualEditorPath: typeof extended.manualEditorPath === 'string' ? extended.manualEditorPath : '',
         manualEditorAllowMultipleFiles: extended.manualEditorAllowMultipleFiles ?? false,
@@ -232,6 +234,7 @@ export async function PUT(req: NextRequest) {
       watermarkOpacity,
       backgroundFilename,
       watermarkFilename,
+      copyBaseAssetsToOutput,
       cncMode,
       manualEditorPath,
       manualEditorAllowMultipleFiles,
@@ -361,6 +364,9 @@ export async function PUT(req: NextRequest) {
     if (watermarkOpacity !== undefined) mergedSubstitutions.watermarkOpacity = watermarkOpacity;
     if (backgroundFilename !== undefined) mergedSubstitutions.backgroundFilename = backgroundFilename;
     if (watermarkFilename !== undefined) mergedSubstitutions.watermarkFilename = watermarkFilename;
+    if (copyBaseAssetsToOutput !== undefined) {
+      mergedSubstitutions.copyBaseAssetsToOutput = Boolean(copyBaseAssetsToOutput);
+    }
     if (cncMode !== undefined) mergedSubstitutions.cncMode = cncMode;
     if (manualEditorPath !== undefined) mergedSubstitutions.manualEditorPath = String(manualEditorPath);
     if (manualEditorAllowMultipleFiles !== undefined) {

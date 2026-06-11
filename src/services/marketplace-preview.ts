@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '@/lib/logger';
 import config from '@/lib/config';
+import { getMarketplacePreviewPath } from '@/lib/output-naming';
 import { createFixedCanvasRaster } from './raster-export';
 
 // ============================================================================
@@ -63,8 +64,7 @@ export async function generateMarketplacePreview(
   options: Partial<MarketplacePreviewOptions> = {}
 ): Promise<{ path: string; size: number } | null> {
   const opts = { ...DEFAULT_PREVIEW_OPTIONS, ...options };
-  const outputFilename = `${baseName}_preview.jpg`;
-  const outputPath = path.join(outputDir, outputFilename);
+  const outputPath = getMarketplacePreviewPath(outputDir);
 
   try {
     logger.info(`MarketplacePreview: Generating preview for ${baseName}`, {

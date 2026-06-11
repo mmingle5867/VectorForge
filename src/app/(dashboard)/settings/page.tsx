@@ -32,6 +32,7 @@ interface UserSettings extends TuningExportSettings {
   watermarkOpacity: number;
   backgroundFilename: string;
   watermarkFilename: string;
+  copyBaseAssetsToOutput: boolean;
   // CNC Mode
   cncMode: boolean;
   // Local external editor
@@ -60,6 +61,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   watermarkOpacity: 80,
   backgroundFilename: 'preview-background.jpg',
   watermarkFilename: 'watermark.png',
+  copyBaseAssetsToOutput: false,
   cncMode: true,
   manualEditorPath: '',
   manualEditorAllowMultipleFiles: false,
@@ -381,6 +383,7 @@ export default function SettingsPage() {
             watermarkOpacity: data.settings.watermarkOpacity ?? 80,
             backgroundFilename: data.settings.backgroundFilename ?? 'preview-background.jpg',
             watermarkFilename: data.settings.watermarkFilename ?? 'watermark.png',
+            copyBaseAssetsToOutput: data.settings.copyBaseAssetsToOutput ?? false,
             cncMode: data.settings.cncMode ?? true,
             manualEditorPath: data.settings.manualEditorPath ?? '',
             manualEditorAllowMultipleFiles: data.settings.manualEditorAllowMultipleFiles ?? false,
@@ -750,8 +753,27 @@ export default function SettingsPage() {
                 Place this file in your base-assets folder: {settings.baseAssetsPath}/{settings.watermarkFilename}
               </p>
             </div>
+
           </div>
         )}
+
+        <div className="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-3 dark:border-yellow-900/60 dark:bg-yellow-950/30">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <label className="text-sm font-medium text-yellow-900 dark:text-yellow-200">
+                Copy all base assets into every output folder
+              </label>
+              <p className="mt-1 text-xs text-yellow-800 dark:text-yellow-300">
+                Off by default. When enabled, every file in base-assets is copied into each item output and included in its ZIP until selected-assets support is added.
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.copyBaseAssetsToOutput}
+              onChange={(v) => setSettings((s) => ({ ...s, copyBaseAssetsToOutput: v }))}
+              label="Copy all base assets"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Processing Settings Card */}

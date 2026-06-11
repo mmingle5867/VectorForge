@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
+import path from 'path';
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
@@ -35,7 +36,7 @@ export async function GET(
       }
 
       const zipBuffer = await readFile(item.zipPath);
-      const filename = `${item.baseName}_bundle.zip`;
+      const filename = path.basename(item.zipPath);
 
       return new Response(zipBuffer as unknown as BodyInit, {
         headers: {
@@ -63,7 +64,7 @@ export async function GET(
     if (completedItems.length === 1) {
       const item = completedItems[0];
       const zipBuffer = await readFile(item.zipPath!);
-      const filename = `${item.baseName}_bundle.zip`;
+      const filename = path.basename(item.zipPath!);
 
       return new Response(zipBuffer as unknown as BodyInit, {
         headers: {
@@ -82,7 +83,7 @@ export async function GET(
       if (item.zipPath) {
         try {
           const zipBuffer = await readFile(item.zipPath);
-          combinedZip.file(`${item.baseName}_bundle.zip`, zipBuffer);
+          combinedZip.file(path.basename(item.zipPath), zipBuffer);
         } catch {
           // Skip items whose ZIP is missing
         }

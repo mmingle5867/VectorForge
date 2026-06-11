@@ -86,10 +86,6 @@ interface SavedOutputFile {
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
 
-function isSvgItem(item: BatchItem) {
-  return item.mimeType === 'image/svg+xml' || item.originalFilename.toLowerCase().endsWith('.svg');
-}
-
 const DEFAULT_TUNE_SETTINGS: TuneSettings = {
   colorMode: 'binary',
   preUpscaleBlur: FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
@@ -246,7 +242,6 @@ export default function ReviewPage() {
   const [savedOutputFolderPath, setSavedOutputFolderPath] = useState<string | null>(null);
   const [localEditorMessage, setLocalEditorMessage] = useState<string | null>(null);
   const [svgZoom, setSvgZoom] = useState(1);
-  const hasSvgItems = items.some(isSvgItem);
 
   // Fetch batch items
   useEffect(() => {
@@ -500,11 +495,6 @@ export default function ReviewPage() {
 
   // Start conversion
   const startConversion = async () => {
-    if (hasSvgItems) {
-      setError('SVG imports must be saved from Preview/Tune so they can skip raster tracing.');
-      return;
-    }
-
     setConverting(true);
     setError(null);
 

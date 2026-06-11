@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         totalItems: files.length,
         upscaleFactor,
         smartUpscaleThreshold: threshold,
-        useBaseAssets: true,
+        useBaseAssets: false,
         substitutionData: settings?.defaultSubstitutions || {},
       },
     });

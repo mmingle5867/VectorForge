@@ -11,6 +11,7 @@ import { logger } from '@/lib/logger';
 import type { ConversionOptions, GeneratedFile } from '@/lib/types';
 import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
 import { normalizeSvgRoot } from '@/lib/svg-normalize';
+import { getSvgPath } from '@/lib/output-naming';
 
 const TRACE_BORDER_PX = 2;
 
@@ -29,8 +30,8 @@ export async function convertToSvg(
   options: Partial<ConversionOptions> = {}
 ): Promise<GeneratedFile | null> {
   const opts = { ...DEFAULT_CONVERSION_OPTIONS, ...options };
-  const svgFilename = `${baseName}.svg`;
-  const svgPath = path.join(outputDir, svgFilename);
+  const svgPath = getSvgPath(outputDir);
+  const svgFilename = path.basename(svgPath);
 
   try {
     logger.info(`Conversion: Starting VTracer SVG conversion for ${baseName}`, {

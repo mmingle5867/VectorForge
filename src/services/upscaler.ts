@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '@/lib/logger';
 import type { UpscaleOptions, UpscaleResult } from '@/lib/types';
+import { getOriginalSourcePath } from '@/lib/output-naming';
 
 /**
  * Upscale an image using Sharp.js with smart threshold logic.
@@ -35,7 +36,7 @@ export async function upscaleImage(
 
   // Copy original to output directory (always keep original)
   const originalFilename = path.basename(inputPath);
-  const originalOutputPath = path.join(outputDir, `original_${originalFilename}`);
+  const originalOutputPath = getOriginalSourcePath(outputDir, path.extname(originalFilename));
   await fs.copyFile(inputPath, originalOutputPath);
 
   // Smart upscaling: only upscale if below threshold

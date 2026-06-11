@@ -5,8 +5,12 @@
 
 import { NextResponse } from 'next/server';
 import { access } from 'fs/promises';
-import path from 'path';
 import { requireAuth } from '@/lib/auth';
+import {
+  findExistingFilePath,
+  findExistingNamedFilePath,
+  getPackageBaseName,
+} from '@/lib/output-naming';
 import prisma from '@/lib/prisma';
 
 async function fileExists(filePath: string | null | undefined) {
@@ -82,15 +86,16 @@ export async function GET() {
           firstOutputFolderPath: firstOutputFolderByBatch.get(batch.id) || null,
           items: await Promise.all(
             batch.items.map(async (item) => {
-              const pngPath = item.outputFolderPath
-                ? path.join(item.outputFolderPath, `${item.baseName}.png`)
-                : null;
-              const jpgPath = item.outputFolderPath
-                ? path.join(item.outputFolderPath, `${item.baseName}.jpg`)
-                : null;
-              const svgPath = item.svgPath || (
-                item.outputFolderPath ? path.join(item.outputFolderPath, `${item.baseName}.svg`) : null
-              );
+              const packageBaseName = item.outputFolderPath
+                ? getPackageBaseName(item.outputFolderPath)
+                : item.baseName;
+              const candidateBaseNames = [packageBaseName, item.baseName];
+              const svgPath = await findExistingFilePath([
+                item.svgPath,
+                await findExistingNamedFilePath(item.outputFolderPath, candidateBaseNames, '.svg'),
+              ]);
+              const pngPath = await findExistingNamedFilePath(item.outputFolderPath, candidateBaseNames, '.png');
+              const jpgPath = await findExistingNamedFilePath(item.outputFolderPath, candidateBaseNames, '.jpg');
 
               return {
                 id: item.id,

@@ -7,12 +7,10 @@ import config from '@/lib/config';
 import prisma from '@/lib/prisma';
 import { getIncrementalFolderName } from '@/lib/server-utils';
 import { logger } from '@/lib/logger';
-import { createFixedCanvasRaster, createFixedCanvasSvgRaster } from '@/services/raster-export';
-import {
-  isSvgMimeOrPath,
-  normalizeImportedSvg,
-  prepareStrokeOnlySvgForRaster,
-} from '@/lib/svg-normalize';
+import { getJpgPath, getPngPath, getSvgPath } from '@/lib/output-naming';
+import { createFixedCanvasRaster } from '@/services/raster-export';
+import { isSvgMimeOrPath } from '@/lib/svg-normalize';
+import { exportImportedSvgPackage } from '@/services/svg-import-export';
 import {
   generateTunedSvg,
   getPreviewValidationError,
@@ -97,50 +95,26 @@ export async function POST(
         data: { outputFolderPath: outputDir },
       });
     }
-    const svgFilename = `${item.baseName}.svg`;
-    const pngFilename = `${item.baseName}.png`;
-    const jpgFilename = `${item.baseName}.jpg`;
-    const svgPath = path.join(outputDir, svgFilename);
-    const pngPath = path.join(outputDir, pngFilename);
-    const jpgPath = path.join(outputDir, jpgFilename);
+    const svgPath = getSvgPath(outputDir);
+    const pngPath = getPngPath(outputDir);
+    const jpgPath = getJpgPath(outputDir);
+    const svgFilename = path.basename(svgPath);
+    const pngFilename = path.basename(pngPath);
+    const jpgFilename = path.basename(jpgPath);
 
     if (isSvgMimeOrPath(item.mimeType, item.uploadPath)) {
       const originalSvg = imageBuffer.toString('utf-8');
-      const normalized = normalizeImportedSvg(originalSvg);
-      const pngSvg = normalized.isStrokeOnly
-        ? prepareStrokeOnlySvgForRaster(normalized.svg, {
-            strokeColor: pngExportArtworkColor,
-            strokeWidth: config.processing.svgRasterStrokeWidth,
-          })
-        : normalized.svg;
-      const jpgSvg = normalized.isStrokeOnly
-        ? prepareStrokeOnlySvgForRaster(normalized.svg, {
-            strokeColor: '#000000',
-            strokeWidth: config.processing.svgRasterStrokeWidth,
-          })
-        : normalized.svg;
-
-      await writeFile(svgPath, originalSvg, 'utf-8');
-      await createFixedCanvasSvgRaster(Buffer.from(pngSvg, 'utf-8'), pngPath, {
-        width: config.processing.rasterExportWidth,
-        height: config.processing.rasterExportHeight,
-        format: 'png',
-        artworkColor: pngExportArtworkColor,
-        preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
-      });
-      await createFixedCanvasSvgRaster(Buffer.from(jpgSvg, 'utf-8'), jpgPath, {
-        width: config.processing.rasterExportWidth,
-        height: config.processing.rasterExportHeight,
-        format: 'jpg',
-        quality: 90,
-        preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
+      const svgExport = await exportImportedSvgPackage(originalSvg, outputDir, {
+        pngExportArtworkColor,
+        createZip: true,
       });
 
       await prisma.batchItem.update({
         where: { id: item.id },
         data: {
-          svgPath,
+          svgPath: svgExport.svgPath,
           outputFolderPath: outputDir,
+          zipPath: svgExport.zipPath,
           status: 'COMPLETED',
           progress: 100,
           currentStep: null,
@@ -152,11 +126,7 @@ export async function POST(
         success: true,
         message: 'Approved SVG item saved successfully',
         outputFolderPath: outputDir,
-        files: [
-          { type: 'svg', filename: svgFilename, path: svgPath, size: await fileSize(svgPath) },
-          { type: 'png', filename: pngFilename, path: pngPath, size: await fileSize(pngPath) },
-          { type: 'jpg', filename: jpgFilename, path: jpgPath, size: await fileSize(jpgPath) },
-        ],
+        files: svgExport.files.filter((file) => file.type !== 'zip'),
         warnings: ['DXF export is not yet implemented for approved preview saves.'],
       });
     }

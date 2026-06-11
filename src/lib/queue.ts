@@ -181,6 +181,7 @@ export interface ProcessingJobData {
   originalFilename: string;
   baseName: string;
   uploadPath: string;
+  mimeType?: string | null;
   upscaleFactor: number;
   smartUpscaleThreshold: number;
   useBaseAssets: boolean;
@@ -194,6 +195,7 @@ export interface ProcessingJobData {
   watermarkOpacity: number;
   backgroundFilename: string;
   watermarkFilename: string;
+  pngExportArtworkColor?: string;
   // CNC / Vinyl / Laser mode
   cncMode: boolean;
 }

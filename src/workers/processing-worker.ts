@@ -8,11 +8,13 @@
 
 import 'dotenv/config';
 import { Worker, Job } from 'bullmq';
-import { mkdir } from 'fs/promises';
+import { mkdir, readFile } from 'fs/promises';
 import path from 'path';
 import { redisConnection, type ProcessingJobData, enqueueZipJob } from '../lib/queue';
 import prisma from '../lib/prisma';
 import { logger } from '../lib/logger';
+import { getZipPath } from '../lib/output-naming';
+import { isSvgMimeOrPath } from '../lib/svg-normalize';
 import { upscaleImage } from '../services/upscaler';
 import { convertToSvg } from '../services/conversion';
 import { generateMetadataFile } from '../services/metadata';
@@ -21,8 +23,10 @@ import { applyBaseAssets } from '../services/base-assets';
 import { appendToProcessingLog, finalizeProcessingLog } from '../services/processing-log';
 import { createZipFromFolder } from '../services/zip-generator';
 import { generateMarketplacePreview } from '../services/marketplace-preview';
+import { exportImportedSvgPackage } from '../services/svg-import-export';
 import { getIncrementalFolderName } from '../lib/server-utils';
 import { settingsToConversionOptions } from '../lib/vtracer-presets';
+import config from '../lib/config';
 
 // ============================================================================
 // Worker Definition
@@ -61,6 +65,74 @@ const processingWorker = new Worker<ProcessingJobData>(
           where: { id: data.batchItemId },
           data: { outputFolderPath: itemOutputDir },
         });
+      }
+
+      if (isSvgMimeOrPath(data.mimeType, data.uploadPath || data.originalFilename)) {
+        await job.updateProgress(25);
+        await updateItemStatus(data.batchItemId, 'GENERATING_FILES', 25, 'Exporting imported SVG...');
+
+        const originalSvg = await readFile(data.uploadPath, 'utf-8');
+        const pngExportArtworkColor = isHexColor(data.pngExportArtworkColor)
+          ? data.pngExportArtworkColor
+          : isHexColor(config.processing.pngExportArtworkColor)
+            ? config.processing.pngExportArtworkColor
+            : '#000000';
+        const svgExport = await exportImportedSvgPackage(originalSvg, itemOutputDir, {
+          pngExportArtworkColor,
+          createZip: false,
+        });
+
+        await job.updateProgress(75);
+        await updateItemStatus(data.batchItemId, 'ZIPPING', 75, 'Creating ZIP bundle...');
+
+        const zipPath = getZipPath(itemOutputDir);
+        await createZipFromFolder(itemOutputDir, zipPath);
+
+        const processingTime = Date.now() - startTime;
+
+        await prisma.batchItem.update({
+          where: { id: data.batchItemId },
+          data: {
+            status: 'COMPLETED',
+            progress: 100,
+            currentStep: null,
+            svgPath: svgExport.svgPath,
+            outputFolderPath: itemOutputDir,
+            zipPath,
+            upscaledWidth: svgExport.normalized.width,
+            upscaledHeight: svgExport.normalized.height,
+            completedAt: new Date(),
+          },
+        });
+
+        await appendToProcessingLog(path.dirname(itemOutputDir), {
+          originalFilename: data.originalFilename,
+          baseName: data.baseName,
+          sku: 'N/A',
+          upscaleApplied: false,
+          upscaleFactor: data.upscaleFactor,
+          conversionSteps: [
+            'SVG Import: normalized for raster rendering',
+            `SVG Export: saved source SVG (${svgExport.files[0]?.size || 0} bytes)`,
+            'PNG Export: generated from imported SVG',
+            'JPG Export: generated from imported SVG',
+            'VTracer: skipped for imported SVG',
+            'ZIP: Bundle created',
+          ],
+          warnings: [],
+          errors: [],
+          status: 'COMPLETED',
+          processingTimeMs: processingTime,
+        });
+
+        await updateBatchProgress(data.batchId);
+        await job.updateProgress(100);
+
+        logger.info(`Worker: SVG item ${data.batchItemId} completed in ${processingTime}ms`, {
+          svgSize: svgExport.files[0]?.size || 0,
+        });
+
+        return { success: true, sku: null, processingTime };
       }
 
       // Smart upscale
@@ -184,7 +256,7 @@ const processingWorker = new Worker<ProcessingJobData>(
       // ====================================================================
       // Step 4: Create ZIP
       // ====================================================================
-      const zipPath = `${itemOutputDir}.zip`;
+      const zipPath = getZipPath(itemOutputDir);
       await createZipFromFolder(itemOutputDir, zipPath);
 
       await job.updateProgress(90);
@@ -368,6 +440,10 @@ async function createOutputDirectory(
   const outputDir = path.join(basePath, folderName);
   await mkdir(outputDir, { recursive: true });
   return outputDir;
+}
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 // ============================================================================

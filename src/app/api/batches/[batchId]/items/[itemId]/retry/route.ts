@@ -46,6 +46,8 @@ export async function POST(
     const watermarkOpacity = (settingsJson.watermarkOpacity as number) ?? 80;
     const backgroundFilename = (settingsJson.backgroundFilename as string) ?? 'preview-background.jpg';
     const watermarkFilename = (settingsJson.watermarkFilename as string) ?? 'watermark.png';
+    const copyBaseAssetsToOutput = (settingsJson.copyBaseAssetsToOutput as boolean) ?? false;
+    const pngExportArtworkColor = (settingsJson.pngExportArtworkColor as string) ?? config.processing.pngExportArtworkColor;
     const cncMode = (settingsJson.cncMode as boolean) ?? true;
     const completedItems = await prisma.batchItem.count({
       where: { batchId, status: 'COMPLETED' },
@@ -81,9 +83,10 @@ export async function POST(
       originalFilename: item.originalFilename,
       baseName: item.baseName,
       uploadPath: item.uploadPath,
+      mimeType: item.mimeType,
       upscaleFactor: item.upscaleFactor,
       smartUpscaleThreshold: item.batch.smartUpscaleThreshold,
-      useBaseAssets: item.batch.useBaseAssets,
+      useBaseAssets: copyBaseAssetsToOutput,
       substitutionData: (item.batch.substitutionData as Record<string, string>) || {},
       outputBasePath,
       baseAssetsPath,
@@ -93,6 +96,7 @@ export async function POST(
       watermarkOpacity,
       backgroundFilename,
       watermarkFilename,
+      pngExportArtworkColor,
       cncMode,
     });
 

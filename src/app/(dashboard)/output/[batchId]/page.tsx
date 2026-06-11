@@ -73,6 +73,10 @@ function FileIcon({ type }: { type: string }) {
   );
 }
 
+function basename(filePath: string) {
+  return filePath.split(/[\\/]/).pop() || filePath;
+}
+
 // ============================================================================
 // Main Output Page
 // ============================================================================
@@ -133,7 +137,7 @@ export default function OutputPage() {
     setExpandedItems(new Set());
   };
 
-  const downloadItem = async (itemId: string, baseName: string) => {
+  const downloadItem = async (itemId: string, baseName: string, zipPath: string | null) => {
     setDownloading(itemId);
     try {
       const res = await fetch(`/api/batches/${batchId}/download?itemId=${itemId}`);
@@ -142,7 +146,7 @@ export default function OutputPage() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${baseName}_bundle.zip`;
+        a.download = zipPath ? basename(zipPath) : `${baseName}.zip`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -367,7 +371,7 @@ export default function OutputPage() {
                         ZIP: {formatBytes(item.zipSize)}
                       </span>
                       <button
-                        onClick={() => downloadItem(item.id, item.baseName)}
+                        onClick={() => downloadItem(item.id, item.baseName, item.zipPath)}
                         disabled={downloading === item.id}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 transition-colors"
                       >

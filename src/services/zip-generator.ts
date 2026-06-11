@@ -64,7 +64,7 @@ async function addFolderToZip(
 
     if (entry.isDirectory()) {
       await addFolderToZip(zip, fullPath, zipPath);
-    } else {
+    } else if (path.extname(entry.name).toLowerCase() !== '.zip') {
       const fileBuffer = await fs.readFile(fullPath);
       zip.file(zipPath, fileBuffer);
     }

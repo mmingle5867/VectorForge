@@ -4,8 +4,20 @@
  */
 
 import { NextResponse } from 'next/server';
+import { access } from 'fs/promises';
+import path from 'path';
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+
+async function fileExists(filePath: string | null | undefined) {
+  if (!filePath) return false;
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET() {
   try {
@@ -26,12 +38,16 @@ export async function GET() {
         completedAt: true,
         items: {
           orderBy: { sequenceNumber: 'asc' },
-          take: 3,
           select: {
+            id: true,
             originalFilename: true,
             baseName: true,
             status: true,
+            errorMsg: true,
+            svgPath: true,
             outputFolderPath: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
       },
@@ -59,11 +75,42 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      batches: batches.map((batch) => ({
-        ...batch,
-        itemCount: batch.totalItems,
-        firstOutputFolderPath: firstOutputFolderByBatch.get(batch.id) || null,
-      })),
+      batches: await Promise.all(
+        batches.map(async (batch) => ({
+          ...batch,
+          itemCount: batch.totalItems,
+          firstOutputFolderPath: firstOutputFolderByBatch.get(batch.id) || null,
+          items: await Promise.all(
+            batch.items.map(async (item) => {
+              const pngPath = item.outputFolderPath
+                ? path.join(item.outputFolderPath, `${item.baseName}.png`)
+                : null;
+              const jpgPath = item.outputFolderPath
+                ? path.join(item.outputFolderPath, `${item.baseName}.jpg`)
+                : null;
+              const svgPath = item.svgPath || (
+                item.outputFolderPath ? path.join(item.outputFolderPath, `${item.baseName}.svg`) : null
+              );
+
+              return {
+                id: item.id,
+                originalFilename: item.originalFilename,
+                baseName: item.baseName,
+                status: item.status,
+                errorMsg: item.errorMsg,
+                outputFolderPath: item.outputFolderPath,
+                createdAt: item.createdAt,
+                updatedAt: item.updatedAt,
+                files: {
+                  svg: { exists: await fileExists(svgPath), path: svgPath },
+                  png: { exists: await fileExists(pngPath), path: pngPath },
+                  jpg: { exists: await fileExists(jpgPath), path: jpgPath },
+                },
+              };
+            })
+          ),
+        }))
+      ),
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {

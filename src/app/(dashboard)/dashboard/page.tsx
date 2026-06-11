@@ -4,11 +4,23 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 
-interface BatchSampleItem {
+type FileKind = 'png' | 'jpg' | 'svg';
+
+interface DashboardFile {
+  exists: boolean;
+  path: string | null;
+}
+
+interface BatchItem {
+  id: string;
   originalFilename: string;
   baseName: string;
   status: string;
+  errorMsg: string | null;
   outputFolderPath: string | null;
+  createdAt: string;
+  updatedAt: string;
+  files: Record<FileKind, DashboardFile>;
 }
 
 interface Batch {
@@ -22,18 +34,27 @@ interface Batch {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
-  items: BatchSampleItem[];
+  items: BatchItem[];
   firstOutputFolderPath: string | null;
 }
 
 const STATUS_FILTERS = ['All', 'Pending', 'Processing', 'Completed', 'Failed', 'Cancelled'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
+const FILE_LABELS: Record<FileKind, string> = {
+  png: 'PNG',
+  jpg: 'JPG',
+  svg: 'SVG',
+};
+
 export default function DashboardPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     fetchBatches();
@@ -55,6 +76,24 @@ export default function DashboardPage() {
     }
   }
 
+  function toggleExpanded(batchId: string) {
+    setExpandedBatches((current) => {
+      const next = new Set(current);
+      if (next.has(batchId)) {
+        next.delete(batchId);
+      } else {
+        next.add(batchId);
+      }
+      return next;
+    });
+  }
+
+  function itemFiles(item: BatchItem) {
+    return (Object.entries(item.files) as [FileKind, DashboardFile][])
+      .filter(([, file]) => file.exists && file.path)
+      .map(([type, file]) => ({ type, path: file.path as string }));
+  }
+
   async function cancelBatch(batchId: string) {
     if (!confirm('Are you sure you want to cancel this batch? Items already completed will be kept.')) {
       return;
@@ -64,14 +103,157 @@ export default function DashboardPage() {
       const res = await fetch(`/api/batches/${batchId}/cancel`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
+        setNotice('Batch cancelled.');
         fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to cancel batch.');
       }
     } catch {
-      // Handle error
+      setNotice('Failed to cancel batch.');
     } finally {
       setCancelling(null);
     }
   }
+
+  async function retryBatch(batchId: string) {
+    if (!confirm('Retry failed items in this batch? Completed items will be kept.')) {
+      return;
+    }
+
+    setBusyAction(`retry:${batchId}`);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/retry`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        const moved = statusFilter === 'Failed' ? ' It moved to Processing and may disappear from this filter.' : '';
+        setNotice(`${data.resetItems || 0} item(s) reset. Batch status: ${data.batchStatus || 'PROCESSING'}.${moved}`);
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to retry batch.');
+      }
+    } catch {
+      setNotice('Failed to retry batch.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function retryItem(batchId: string, itemId: string) {
+    if (!confirm('Retry this failed item?')) {
+      return;
+    }
+
+    setBusyAction(`retry-item:${itemId}`);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/items/${itemId}/retry`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        const moved = statusFilter === 'Failed' ? ' The batch moved to Processing and may disappear from this filter.' : '';
+        setNotice(`${data.message || 'Item retry started.'}${moved}`);
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to retry item.');
+      }
+    } catch {
+      setNotice('Failed to retry item.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteBatch(batchId: string, deleteFiles: boolean) {
+    const message = deleteFiles
+      ? 'Delete this batch database record, its batch upload folder, and all item output folders? This cannot be undone.'
+      : 'Delete this batch database record only? Upload and output files will be kept on disk.';
+
+    if (!confirm(message)) {
+      return;
+    }
+
+    setBusyAction(`${deleteFiles ? 'delete-files' : 'delete'}:${batchId}`);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteFiles }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const fileSummary = deleteFiles
+          ? ` Deleted ${data.deletedPaths?.length || 0} path(s), skipped ${data.skippedPaths?.length || 0}.`
+          : '';
+        setNotice(`${data.message || 'Batch deleted.'}${fileSummary} It was removed from the dashboard.`);
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to delete batch.');
+      }
+    } catch {
+      setNotice('Failed to delete batch.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteItem(batchId: string, itemId: string, deleteFiles: boolean) {
+    const message = deleteFiles
+      ? 'Delete this item database record, original upload file, and output folder? This cannot be undone.'
+      : 'Delete this item database record only? Upload and output files will be kept on disk.';
+
+    if (!confirm(message)) {
+      return;
+    }
+
+    setBusyAction(`${deleteFiles ? 'delete-item-files' : 'delete-item'}:${itemId}`);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/items/${itemId}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteFiles }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const fileSummary = deleteFiles
+          ? ` Deleted ${data.deletedPaths?.length || 0} path(s), skipped ${data.skippedPaths?.length || 0}.`
+          : '';
+        setNotice(`${data.message || 'Item deleted.'}${fileSummary}`);
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to delete item.');
+      }
+    } catch {
+      setNotice('Failed to delete item.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function openLocal(action: 'folder' | 'file' | 'editable', outputFolderPath: string, files = itemFilesPlaceholder, fileType?: FileKind) {
+    setBusyAction(`${action}:${outputFolderPath}:${fileType || 'all'}`);
+    try {
+      const res = await fetch('/api/local-editor/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          outputFolderPath,
+          files,
+          fileType,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotice(action === 'folder' ? 'Output folder opened.' : 'File open request sent.');
+      } else {
+        setNotice(data.error || 'Failed to open local file.');
+      }
+    } catch {
+      setNotice('Failed to open local file.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  const itemFilesPlaceholder: { type: string; path: string }[] = [];
 
   const getStatusConfig = (status: string) => {
     const configs: Record<string, { bg: string; text: string }> = {
@@ -121,6 +303,15 @@ export default function DashboardPage() {
           + New Batch
         </Link>
       </div>
+
+      {notice && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="text-xs font-semibold uppercase tracking-wide">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {batches.length > 0 && (
         <div className="mb-6 grid grid-cols-4 gap-4">
@@ -173,19 +364,10 @@ export default function DashboardPage() {
 
       {batches.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center dark:border-gray-600">
-          <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <h3 className="mt-4 text-sm font-semibold text-gray-900 dark:text-white">No batches yet</h3>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">No batches yet</h3>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             Upload your first batch of images to get started.
           </p>
-          <Link
-            href="/upload"
-            className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-          >
-            Upload Images
-          </Link>
         </div>
       ) : filteredBatches.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-10 text-center dark:border-gray-600">
@@ -199,11 +381,11 @@ export default function DashboardPage() {
           {filteredBatches.map((batch) => {
             const statusConfig = getStatusConfig(batch.status);
             const itemCount = batch.itemCount ?? batch.totalItems;
-            const progressPercent = itemCount > 0
-              ? Math.round((batch.completedItems / itemCount) * 100)
-              : 0;
+            const progressPercent = itemCount > 0 ? Math.round((batch.completedItems / itemCount) * 100) : 0;
             const isActive = batch.status === 'PROCESSING';
             const outputFolderPath = batch.firstOutputFolderPath || batch.items.find((item) => item.outputFolderPath)?.outputFolderPath;
+            const canDelete = batch.status !== 'PROCESSING';
+            const isExpanded = expandedBatches.has(batch.id);
 
             return (
               <div
@@ -229,25 +411,45 @@ export default function DashboardPage() {
                     </p>
                     {batch.items.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {batch.items.map((item) => (
+                        {batch.items.slice(0, 3).map((item) => (
                           <span
-                            key={`${batch.id}-${item.originalFilename}-${item.baseName}`}
+                            key={`${batch.id}-${item.id}`}
                             className="max-w-full truncate rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
                             title={`${item.originalFilename} (${item.status})`}
                           >
                             {item.baseName || item.originalFilename}
                           </span>
                         ))}
+                        {batch.items.length > 3 && (
+                          <span className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                            +{batch.items.length - 3} more
+                          </span>
+                        )}
                       </div>
                     )}
                     {outputFolderPath && (
                       <p className="mt-3 truncate rounded-md bg-gray-50 px-2 py-1 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300" title={outputFolderPath}>
-                        Output: {outputFolderPath}
+                        First output: {outputFolderPath}
                       </p>
                     )}
                   </div>
 
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => toggleExpanded(batch.id)}
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      {isExpanded ? 'Hide Items' : 'Show Items'}
+                    </button>
+                    {outputFolderPath && (
+                      <button
+                        onClick={() => openLocal('folder', outputFolderPath)}
+                        disabled={busyAction === `folder:${outputFolderPath}:all`}
+                        className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Open Output Folder
+                      </button>
+                    )}
                     {batch.status === 'PENDING' && (
                       <Link
                         href={`/upload/review/${batch.id}`}
@@ -282,12 +484,39 @@ export default function DashboardPage() {
                       </Link>
                     )}
                     {batch.status === 'FAILED' && (
-                      <Link
-                        href={`/output/${batch.id}`}
-                        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 transition-colors"
-                      >
-                        View Details
-                      </Link>
+                      <>
+                        <button
+                          onClick={() => retryBatch(batch.id)}
+                          disabled={busyAction === `retry:${batch.id}`}
+                          className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-400 transition-colors"
+                        >
+                          Retry Failed Batch
+                        </button>
+                        <Link
+                          href={`/output/${batch.id}`}
+                          className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 transition-colors"
+                        >
+                          View Details
+                        </Link>
+                      </>
+                    )}
+                    {canDelete && (
+                      <>
+                        <button
+                          onClick={() => deleteBatch(batch.id, false)}
+                          disabled={busyAction === `delete:${batch.id}`}
+                          className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 transition-colors"
+                        >
+                          Delete Batch
+                        </button>
+                        <button
+                          onClick={() => deleteBatch(batch.id, true)}
+                          disabled={busyAction === `delete-files:${batch.id}`}
+                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-900/30 dark:text-red-400 transition-colors"
+                        >
+                          Delete Batch + Files
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -306,13 +535,114 @@ export default function DashboardPage() {
                     <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          batch.status === 'COMPLETED'
-                            ? 'bg-green-500'
-                            : 'bg-blue-600'
+                          batch.status === 'COMPLETED' ? 'bg-green-500' : 'bg-blue-600'
                         }`}
                         style={{ width: `${progressPercent}%` }}
                       />
                     </div>
+                  </div>
+                )}
+
+                {isExpanded && (
+                  <div className="mt-4 space-y-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+                    {batch.items.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No items remain in this batch.</p>
+                    ) : (
+                      batch.items.map((item) => {
+                        const files = itemFiles(item);
+                        const itemCanDelete = batch.status !== 'PROCESSING';
+
+                        return (
+                          <div key={item.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-medium text-gray-900 dark:text-white">
+                                    {item.originalFilename}
+                                  </p>
+                                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${getStatusConfig(item.status).bg} ${getStatusConfig(item.status).text}`}>
+                                    {item.status}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-600 dark:text-gray-300">Base name: {item.baseName}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  Created {formatDate(item.createdAt)} - Updated {formatDate(item.updatedAt)}
+                                </p>
+                                {item.errorMsg && (
+                                  <p className="rounded-md bg-red-50 px-2 py-1 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
+                                    Error: {item.errorMsg}
+                                  </p>
+                                )}
+                                {item.outputFolderPath && (
+                                  <p className="truncate text-xs text-gray-500 dark:text-gray-400" title={item.outputFolderPath}>
+                                    Output: {item.outputFolderPath}
+                                  </p>
+                                )}
+                                <p className="text-xs text-gray-600 dark:text-gray-300">
+                                  Outputs: SVG {item.files.svg.exists ? 'yes' : 'no'} / PNG {item.files.png.exists ? 'yes' : 'no'} / JPG {item.files.jpg.exists ? 'yes' : 'no'}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                                {item.outputFolderPath && (
+                                  <button
+                                    onClick={() => openLocal('folder', item.outputFolderPath!)}
+                                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                                  >
+                                    Open Output Folder
+                                  </button>
+                                )}
+                                {(Object.keys(FILE_LABELS) as FileKind[]).map((type) => (
+                                  item.files[type].exists && item.outputFolderPath ? (
+                                    <button
+                                      key={type}
+                                      onClick={() => openLocal('file', item.outputFolderPath!, files, type)}
+                                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                                    >
+                                      Open {FILE_LABELS[type]}
+                                    </button>
+                                  ) : null
+                                ))}
+                                {files.length > 0 && item.outputFolderPath && (
+                                  <button
+                                    onClick={() => openLocal('editable', item.outputFolderPath!, files)}
+                                    className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                                  >
+                                    Open Editable Files
+                                  </button>
+                                )}
+                                {item.status === 'FAILED' && (
+                                  <button
+                                    onClick={() => retryItem(batch.id, item.id)}
+                                    disabled={busyAction === `retry-item:${item.id}`}
+                                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-400 transition-colors"
+                                  >
+                                    Retry Item
+                                  </button>
+                                )}
+                                {itemCanDelete && (
+                                  <>
+                                    <button
+                                      onClick={() => deleteItem(batch.id, item.id, false)}
+                                      disabled={busyAction === `delete-item:${item.id}`}
+                                      className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 transition-colors"
+                                    >
+                                      Delete Item
+                                    </button>
+                                    <button
+                                      onClick={() => deleteItem(batch.id, item.id, true)}
+                                      disabled={busyAction === `delete-item-files:${item.id}`}
+                                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-900/30 dark:text-red-400 transition-colors"
+                                    >
+                                      Delete Item + Files
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </div>

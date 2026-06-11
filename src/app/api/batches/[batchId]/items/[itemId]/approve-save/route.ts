@@ -32,6 +32,10 @@ async function fileSize(filePath: string) {
   return stats.size;
 }
 
+function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ batchId: string; itemId: string }> }
@@ -74,6 +78,11 @@ export async function POST(
 
     const settingsJson = (user.settings?.defaultSubstitutions as Record<string, unknown>) || {};
     const cncMode = (settingsJson.cncMode as boolean) ?? true;
+    const pngExportArtworkColor = isHexColor(settingsJson.pngExportArtworkColor)
+      ? settingsJson.pngExportArtworkColor
+      : isHexColor(config.processing.pngExportArtworkColor)
+        ? config.processing.pngExportArtworkColor
+        : '#000000';
     const outputBasePath = user.settings?.outputPath || config.paths.output;
     const imageBuffer = await readFile(item.uploadPath);
     const metadata = await sharp(imageBuffer).metadata();
@@ -110,7 +119,7 @@ export async function POST(
       width: config.processing.rasterExportWidth,
       height: config.processing.rasterExportHeight,
       format: 'png',
-      artworkColor: config.processing.pngExportArtworkColor,
+      artworkColor: pngExportArtworkColor,
     });
     await createFixedCanvasRaster(imageBuffer, jpgPath, {
       width: config.processing.rasterExportWidth,

@@ -8,6 +8,10 @@ import SubstitutionTable, {
   objectToRows,
   rowsToObject,
 } from '@/components/substitution-table';
+import {
+  FACTORY_TUNING_EXPORT_DEFAULTS,
+  type TuningExportSettings,
+} from '@/lib/tuning-defaults';
 
 interface BatchItem {
   id: string;
@@ -75,17 +79,34 @@ type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
 
 const DEFAULT_TUNE_SETTINGS: TuneSettings = {
-  preUpscaleBlur: 0,
-  blur: 1.0,
-  blurPasses: 1,
-  pathPrecision: 3,
-  cornerThreshold: 70,
-  filterSpeckle: 6,
-  lengthThreshold: 4,
-  spliceThreshold: 45,
-  colorPrecision: 6,
-  layerDifference: 16,
+  preUpscaleBlur: FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
+  blur: FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
+  blurPasses: FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
+  pathPrecision: FACTORY_TUNING_EXPORT_DEFAULTS.pathPrecision,
+  cornerThreshold: FACTORY_TUNING_EXPORT_DEFAULTS.cornerThreshold,
+  filterSpeckle: FACTORY_TUNING_EXPORT_DEFAULTS.filterSpeckle,
+  lengthThreshold: FACTORY_TUNING_EXPORT_DEFAULTS.lengthThreshold,
+  spliceThreshold: FACTORY_TUNING_EXPORT_DEFAULTS.spliceThreshold,
+  colorPrecision: FACTORY_TUNING_EXPORT_DEFAULTS.colorPrecision,
+  layerDifference: FACTORY_TUNING_EXPORT_DEFAULTS.layerDifference,
 };
+
+function getTuneSettingsFromSiteSettings(
+  settings?: Partial<TuningExportSettings>
+): TuneSettings {
+  return {
+    preUpscaleBlur: settings?.preUpscaleBlur ?? DEFAULT_TUNE_SETTINGS.preUpscaleBlur,
+    blur: settings?.preprocessingBlur ?? DEFAULT_TUNE_SETTINGS.blur,
+    blurPasses: settings?.blurPasses ?? DEFAULT_TUNE_SETTINGS.blurPasses,
+    pathPrecision: settings?.pathPrecision ?? DEFAULT_TUNE_SETTINGS.pathPrecision,
+    cornerThreshold: settings?.cornerThreshold ?? DEFAULT_TUNE_SETTINGS.cornerThreshold,
+    filterSpeckle: settings?.filterSpeckle ?? DEFAULT_TUNE_SETTINGS.filterSpeckle,
+    lengthThreshold: settings?.lengthThreshold ?? DEFAULT_TUNE_SETTINGS.lengthThreshold,
+    spliceThreshold: settings?.spliceThreshold ?? DEFAULT_TUNE_SETTINGS.spliceThreshold,
+    colorPrecision: settings?.colorPrecision ?? DEFAULT_TUNE_SETTINGS.colorPrecision,
+    layerDifference: settings?.layerDifference ?? DEFAULT_TUNE_SETTINGS.layerDifference,
+  };
+}
 
 const TUNE_CONTROLS: Array<{
   key: keyof TuneSettings;
@@ -198,6 +219,7 @@ export default function ReviewPage() {
   const [globalUpscale, setGlobalUpscale] = useState<number>(2);
   const [substitutions, setSubstitutions] = useState<SubstitutionRow[]>([]);
   const [tuneItem, setTuneItem] = useState<BatchItem | null>(null);
+  const [siteTuneDefaults, setSiteTuneDefaults] = useState<TuneSettings>(DEFAULT_TUNE_SETTINGS);
   const [tuneSettings, setTuneSettings] = useState<TuneSettings>(DEFAULT_TUNE_SETTINGS);
   const [tunePreview, setTunePreview] = useState<TunePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -233,6 +255,26 @@ export default function ReviewPage() {
     fetchBatch();
   }, [batchId]);
 
+  useEffect(() => {
+    async function fetchSiteSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        if (res.ok && data.success && data.settings) {
+          const defaults = getTuneSettingsFromSiteSettings(data.settings);
+          setSiteTuneDefaults(defaults);
+          setTuneSettings((current) =>
+            tuneItem ? current : defaults
+          );
+        }
+      } catch {
+        // Keep factory defaults if settings cannot be loaded.
+      }
+    }
+
+    fetchSiteSettings();
+  }, [tuneItem]);
+
   // Update item base name
   const updateBaseName = (itemId: string, newName: string) => {
     setItems((prev) =>
@@ -262,7 +304,7 @@ export default function ReviewPage() {
 
   const openTunePanel = (item: BatchItem) => {
     setTuneItem(item);
-    setTuneSettings(DEFAULT_TUNE_SETTINGS);
+    setTuneSettings(siteTuneDefaults);
     setTunePreview(null);
     setPreviewError(null);
     setPreviewStatus('idle');
@@ -649,7 +691,7 @@ export default function ReviewPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => setTuneSettings(DEFAULT_TUNE_SETTINGS)}
+                      onClick={() => setTuneSettings(siteTuneDefaults)}
                       className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
                     >
                       Restore Defaults

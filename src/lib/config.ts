@@ -22,6 +22,7 @@ export const config = {
     rasterExportWidth: parseInt(process.env.RASTER_EXPORT_WIDTH || '2000', 10),
     rasterExportHeight: parseInt(process.env.RASTER_EXPORT_HEIGHT || '2000', 10),
     pngExportArtworkColor: process.env.PNG_EXPORT_ARTWORK_COLOR || '#000000',
+    pngWhiteTransparencyThreshold: parseInt(process.env.PNG_WHITE_TRANSPARENCY_THRESHOLD || '245', 10),
   },
 
   // SKU format

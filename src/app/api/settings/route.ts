@@ -11,6 +11,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import config from '@/lib/config';
+import {
+  FACTORY_TUNING_EXPORT_DEFAULTS,
+  TUNING_EXPORT_RANGES,
+  isHexColor,
+  type TuningExportSettingKey,
+} from '@/lib/tuning-defaults';
 
 // Reserved keys stored in defaultSubstitutions JSON for extended settings
 const EXTENDED_KEYS = [
@@ -21,7 +28,48 @@ const EXTENDED_KEYS = [
   'backgroundFilename',
   'watermarkFilename',
   'cncMode',
+  'preUpscaleBlur',
+  'preprocessingBlur',
+  'blurPasses',
+  'edgePaddingPx',
+  'pathPrecision',
+  'cornerThreshold',
+  'filterSpeckle',
+  'lengthThreshold',
+  'spliceThreshold',
+  'colorPrecision',
+  'layerDifference',
+  'rasterExportWidth',
+  'rasterExportHeight',
+  'pngExportArtworkColor',
+  'pngWhiteTransparencyThreshold',
 ] as const;
+
+const TUNING_EXPORT_KEYS = [
+  'preUpscaleBlur',
+  'preprocessingBlur',
+  'blurPasses',
+  'edgePaddingPx',
+  'pathPrecision',
+  'cornerThreshold',
+  'filterSpeckle',
+  'lengthThreshold',
+  'spliceThreshold',
+  'colorPrecision',
+  'layerDifference',
+  'rasterExportWidth',
+  'rasterExportHeight',
+  'pngExportArtworkColor',
+  'pngWhiteTransparencyThreshold',
+] as const satisfies readonly TuningExportSettingKey[];
+
+const settingsFallbacks = {
+  ...FACTORY_TUNING_EXPORT_DEFAULTS,
+  rasterExportWidth: config.processing.rasterExportWidth,
+  rasterExportHeight: config.processing.rasterExportHeight,
+  pngExportArtworkColor: config.processing.pngExportArtworkColor,
+  pngWhiteTransparencyThreshold: config.processing.pngWhiteTransparencyThreshold,
+};
 
 /**
  * Extract extended settings from the defaultSubstitutions JSON blob.
@@ -39,6 +87,66 @@ function extractExtendedSettings(subs: Record<string, unknown>) {
   }
 
   return { extended, substitutions };
+}
+
+function getNumberSetting(
+  extended: Record<string, unknown>,
+  key: TuningExportSettingKey
+) {
+  const value = extended[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return settingsFallbacks[key];
+}
+
+function getTuningExportSettings(extended: Record<string, unknown>) {
+  return {
+    preUpscaleBlur: getNumberSetting(extended, 'preUpscaleBlur'),
+    preprocessingBlur: getNumberSetting(extended, 'preprocessingBlur'),
+    blurPasses: getNumberSetting(extended, 'blurPasses'),
+    edgePaddingPx: getNumberSetting(extended, 'edgePaddingPx'),
+    pathPrecision: getNumberSetting(extended, 'pathPrecision'),
+    cornerThreshold: getNumberSetting(extended, 'cornerThreshold'),
+    filterSpeckle: getNumberSetting(extended, 'filterSpeckle'),
+    lengthThreshold: getNumberSetting(extended, 'lengthThreshold'),
+    spliceThreshold: getNumberSetting(extended, 'spliceThreshold'),
+    colorPrecision: getNumberSetting(extended, 'colorPrecision'),
+    layerDifference: getNumberSetting(extended, 'layerDifference'),
+    rasterExportWidth: getNumberSetting(extended, 'rasterExportWidth'),
+    rasterExportHeight: getNumberSetting(extended, 'rasterExportHeight'),
+    pngExportArtworkColor: isHexColor(extended.pngExportArtworkColor)
+      ? extended.pngExportArtworkColor
+      : settingsFallbacks.pngExportArtworkColor,
+    pngWhiteTransparencyThreshold: getNumberSetting(extended, 'pngWhiteTransparencyThreshold'),
+  };
+}
+
+function validateTuningExportSetting(key: TuningExportSettingKey, value: unknown) {
+  if (value === undefined) return null;
+
+  if (key === 'pngExportArtworkColor') {
+    return isHexColor(value) ? null : 'PNG export artwork color must be a valid hex color like #000000';
+  }
+
+  const numberValue = Number(value);
+  const range = TUNING_EXPORT_RANGES[key];
+  if (!Number.isFinite(numberValue) || numberValue < range.min || numberValue > range.max) {
+    return `${key} must be between ${range.min} and ${range.max}`;
+  }
+
+  if (
+    ['blurPasses', 'edgePaddingPx', 'pathPrecision', 'filterSpeckle', 'colorPrecision', 'layerDifference', 'rasterExportWidth', 'rasterExportHeight', 'pngWhiteTransparencyThreshold'].includes(
+      key
+    ) &&
+    !Number.isInteger(numberValue)
+  ) {
+    return `${key} must be a whole number`;
+  }
+
+  return null;
 }
 
 export async function GET() {
@@ -73,6 +181,7 @@ export async function GET() {
         backgroundFilename: extended.backgroundFilename ?? 'preview-background.jpg',
         watermarkFilename: extended.watermarkFilename ?? 'watermark.png',
         cncMode: extended.cncMode ?? true,
+        ...getTuningExportSettings(extended),
       },
       isFirstTime: false,
     });
@@ -103,7 +212,40 @@ export async function PUT(req: NextRequest) {
       backgroundFilename,
       watermarkFilename,
       cncMode,
+      preUpscaleBlur,
+      preprocessingBlur,
+      blurPasses,
+      edgePaddingPx,
+      pathPrecision,
+      cornerThreshold,
+      filterSpeckle,
+      lengthThreshold,
+      spliceThreshold,
+      colorPrecision,
+      layerDifference,
+      rasterExportWidth,
+      rasterExportHeight,
+      pngExportArtworkColor,
+      pngWhiteTransparencyThreshold,
     } = body;
+
+    const tuningExportBody = {
+      preUpscaleBlur,
+      preprocessingBlur,
+      blurPasses,
+      edgePaddingPx,
+      pathPrecision,
+      cornerThreshold,
+      filterSpeckle,
+      lengthThreshold,
+      spliceThreshold,
+      colorPrecision,
+      layerDifference,
+      rasterExportWidth,
+      rasterExportHeight,
+      pngExportArtworkColor,
+      pngWhiteTransparencyThreshold,
+    };
 
     // Validate paths (must start with ./, no ..)
     if (baseAssetsPath && (!baseAssetsPath.startsWith('./') || baseAssetsPath.includes('..'))) {
@@ -143,6 +285,13 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    for (const key of TUNING_EXPORT_KEYS) {
+      const validationError = validateTuningExportSetting(key, tuningExportBody[key]);
+      if (validationError) {
+        return NextResponse.json({ success: false, error: validationError }, { status: 400 });
+      }
+    }
+
     // Merge user substitutions with extended settings into a single JSON blob
     const mergedSubstitutions: Record<string, string | number | boolean> = {
       ...(defaultSubstitutions || {}),
@@ -156,6 +305,12 @@ export async function PUT(req: NextRequest) {
     if (backgroundFilename !== undefined) mergedSubstitutions.backgroundFilename = backgroundFilename;
     if (watermarkFilename !== undefined) mergedSubstitutions.watermarkFilename = watermarkFilename;
     if (cncMode !== undefined) mergedSubstitutions.cncMode = cncMode;
+    for (const key of TUNING_EXPORT_KEYS) {
+      if (tuningExportBody[key] !== undefined) {
+        mergedSubstitutions[key] =
+          key === 'pngExportArtworkColor' ? tuningExportBody[key] : Number(tuningExportBody[key]);
+      }
+    }
 
     const settings = await prisma.userSettings.upsert({
       where: { userId: user.id },

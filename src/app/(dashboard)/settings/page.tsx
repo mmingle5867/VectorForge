@@ -6,12 +6,20 @@ import SubstitutionTable, {
   objectToRows,
   rowsToObject,
 } from '@/components/substitution-table';
+import {
+  FACTORY_TUNING_EXPORT_DEFAULTS,
+  RECOMMENDED_SMOOTH_TUNING_EXPORT_DEFAULTS,
+  TUNING_EXPORT_HELP,
+  TUNING_EXPORT_RANGES,
+  type TuningExportSettingKey,
+  type TuningExportSettings,
+} from '@/lib/tuning-defaults';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-interface UserSettings {
+interface UserSettings extends TuningExportSettings {
   defaultUpscaleFactor: number;
   smartUpscaleThreshold: number;
   baseAssetsPath: string;
@@ -48,6 +56,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   backgroundFilename: 'preview-background.jpg',
   watermarkFilename: 'watermark.png',
   cncMode: true,
+  ...FACTORY_TUNING_EXPORT_DEFAULTS,
 };
 
 // ============================================================================
@@ -136,6 +145,79 @@ function ToggleSwitch({ enabled, onChange, label }: { enabled: boolean; onChange
         }`}
       />
     </button>
+  );
+}
+
+const PREPROCESSING_CONTROLS: Array<{ key: TuningExportSettingKey; label: string }> = [
+  { key: 'preUpscaleBlur', label: 'Pre-Upscale Blur' },
+  { key: 'preprocessingBlur', label: 'Preprocessing Blur' },
+  { key: 'blurPasses', label: 'Blur Passes' },
+  { key: 'edgePaddingPx', label: 'Edge Padding' },
+];
+
+const VTRACER_CONTROLS: Array<{ key: TuningExportSettingKey; label: string }> = [
+  { key: 'pathPrecision', label: 'Path Precision' },
+  { key: 'cornerThreshold', label: 'Corner Threshold' },
+  { key: 'filterSpeckle', label: 'Filter Speckle' },
+  { key: 'lengthThreshold', label: 'Length Threshold' },
+  { key: 'spliceThreshold', label: 'Splice Threshold' },
+  { key: 'colorPrecision', label: 'Color Precision' },
+  { key: 'layerDifference', label: 'Layer Difference' },
+];
+
+const EXPORT_CONTROLS: Array<{ key: TuningExportSettingKey; label: string }> = [
+  { key: 'rasterExportWidth', label: 'Raster Export Width' },
+  { key: 'rasterExportHeight', label: 'Raster Export Height' },
+  { key: 'pngWhiteTransparencyThreshold', label: 'PNG White Transparency Threshold' },
+];
+
+function NumberSettingControl({
+  label,
+  settingKey,
+  value,
+  onChange,
+}: {
+  label: string;
+  settingKey: TuningExportSettingKey;
+  value: number;
+  onChange: (key: TuningExportSettingKey, value: number) => void;
+}) {
+  const range = TUNING_EXPORT_RANGES[settingKey];
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center gap-2">
+        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {label}
+        </label>
+        <Tooltip content={TUNING_EXPORT_HELP[settingKey]}>
+          <InfoIcon />
+        </Tooltip>
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          min={range.min}
+          max={range.max}
+          step={range.step}
+          value={value}
+          onChange={(e) => onChange(settingKey, Number(e.target.value))}
+          className="min-w-0 flex-1 accent-blue-600"
+        />
+        <input
+          type="number"
+          min={range.min}
+          max={range.max}
+          step={range.step}
+          value={value}
+          onChange={(e) => onChange(settingKey, Number(e.target.value))}
+          className="w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        Range: {range.min}-{range.max}
+      </p>
+    </div>
   );
 }
 
@@ -253,12 +335,19 @@ export default function SettingsPage() {
 
   // Debounced color picker
   const [debouncedTintColor, setDebouncedTintColor] = useState(settings.tintColor);
+  const [debouncedPngArtworkColor, setDebouncedPngArtworkColor] = useState(settings.pngExportArtworkColor);
   useEffect(() => {
     const timer = setTimeout(() => {
       setSettings((s) => ({ ...s, tintColor: debouncedTintColor }));
     }, 300);
     return () => clearTimeout(timer);
   }, [debouncedTintColor]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSettings((s) => ({ ...s, pngExportArtworkColor: debouncedPngArtworkColor }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [debouncedPngArtworkColor]);
 
   // Fetch settings
   useEffect(() => {
@@ -281,8 +370,28 @@ export default function SettingsPage() {
             backgroundFilename: data.settings.backgroundFilename ?? 'preview-background.jpg',
             watermarkFilename: data.settings.watermarkFilename ?? 'watermark.png',
             cncMode: data.settings.cncMode ?? true,
+            preUpscaleBlur: data.settings.preUpscaleBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
+            preprocessingBlur: data.settings.preprocessingBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
+            blurPasses: data.settings.blurPasses ?? FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
+            edgePaddingPx: data.settings.edgePaddingPx ?? FACTORY_TUNING_EXPORT_DEFAULTS.edgePaddingPx,
+            pathPrecision: data.settings.pathPrecision ?? FACTORY_TUNING_EXPORT_DEFAULTS.pathPrecision,
+            cornerThreshold: data.settings.cornerThreshold ?? FACTORY_TUNING_EXPORT_DEFAULTS.cornerThreshold,
+            filterSpeckle: data.settings.filterSpeckle ?? FACTORY_TUNING_EXPORT_DEFAULTS.filterSpeckle,
+            lengthThreshold: data.settings.lengthThreshold ?? FACTORY_TUNING_EXPORT_DEFAULTS.lengthThreshold,
+            spliceThreshold: data.settings.spliceThreshold ?? FACTORY_TUNING_EXPORT_DEFAULTS.spliceThreshold,
+            colorPrecision: data.settings.colorPrecision ?? FACTORY_TUNING_EXPORT_DEFAULTS.colorPrecision,
+            layerDifference: data.settings.layerDifference ?? FACTORY_TUNING_EXPORT_DEFAULTS.layerDifference,
+            rasterExportWidth: data.settings.rasterExportWidth ?? FACTORY_TUNING_EXPORT_DEFAULTS.rasterExportWidth,
+            rasterExportHeight: data.settings.rasterExportHeight ?? FACTORY_TUNING_EXPORT_DEFAULTS.rasterExportHeight,
+            pngExportArtworkColor: data.settings.pngExportArtworkColor ?? FACTORY_TUNING_EXPORT_DEFAULTS.pngExportArtworkColor,
+            pngWhiteTransparencyThreshold:
+              data.settings.pngWhiteTransparencyThreshold ??
+              FACTORY_TUNING_EXPORT_DEFAULTS.pngWhiteTransparencyThreshold,
           });
           setDebouncedTintColor(data.settings.tintColor ?? '#FFFFFF');
+          setDebouncedPngArtworkColor(
+            data.settings.pngExportArtworkColor ?? FACTORY_TUNING_EXPORT_DEFAULTS.pngExportArtworkColor
+          );
 
           const subs = data.settings.defaultSubstitutions || {};
           setSubstitutions(objectToRows(subs));
@@ -340,7 +449,18 @@ export default function SettingsPage() {
     setSettings(DEFAULT_SETTINGS);
     setSubstitutions([]);
     setDebouncedTintColor('#FFFFFF');
+    setDebouncedPngArtworkColor(FACTORY_TUNING_EXPORT_DEFAULTS.pngExportArtworkColor);
     setToast({ message: 'Reset to defaults (save to apply)', type: 'success' });
+  };
+
+  const updateTuningExportSetting = (key: TuningExportSettingKey, value: number) => {
+    setSettings((s) => ({ ...s, [key]: value }));
+  };
+
+  const restoreTuningExportDefaults = (defaults: TuningExportSettings, label: string) => {
+    setSettings((s) => ({ ...s, ...defaults }));
+    setDebouncedPngArtworkColor(defaults.pngExportArtworkColor);
+    setToast({ message: `${label} restored (save to apply)`, type: 'success' });
   };
 
   // Test paths
@@ -651,6 +771,131 @@ export default function SettingsPage() {
               Recommended: 2000px. Range: 100–10000px.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* SVG Tuning and Export Defaults Card */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              SVG Tuning and Export Defaults
+            </h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Preview/Tune uses these saved defaults now. Export settings are used by approve/save exports.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                restoreTuningExportDefaults(FACTORY_TUNING_EXPORT_DEFAULTS, 'Factory defaults')
+              }
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            >
+              Restore Factory Defaults
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                restoreTuningExportDefaults(
+                  RECOMMENDED_SMOOTH_TUNING_EXPORT_DEFAULTS,
+                  'Recommended smooth defaults'
+                )
+              }
+              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+            >
+              Restore Recommended Smooth Defaults
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <section>
+            <h3 className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-200">
+              Preview/Tune Preprocessing
+            </h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              {PREPROCESSING_CONTROLS.map((control) => (
+                <NumberSettingControl
+                  key={control.key}
+                  label={control.label}
+                  settingKey={control.key}
+                  value={Number(settings[control.key])}
+                  onChange={updateTuningExportSetting}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-200">
+              Preview/Tune VTracer Settings
+            </h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              {VTRACER_CONTROLS.map((control) => (
+                <NumberSettingControl
+                  key={control.key}
+                  label={control.label}
+                  settingKey={control.key}
+                  value={Number(settings[control.key])}
+                  onChange={updateTuningExportSetting}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                Approve/Save Export Defaults
+              </h3>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                These values are saved for approve/save exports; the approve/save workflow itself is unchanged in this update.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {EXPORT_CONTROLS.map((control) => (
+                <NumberSettingControl
+                  key={control.key}
+                  label={control.label}
+                  settingKey={control.key}
+                  value={Number(settings[control.key])}
+                  onChange={updateTuningExportSetting}
+                />
+              ))}
+
+              <div>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    PNG Artwork Color
+                  </label>
+                  <Tooltip content={TUNING_EXPORT_HELP.pngExportArtworkColor}>
+                    <InfoIcon />
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={debouncedPngArtworkColor}
+                    onChange={(e) => setDebouncedPngArtworkColor(e.target.value)}
+                    className="h-9 w-12 cursor-pointer rounded border border-gray-300 dark:border-gray-600"
+                  />
+                  <input
+                    type="text"
+                    value={debouncedPngArtworkColor}
+                    onChange={(e) => setDebouncedPngArtworkColor(e.target.value)}
+                    className="w-28 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm font-mono text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    placeholder="#000000"
+                  />
+                  <div
+                    className="h-9 w-9 rounded border border-gray-300 dark:border-gray-600"
+                    style={{ backgroundColor: debouncedPngArtworkColor }}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 

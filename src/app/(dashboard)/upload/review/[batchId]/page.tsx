@@ -75,6 +75,13 @@ interface TunePreview {
   processingTimeMs: number;
 }
 
+interface SavedOutputFile {
+  type: string;
+  filename: string;
+  path: string;
+  size: number;
+}
+
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
 
@@ -232,6 +239,9 @@ export default function ReviewPage() {
   const [previewStatusMessage, setPreviewStatusMessage] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [savedFiles, setSavedFiles] = useState<SavedOutputFile[]>([]);
+  const [savedOutputFolderPath, setSavedOutputFolderPath] = useState<string | null>(null);
+  const [localEditorMessage, setLocalEditorMessage] = useState<string | null>(null);
   const [svgZoom, setSvgZoom] = useState(1);
   const hasSvgItems = items.some(isSvgItem);
 
@@ -316,6 +326,9 @@ export default function ReviewPage() {
     setPreviewStatusMessage(null);
     setSaveStatus('idle');
     setSaveMessage(null);
+    setSavedFiles([]);
+    setSavedOutputFolderPath(null);
+    setLocalEditorMessage(null);
     setSvgZoom(1);
   };
 
@@ -403,6 +416,9 @@ export default function ReviewPage() {
           : '';
       setSaveStatus('success');
       setSaveMessage(`Saved SVG, PNG, and JPG.${warningText}`);
+      setSavedFiles(Array.isArray(data.files) ? data.files : []);
+      setSavedOutputFolderPath(data.outputFolderPath || null);
+      setLocalEditorMessage(null);
       setItems((prev) =>
         prev.map((item) =>
           item.id === tuneItem.id ? { ...item, status: 'COMPLETED' } : item
@@ -411,6 +427,38 @@ export default function ReviewPage() {
     } catch {
       setSaveStatus('error');
       setSaveMessage('Failed to save approved item');
+    }
+  };
+
+  const openLocalEditor = async (action: 'file' | 'folder' | 'editable', fileType?: string) => {
+    if (!savedOutputFolderPath) {
+      setLocalEditorMessage('No saved output folder is available yet.');
+      return;
+    }
+
+    setLocalEditorMessage('Opening local editor...');
+
+    try {
+      const res = await fetch('/api/local-editor/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          fileType,
+          files: savedFiles,
+          outputFolderPath: savedOutputFolderPath,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setLocalEditorMessage(data.error || 'Failed to open local editor');
+        return;
+      }
+
+      setLocalEditorMessage('Opened local target.');
+    } catch {
+      setLocalEditorMessage('Failed to open local editor');
     }
   };
 
@@ -831,16 +879,60 @@ export default function ReviewPage() {
                 </div>
 
                 {saveMessage && (
-                  <div
-                    className={`mb-4 rounded-md border p-3 text-sm ${
-                      saveStatus === 'success'
-                        ? 'border-green-200 bg-green-50 text-green-800'
-                        : saveStatus === 'error'
-                          ? 'border-red-200 bg-red-50 text-red-700'
-                          : 'border-gray-200 bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    {saveMessage}
+                  <div className="mb-4 space-y-3">
+                    <div
+                      className={`rounded-md border p-3 text-sm ${
+                        saveStatus === 'success'
+                          ? 'border-green-200 bg-green-50 text-green-800'
+                          : saveStatus === 'error'
+                            ? 'border-red-200 bg-red-50 text-red-700'
+                            : 'border-gray-200 bg-gray-50 text-gray-700'
+                      }`}
+                    >
+                      {saveMessage}
+                    </div>
+
+                    {saveStatus === 'success' && savedFiles.length > 0 && (
+                      <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                            Local Only
+                          </span>
+                          <p className="text-xs text-gray-500">
+                            Open approved files on this machine with your configured editor.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {['PNG', 'JPG', 'SVG'].map((fileType) => (
+                            <button
+                              key={fileType}
+                              type="button"
+                              onClick={() => openLocalEditor('file', fileType)}
+                              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Open {fileType}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => openLocalEditor('folder')}
+                            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Open Output Folder
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openLocalEditor('editable')}
+                            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                          >
+                            Open Editable Files
+                          </button>
+                        </div>
+                        {localEditorMessage && (
+                          <p className="mt-2 text-xs text-gray-600">{localEditorMessage}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

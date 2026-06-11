@@ -34,6 +34,11 @@ interface UserSettings extends TuningExportSettings {
   watermarkFilename: string;
   // CNC Mode
   cncMode: boolean;
+  // Local external editor
+  manualEditorPath: string;
+  manualEditorAllowMultipleFiles: boolean;
+  manualEditorFileTypes: string[];
+  manualEditorDefaultAction: string;
 }
 
 interface PathTestResult {
@@ -56,8 +61,15 @@ const DEFAULT_SETTINGS: UserSettings = {
   backgroundFilename: 'preview-background.jpg',
   watermarkFilename: 'watermark.png',
   cncMode: true,
+  manualEditorPath: '',
+  manualEditorAllowMultipleFiles: false,
+  manualEditorFileTypes: ['PNG'],
+  manualEditorDefaultAction: 'Open Preferred File Type',
   ...FACTORY_TUNING_EXPORT_DEFAULTS,
 };
+
+const MANUAL_EDITOR_FILE_TYPES = ['PNG', 'JPG', 'SVG'];
+const MANUAL_EDITOR_ACTIONS = ['Open Preferred File Type', 'Open All Selected File Types'];
 
 // ============================================================================
 // Tooltip Component
@@ -370,6 +382,13 @@ export default function SettingsPage() {
             backgroundFilename: data.settings.backgroundFilename ?? 'preview-background.jpg',
             watermarkFilename: data.settings.watermarkFilename ?? 'watermark.png',
             cncMode: data.settings.cncMode ?? true,
+            manualEditorPath: data.settings.manualEditorPath ?? '',
+            manualEditorAllowMultipleFiles: data.settings.manualEditorAllowMultipleFiles ?? false,
+            manualEditorFileTypes: Array.isArray(data.settings.manualEditorFileTypes)
+              ? data.settings.manualEditorFileTypes
+              : ['PNG'],
+            manualEditorDefaultAction:
+              data.settings.manualEditorDefaultAction ?? 'Open Preferred File Type',
             preUpscaleBlur: data.settings.preUpscaleBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
             preprocessingBlur: data.settings.preprocessingBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
             blurPasses: data.settings.blurPasses ?? FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
@@ -461,6 +480,16 @@ export default function SettingsPage() {
     setSettings((s) => ({ ...s, ...defaults }));
     setDebouncedPngArtworkColor(defaults.pngExportArtworkColor);
     setToast({ message: `${label} restored (save to apply)`, type: 'success' });
+  };
+
+  const toggleManualEditorFileType = (fileType: string) => {
+    setSettings((s) => {
+      const fileTypes = s.manualEditorFileTypes.includes(fileType)
+        ? s.manualEditorFileTypes.filter((item) => item !== fileType)
+        : [...s.manualEditorFileTypes, fileType];
+
+      return { ...s, manualEditorFileTypes: fileTypes };
+    });
   };
 
   // Test paths
@@ -896,6 +925,108 @@ export default function SettingsPage() {
               </div>
             </div>
           </section>
+        </div>
+      </div>
+
+      {/* Local External Editor Card */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Local External Editor
+            </h2>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+              Local Only
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Opens approved output files on this machine. Paint.NET supports multiple files in one launch; some editors only accept one file at a time.
+          </p>
+        </div>
+
+        <div className="space-y-5">
+          <div>
+            <div className="mb-1.5 flex items-center gap-2">
+              <label htmlFor="manual-editor-path" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Editor Path
+              </label>
+              <Tooltip content="Full path to your local editor executable, for example C:\Program Files\paint.net\paintdotnet.exe">
+                <InfoIcon />
+              </Tooltip>
+            </div>
+            <input
+              id="manual-editor-path"
+              type="text"
+              value={settings.manualEditorPath}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, manualEditorPath: e.target.value }))
+              }
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              placeholder={'C:\\Program Files\\paint.net\\paintdotnet.exe'}
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              The path is validated when files are opened.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Allow Multiple Files
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Launch one editor process with all selected files when supported.
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.manualEditorAllowMultipleFiles}
+              onChange={(v) =>
+                setSettings((s) => ({ ...s, manualEditorAllowMultipleFiles: v }))
+              }
+              label="Allow Multiple Files"
+            />
+          </div>
+
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              Editable File Types
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {MANUAL_EDITOR_FILE_TYPES.map((fileType) => (
+                <label
+                  key={fileType}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300"
+                >
+                  <input
+                    type="checkbox"
+                    checked={settings.manualEditorFileTypes.includes(fileType)}
+                    onChange={() => toggleManualEditorFileType(fileType)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {fileType}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Default Action
+            </label>
+            <select
+              value={settings.manualEditorDefaultAction}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, manualEditorDefaultAction: e.target.value }))
+              }
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            >
+              {MANUAL_EDITOR_ACTIONS.map((action) => (
+                <option key={action} value={action}>
+                  {action}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 

@@ -43,6 +43,10 @@ const EXTENDED_KEYS = [
   'rasterExportHeight',
   'pngExportArtworkColor',
   'pngWhiteTransparencyThreshold',
+  'manualEditorPath',
+  'manualEditorAllowMultipleFiles',
+  'manualEditorFileTypes',
+  'manualEditorDefaultAction',
 ] as const;
 
 const TUNING_EXPORT_KEYS = [
@@ -70,6 +74,11 @@ const settingsFallbacks = {
   pngExportArtworkColor: config.processing.pngExportArtworkColor,
   pngWhiteTransparencyThreshold: config.processing.pngWhiteTransparencyThreshold,
 };
+
+function getStringArraySetting(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return fallback;
+  return value.filter((item): item is string => typeof item === 'string');
+}
 
 /**
  * Extract extended settings from the defaultSubstitutions JSON blob.
@@ -181,6 +190,13 @@ export async function GET() {
         backgroundFilename: extended.backgroundFilename ?? 'preview-background.jpg',
         watermarkFilename: extended.watermarkFilename ?? 'watermark.png',
         cncMode: extended.cncMode ?? true,
+        manualEditorPath: typeof extended.manualEditorPath === 'string' ? extended.manualEditorPath : '',
+        manualEditorAllowMultipleFiles: extended.manualEditorAllowMultipleFiles ?? false,
+        manualEditorFileTypes: getStringArraySetting(extended.manualEditorFileTypes, ['PNG']),
+        manualEditorDefaultAction:
+          typeof extended.manualEditorDefaultAction === 'string'
+            ? extended.manualEditorDefaultAction
+            : 'Open Preferred File Type',
         ...getTuningExportSettings(extended),
       },
       isFirstTime: false,
@@ -212,6 +228,10 @@ export async function PUT(req: NextRequest) {
       backgroundFilename,
       watermarkFilename,
       cncMode,
+      manualEditorPath,
+      manualEditorAllowMultipleFiles,
+      manualEditorFileTypes,
+      manualEditorDefaultAction,
       preUpscaleBlur,
       preprocessingBlur,
       blurPasses,
@@ -285,6 +305,29 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    const allowedEditorFileTypes = ['PNG', 'JPG', 'SVG'];
+    if (
+      manualEditorFileTypes !== undefined &&
+      (!Array.isArray(manualEditorFileTypes) ||
+        manualEditorFileTypes.some((fileType) => !allowedEditorFileTypes.includes(fileType)))
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Manual editor file types must be PNG, JPG, or SVG' },
+        { status: 400 }
+      );
+    }
+
+    const allowedEditorActions = ['Open Preferred File Type', 'Open All Selected File Types'];
+    if (
+      manualEditorDefaultAction !== undefined &&
+      !allowedEditorActions.includes(manualEditorDefaultAction)
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Manual editor default action is invalid' },
+        { status: 400 }
+      );
+    }
+
     for (const key of TUNING_EXPORT_KEYS) {
       const validationError = validateTuningExportSetting(key, tuningExportBody[key]);
       if (validationError) {
@@ -293,7 +336,7 @@ export async function PUT(req: NextRequest) {
     }
 
     // Merge user substitutions with extended settings into a single JSON blob
-    const mergedSubstitutions: Record<string, string | number | boolean> = {
+    const mergedSubstitutions: Record<string, string | number | boolean | string[]> = {
       ...(defaultSubstitutions || {}),
     };
 
@@ -305,6 +348,14 @@ export async function PUT(req: NextRequest) {
     if (backgroundFilename !== undefined) mergedSubstitutions.backgroundFilename = backgroundFilename;
     if (watermarkFilename !== undefined) mergedSubstitutions.watermarkFilename = watermarkFilename;
     if (cncMode !== undefined) mergedSubstitutions.cncMode = cncMode;
+    if (manualEditorPath !== undefined) mergedSubstitutions.manualEditorPath = String(manualEditorPath);
+    if (manualEditorAllowMultipleFiles !== undefined) {
+      mergedSubstitutions.manualEditorAllowMultipleFiles = Boolean(manualEditorAllowMultipleFiles);
+    }
+    if (manualEditorFileTypes !== undefined) mergedSubstitutions.manualEditorFileTypes = manualEditorFileTypes;
+    if (manualEditorDefaultAction !== undefined) {
+      mergedSubstitutions.manualEditorDefaultAction = String(manualEditorDefaultAction);
+    }
     for (const key of TUNING_EXPORT_KEYS) {
       if (tuningExportBody[key] !== undefined) {
         mergedSubstitutions[key] =

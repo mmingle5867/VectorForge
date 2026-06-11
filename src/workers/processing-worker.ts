@@ -47,10 +47,21 @@ const processingWorker = new Worker<ProcessingJobData>(
       await updateItemStatus(data.batchItemId, 'UPSCALING', 10, 'Upscaling image...');
 
       // Create output directory for this item
+      const existingItem = await prisma.batchItem.findUnique({
+        where: { id: data.batchItemId },
+        select: { outputFolderPath: true },
+      });
       const itemOutputDir = await createOutputDirectory(
         data.outputBasePath,
-        data.baseName
+        data.baseName,
+        existingItem?.outputFolderPath
       );
+      if (existingItem?.outputFolderPath !== itemOutputDir) {
+        await prisma.batchItem.update({
+          where: { id: data.batchItemId },
+          data: { outputFolderPath: itemOutputDir },
+        });
+      }
 
       // Smart upscale
       const upscaleResult = await upscaleImage(data.uploadPath, itemOutputDir, {
@@ -164,7 +175,7 @@ const processingWorker = new Worker<ProcessingJobData>(
 
       // Apply base assets (copy fallback files if configured)
       if (data.useBaseAssets) {
-        await applyBaseAssets(data.baseAssetsPath, itemOutputDir);
+        await applyBaseAssets(itemOutputDir, data.baseAssetsPath);
       }
 
       await job.updateProgress(75);
@@ -345,8 +356,14 @@ async function updateBatchProgress(batchId: string) {
 
 async function createOutputDirectory(
   basePath: string,
-  baseName: string
+  baseName: string,
+  existingPath?: string | null
 ): Promise<string> {
+  if (existingPath) {
+    await mkdir(existingPath, { recursive: true });
+    return existingPath;
+  }
+
   const folderName = await getIncrementalFolderName(basePath, baseName);
   const outputDir = path.join(basePath, folderName);
   await mkdir(outputDir, { recursive: true });

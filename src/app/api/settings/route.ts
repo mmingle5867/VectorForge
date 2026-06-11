@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import path from 'path';
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
@@ -158,6 +159,10 @@ function validateTuningExportSetting(key: TuningExportSettingKey, value: unknown
   return null;
 }
 
+function normalizeConfiguredPath(value: string) {
+  return path.resolve(process.cwd(), value).toLowerCase();
+}
+
 export async function GET() {
   try {
     const user = await requireAuth();
@@ -277,6 +282,15 @@ export async function PUT(req: NextRequest) {
     if (outputPath && (!outputPath.startsWith('./') || outputPath.includes('..'))) {
       return NextResponse.json(
         { success: false, error: 'Output path must be relative (start with ./) and cannot contain ..' },
+        { status: 400 }
+      );
+    }
+
+    const nextBaseAssetsPath = baseAssetsPath ?? user.settings?.baseAssetsPath ?? './base-assets';
+    const nextOutputPath = outputPath ?? user.settings?.outputPath ?? './output';
+    if (normalizeConfiguredPath(nextBaseAssetsPath) === normalizeConfiguredPath(nextOutputPath)) {
+      return NextResponse.json(
+        { success: false, error: 'Output path and base assets path must be different directories' },
         { status: 400 }
       );
     }

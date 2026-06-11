@@ -77,7 +77,7 @@ export const TUNING_EXPORT_HELP: Record<TuningExportSettingKey, string> = {
   blurPasses: 'Preview/Tune: repeats the post-upscale blur before edge padding. Use 1 normally.',
   edgePaddingPx: 'Preview/Tune default: white padding added before tracing so artwork does not touch image edges.',
   pathPrecision: 'Preview/Tune: decimal precision for SVG path coordinates. VTracer accepts 0-8.',
-  cornerThreshold: 'Preview/Tune: higher values detect fewer hard corners and can smooth curves.',
+  cornerThreshold: 'Preview/Tune: higher values preserve more hard corners; lower values smooth and round more corners.',
   filterSpeckle: 'Preview/Tune: removes small noisy shapes. Higher is cleaner but may remove details.',
   lengthThreshold: 'Preview/Tune: minimum path segment length. Higher simplifies jagged detail.',
   spliceThreshold: 'Preview/Tune: controls path merging. Higher can create fewer paths but may lose detail.',
@@ -92,4 +92,3 @@ export const TUNING_EXPORT_HELP: Record<TuningExportSettingKey, string> = {
 export function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
 }
-

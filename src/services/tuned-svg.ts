@@ -7,6 +7,7 @@ import { normalizeSvgRoot } from '@/lib/svg-normalize';
 const TRACE_BORDER_PX = 2;
 
 export const previewTuneSchema = z.object({
+  colorMode: z.enum(['color', 'binary']).default('binary'),
   preUpscaleBlur: z.number().min(0).max(5).default(0),
   blur: z.number().min(0).max(20),
   blurPasses: z.number().int().min(1).max(3).default(1),
@@ -23,6 +24,7 @@ export type PreviewTuneSettings = z.infer<typeof previewTuneSchema>;
 
 export const FIELD_RANGES: Record<string, string> = {
   preUpscaleBlur: '0-5',
+  colorMode: 'color or binary',
   blur: '0-20',
   blurPasses: '1-3',
   pathPrecision: '0-8',
@@ -142,7 +144,8 @@ export async function generateTunedSvg(input: TunedSvgInput) {
   }
 
   const config = new vtracer.TracerConfig();
-  config.setColorMode(input.cncMode ? vtracer.ColorMode.Binary : vtracer.ColorMode.Color);
+  const colorMode = input.settings.colorMode ?? (input.cncMode ? 'binary' : 'color');
+  config.setColorMode(colorMode === 'binary' ? vtracer.ColorMode.Binary : vtracer.ColorMode.Color);
   config.setHierarchical(vtracer.Hierarchical.Stacked);
   config.setFilterSpeckle(input.settings.filterSpeckle);
   config.setColorPrecision(input.settings.colorPrecision);

@@ -36,6 +36,7 @@ interface BatchInfo {
 }
 
 interface TuneSettings {
+  colorMode: 'color' | 'binary';
   preUpscaleBlur: number;
   blur: number;
   blurPasses: number;
@@ -90,6 +91,7 @@ function isSvgItem(item: BatchItem) {
 }
 
 const DEFAULT_TUNE_SETTINGS: TuneSettings = {
+  colorMode: 'binary',
   preUpscaleBlur: FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
   blur: FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
   blurPasses: FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
@@ -103,9 +105,10 @@ const DEFAULT_TUNE_SETTINGS: TuneSettings = {
 };
 
 function getTuneSettingsFromSiteSettings(
-  settings?: Partial<TuningExportSettings>
+  settings?: Partial<TuningExportSettings> & { cncMode?: boolean; colorMode?: 'color' | 'binary' }
 ): TuneSettings {
   return {
+    colorMode: settings?.colorMode ?? (settings?.cncMode === false ? 'color' : 'binary'),
     preUpscaleBlur: settings?.preUpscaleBlur ?? DEFAULT_TUNE_SETTINGS.preUpscaleBlur,
     blur: settings?.preprocessingBlur ?? DEFAULT_TUNE_SETTINGS.blur,
     blurPasses: settings?.blurPasses ?? DEFAULT_TUNE_SETTINGS.blurPasses,
@@ -120,7 +123,7 @@ function getTuneSettingsFromSiteSettings(
 }
 
 const TUNE_CONTROLS: Array<{
-  key: keyof TuneSettings;
+  key: Exclude<keyof TuneSettings, 'colorMode'>;
   label: string;
   min: number;
   max: number;
@@ -165,7 +168,7 @@ const TUNE_CONTROLS: Array<{
     min: 30,
     max: 90,
     step: 5,
-    help: 'Higher detects fewer hard corners and rounds more curves.',
+    help: 'Higher values preserve/detect more hard corners and sharp angles. Lower values smooth or round corners and treat more transitions as curves.',
   },
   {
     key: 'filterSpeckle',
@@ -332,8 +335,12 @@ export default function ReviewPage() {
     setSvgZoom(1);
   };
 
-  const updateTuneSetting = (key: keyof TuneSettings, value: number) => {
+  const updateTuneSetting = (key: Exclude<keyof TuneSettings, 'colorMode'>, value: number) => {
     setTuneSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateTuneColorMode = (colorMode: 'color' | 'binary') => {
+    setTuneSettings((prev) => ({ ...prev, colorMode }));
   };
 
   const previewSvgDataUrl = tunePreview
@@ -773,6 +780,20 @@ export default function ReviewPage() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-x-5 gap-y-4 overflow-y-auto p-4 md:grid-cols-2">
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="text-xs font-medium text-gray-700">
+                        Color Mode
+                      </label>
+                      <select
+                        value={tuneSettings.colorMode}
+                        onChange={(e) => updateTuneColorMode(e.target.value as 'color' | 'binary')}
+                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="binary">binary</option>
+                        <option value="color">color</option>
+                      </select>
+                    </div>
+
                     {TUNE_CONTROLS.map((control) => (
                       <div key={control.key} className="space-y-1.5">
                         <div className="flex items-start justify-between gap-3">

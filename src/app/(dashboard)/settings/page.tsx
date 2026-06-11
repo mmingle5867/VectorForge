@@ -544,11 +544,20 @@ export default function SettingsPage() {
       )}
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
-        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-          Configure default processing options, marketplace preview, and folder paths.
-        </p>
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            Configure default processing options, marketplace preview, and folder paths.
+          </p>
+        </div>
+        <button
+          onClick={saveSettings}
+          disabled={saving}
+          className="rounded-lg bg-blue-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          {saving ? 'Saving...' : 'Save Settings'}
+        </button>
       </div>
 
       {/* CNC / Vinyl / Laser Mode Card */}

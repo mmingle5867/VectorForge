@@ -91,6 +91,12 @@ export async function POST(
     const outputBasePath = user.settings?.outputPath || config.paths.output;
     const imageBuffer = await readFile(item.uploadPath);
     const outputDir = await ensureOutputDirectory(outputBasePath, item.baseName, item.outputFolderPath);
+    if (item.outputFolderPath !== outputDir) {
+      await prisma.batchItem.update({
+        where: { id: item.id },
+        data: { outputFolderPath: outputDir },
+      });
+    }
     const svgFilename = `${item.baseName}.svg`;
     const pngFilename = `${item.baseName}.png`;
     const jpgFilename = `${item.baseName}.jpg`;

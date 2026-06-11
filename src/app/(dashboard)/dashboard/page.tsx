@@ -4,21 +4,36 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 
+interface BatchSampleItem {
+  originalFilename: string;
+  baseName: string;
+  status: string;
+  outputFolderPath: string | null;
+}
+
 interface Batch {
   id: string;
   name: string | null;
   status: string;
+  itemCount: number;
   totalItems: number;
   completedItems: number;
   failedItems: number;
   createdAt: string;
+  updatedAt: string;
   completedAt: string | null;
+  items: BatchSampleItem[];
+  firstOutputFolderPath: string | null;
 }
+
+const STATUS_FILTERS = ['All', 'Pending', 'Processing', 'Completed', 'Failed', 'Cancelled'] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 export default function DashboardPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
 
   useEffect(() => {
     fetchBatches();
@@ -59,14 +74,24 @@ export default function DashboardPage() {
   }
 
   const getStatusConfig = (status: string) => {
-    const configs: Record<string, { bg: string; text: string; icon: string }> = {
-      PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300', icon: '⏳' },
-      PROCESSING: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300', icon: '⚙️' },
-      COMPLETED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', icon: '✅' },
-      FAILED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', icon: '❌' },
-      CANCELLED: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-800 dark:text-gray-300', icon: '🚫' },
+    const configs: Record<string, { bg: string; text: string }> = {
+      PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300' },
+      PROCESSING: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300' },
+      COMPLETED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300' },
+      FAILED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300' },
+      CANCELLED: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-800 dark:text-gray-300' },
     };
     return configs[status] || configs.PENDING;
+  };
+
+  const filteredBatches = statusFilter === 'All'
+    ? batches
+    : batches.filter((batch) => batch.status === statusFilter.toUpperCase());
+
+  const getBatchDisplayName = (batch: Batch) => {
+    if (batch.name?.trim()) return batch.name;
+    const firstItem = batch.items[0];
+    return firstItem?.baseName || firstItem?.originalFilename || `Batch ${batch.id.slice(0, 8)}`;
   };
 
   if (loading) {
@@ -82,7 +107,6 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
@@ -98,7 +122,6 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Stats Summary */}
       {batches.length > 0 && (
         <div className="mb-6 grid grid-cols-4 gap-4">
           <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -120,13 +143,34 @@ export default function DashboardPage() {
           <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Items</p>
             <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-white">
-              {batches.reduce((sum, b) => sum + b.totalItems, 0)}
+              {batches.reduce((sum, b) => sum + (b.itemCount ?? b.totalItems), 0)}
             </p>
           </div>
         </div>
       )}
 
-      {/* Batches List */}
+      {batches.length > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">Batch Status</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Showing {filteredBatches.length} of {batches.length} batches
+            </p>
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+          >
+            {STATUS_FILTERS.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {batches.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center dark:border-gray-600">
           <svg className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,41 +187,67 @@ export default function DashboardPage() {
             Upload Images
           </Link>
         </div>
+      ) : filteredBatches.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 p-10 text-center dark:border-gray-600">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">No matching batches</h3>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Change the status filter to view other batches.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {batches.map((batch) => {
+          {filteredBatches.map((batch) => {
             const statusConfig = getStatusConfig(batch.status);
-            const progressPercent = batch.totalItems > 0
-              ? Math.round((batch.completedItems / batch.totalItems) * 100)
+            const itemCount = batch.itemCount ?? batch.totalItems;
+            const progressPercent = itemCount > 0
+              ? Math.round((batch.completedItems / itemCount) * 100)
               : 0;
             const isActive = batch.status === 'PROCESSING';
+            const outputFolderPath = batch.firstOutputFolderPath || batch.items.find((item) => item.outputFolderPath)?.outputFolderPath;
 
             return (
               <div
                 key={batch.id}
                 className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800"
               >
-                <div className="flex items-center justify-between">
-                  {/* Left: Batch info */}
-                  <div className="flex items-center gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                          {batch.name || `Batch ${batch.id.slice(0, 8)}`}
-                        </h3>
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
-                          {statusConfig.icon} {batch.status}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                        {batch.totalItems} items • Created {formatDate(batch.createdAt)}
-                        {batch.completedAt && ` • Finished ${formatDate(batch.completedAt)}`}
-                      </p>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                        {getBatchDisplayName(batch)}
+                      </h3>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
+                        {batch.status}
+                      </span>
                     </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Created {formatDate(batch.createdAt)}
+                      {batch.completedAt && ` - Finished ${formatDate(batch.completedAt)}`}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+                      {itemCount} items / {batch.completedItems} completed / {batch.failedItems} failed
+                    </p>
+                    {batch.items.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {batch.items.map((item) => (
+                          <span
+                            key={`${batch.id}-${item.originalFilename}-${item.baseName}`}
+                            className="max-w-full truncate rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                            title={`${item.originalFilename} (${item.status})`}
+                          >
+                            {item.baseName || item.originalFilename}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {outputFolderPath && (
+                      <p className="mt-3 truncate rounded-md bg-gray-50 px-2 py-1 text-xs text-gray-600 dark:bg-gray-900 dark:text-gray-300" title={outputFolderPath}>
+                        Output: {outputFolderPath}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Right: Actions */}
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
                     {batch.status === 'PENDING' && (
                       <Link
                         href={`/upload/review/${batch.id}`}
@@ -208,7 +278,7 @@ export default function DashboardPage() {
                         href={`/output/${batch.id}`}
                         className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400 transition-colors"
                       >
-                        📁 View Output
+                        View Output
                       </Link>
                     )}
                     {batch.status === 'FAILED' && (
@@ -222,12 +292,11 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* Progress Bar */}
                 {(isActive || batch.status === 'COMPLETED') && (
                   <div className="mt-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {batch.completedItems} of {batch.totalItems} completed
+                        {batch.completedItems} of {itemCount} completed
                         {batch.failedItems > 0 && ` (${batch.failedItems} failed)`}
                       </span>
                       <span className="text-xs font-medium text-gray-700 dark:text-gray-300">

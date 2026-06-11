@@ -8,8 +8,10 @@ import { logger } from '@/lib/logger';
 import {
   generateTunedSvg,
   getPreviewValidationError,
+  getSvgDiagnostics,
   previewTuneSchema,
 } from '@/services/tuned-svg';
+import { isSvgMimeOrPath, normalizeImportedSvg } from '@/lib/svg-normalize';
 
 export async function POST(
   req: NextRequest,
@@ -55,6 +57,34 @@ export async function POST(
     const cncMode = (userSettings.cncMode as boolean) ?? true;
     const startTime = Date.now();
     const imageBuffer = await readFile(item.uploadPath);
+
+    if (isSvgMimeOrPath(item.mimeType, item.uploadPath)) {
+      const normalized = normalizeImportedSvg(imageBuffer.toString('utf-8'));
+      const debugDir = path.join(process.cwd(), 'logs');
+      const debugSvgPath = path.join(debugDir, `debug-preview-${item.id}.svg`);
+      await mkdir(debugDir, { recursive: true });
+      await writeFile(debugSvgPath, normalized.svg, 'utf-8');
+
+      return NextResponse.json({
+        success: true,
+        preview: {
+          itemId: item.id,
+          filename: item.originalFilename,
+          originalWidth: normalized.width,
+          originalHeight: normalized.height,
+          traceWidth: normalized.width,
+          traceHeight: normalized.height,
+          upscaleApplied: false,
+          upscaleFactor: 1,
+          svgSize: Buffer.byteLength(normalized.svg, 'utf-8'),
+          svgBase64: Buffer.from(normalized.svg).toString('base64'),
+          debugSvgPath,
+          diagnostics: getSvgDiagnostics(normalized.svg),
+          processingTimeMs: Date.now() - startTime,
+        },
+      });
+    }
+
     const metadata = await sharp(imageBuffer).metadata();
     const originalWidth = metadata.width || 0;
     const originalHeight = metadata.height || 0;

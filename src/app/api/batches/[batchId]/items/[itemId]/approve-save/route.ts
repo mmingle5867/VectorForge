@@ -7,7 +7,12 @@ import config from '@/lib/config';
 import prisma from '@/lib/prisma';
 import { getIncrementalFolderName } from '@/lib/server-utils';
 import { logger } from '@/lib/logger';
-import { createFixedCanvasRaster } from '@/services/raster-export';
+import { createFixedCanvasRaster, createFixedCanvasSvgRaster } from '@/services/raster-export';
+import {
+  isSvgMimeOrPath,
+  normalizeImportedSvg,
+  prepareStrokeOnlySvgForRaster,
+} from '@/lib/svg-normalize';
 import {
   generateTunedSvg,
   getPreviewValidationError,
@@ -85,6 +90,71 @@ export async function POST(
         : '#000000';
     const outputBasePath = user.settings?.outputPath || config.paths.output;
     const imageBuffer = await readFile(item.uploadPath);
+    const outputDir = await ensureOutputDirectory(outputBasePath, item.baseName, item.outputFolderPath);
+    const svgFilename = `${item.baseName}.svg`;
+    const pngFilename = `${item.baseName}.png`;
+    const jpgFilename = `${item.baseName}.jpg`;
+    const svgPath = path.join(outputDir, svgFilename);
+    const pngPath = path.join(outputDir, pngFilename);
+    const jpgPath = path.join(outputDir, jpgFilename);
+
+    if (isSvgMimeOrPath(item.mimeType, item.uploadPath)) {
+      const originalSvg = imageBuffer.toString('utf-8');
+      const normalized = normalizeImportedSvg(originalSvg);
+      const pngSvg = normalized.isStrokeOnly
+        ? prepareStrokeOnlySvgForRaster(normalized.svg, {
+            strokeColor: pngExportArtworkColor,
+            strokeWidth: config.processing.svgRasterStrokeWidth,
+          })
+        : normalized.svg;
+      const jpgSvg = normalized.isStrokeOnly
+        ? prepareStrokeOnlySvgForRaster(normalized.svg, {
+            strokeColor: '#000000',
+            strokeWidth: config.processing.svgRasterStrokeWidth,
+          })
+        : normalized.svg;
+
+      await writeFile(svgPath, originalSvg, 'utf-8');
+      await createFixedCanvasSvgRaster(Buffer.from(pngSvg, 'utf-8'), pngPath, {
+        width: config.processing.rasterExportWidth,
+        height: config.processing.rasterExportHeight,
+        format: 'png',
+        artworkColor: pngExportArtworkColor,
+        preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
+      });
+      await createFixedCanvasSvgRaster(Buffer.from(jpgSvg, 'utf-8'), jpgPath, {
+        width: config.processing.rasterExportWidth,
+        height: config.processing.rasterExportHeight,
+        format: 'jpg',
+        quality: 90,
+        preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
+      });
+
+      await prisma.batchItem.update({
+        where: { id: item.id },
+        data: {
+          svgPath,
+          outputFolderPath: outputDir,
+          status: 'COMPLETED',
+          progress: 100,
+          currentStep: null,
+          completedAt: new Date(),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Approved SVG item saved successfully',
+        outputFolderPath: outputDir,
+        files: [
+          { type: 'svg', filename: svgFilename, path: svgPath, size: await fileSize(svgPath) },
+          { type: 'png', filename: pngFilename, path: pngPath, size: await fileSize(pngPath) },
+          { type: 'jpg', filename: jpgFilename, path: jpgPath, size: await fileSize(jpgPath) },
+        ],
+        warnings: ['DXF export is not yet implemented for approved preview saves.'],
+      });
+    }
+
     const metadata = await sharp(imageBuffer).metadata();
     const originalWidth = metadata.width || 0;
     const originalHeight = metadata.height || 0;
@@ -96,7 +166,6 @@ export async function POST(
       );
     }
 
-    const outputDir = await ensureOutputDirectory(outputBasePath, item.baseName, item.outputFolderPath);
     const result = await generateTunedSvg({
       imageBuffer,
       originalWidth,
@@ -106,13 +175,6 @@ export async function POST(
       cncMode,
       settings: parsed.data,
     });
-
-    const svgFilename = `${item.baseName}.svg`;
-    const pngFilename = `${item.baseName}.png`;
-    const jpgFilename = `${item.baseName}.jpg`;
-    const svgPath = path.join(outputDir, svgFilename);
-    const pngPath = path.join(outputDir, pngFilename);
-    const jpgPath = path.join(outputDir, jpgFilename);
 
     await writeFile(svgPath, result.svg, 'utf-8');
     await createFixedCanvasRaster(imageBuffer, pngPath, {

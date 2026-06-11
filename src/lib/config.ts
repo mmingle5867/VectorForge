@@ -17,10 +17,11 @@ export const config = {
     defaultUpscaleFactor: parseInt(process.env.DEFAULT_UPSCALE_FACTOR || '2', 10),
     smartUpscaleThreshold: parseInt(process.env.SMART_UPSCALE_THRESHOLD || '2000', 10),
     maxBatchSize: parseInt(process.env.MAX_BATCH_SIZE || '50', 10),
-    supportedFormats: ['image/jpeg', 'image/png', 'image/webp', 'image/tiff'],
+    supportedFormats: ['image/jpeg', 'image/png', 'image/webp', 'image/tiff', 'image/svg+xml'],
     maxFileSize: 50 * 1024 * 1024, // 50MB per file
     rasterExportWidth: parseInt(process.env.RASTER_EXPORT_WIDTH || '2000', 10),
     rasterExportHeight: parseInt(process.env.RASTER_EXPORT_HEIGHT || '2000', 10),
+    svgRasterStrokeWidth: parseInt(process.env.SVG_RASTER_STROKE_WIDTH || '4', 10),
     pngExportArtworkColor: process.env.PNG_EXPORT_ARTWORK_COLOR || '#000000',
     pngWhiteTransparencyThreshold: parseInt(process.env.PNG_WHITE_TRANSPARENCY_THRESHOLD || '245', 10),
   },

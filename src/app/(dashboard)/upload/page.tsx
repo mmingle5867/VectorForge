@@ -27,7 +27,7 @@ export default function UploadPage() {
     setError(null);
 
     if (rejectedFiles.length > 0) {
-      setError('Some files were rejected. Only JPG, PNG, WebP, and TIFF are supported.');
+      setError('Some files were rejected. Only JPG, PNG, WebP, TIFF, and SVG are supported.');
     }
 
     if (acceptedFiles.length + selectedFiles.length > 50) {
@@ -45,6 +45,7 @@ export default function UploadPage() {
       'image/png': ['.png'],
       'image/webp': ['.webp'],
       'image/tiff': ['.tiff', '.tif'],
+      'image/svg+xml': ['.svg'],
     },
     maxSize: 50 * 1024 * 1024, // 50MB
     maxFiles: 50,
@@ -124,7 +125,7 @@ export default function UploadPage() {
           {isDragActive ? 'Drop files here...' : 'Drag & drop images here'}
         </p>
         <p className="mt-2 text-sm text-gray-500">
-          or click to browse • JPG, PNG, WebP, TIFF • Max 50MB each • Up to 50 files
+          or click to browse • JPG, PNG, WebP, TIFF, SVG • Max 50MB each • Up to 50 files
         </p>
       </div>
 

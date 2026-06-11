@@ -15,6 +15,11 @@ import config from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { extractBaseName } from '@/lib/utils';
 
+function isSupportedUpload(file: File) {
+  const supportedFormats = config.processing.supportedFormats as readonly string[];
+  return supportedFormats.includes(file.type) || file.name.toLowerCase().endsWith('.svg');
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth();
@@ -37,14 +42,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate file types
-    const invalidFiles = files.filter(
-      (f) => !(config.processing.supportedFormats as readonly string[]).includes(f.type)
-    );
+    const invalidFiles = files.filter((f) => !isSupportedUpload(f));
     if (invalidFiles.length > 0) {
       return NextResponse.json(
         {
           success: false,
-          error: `Unsupported file types: ${invalidFiles.map((f) => f.name).join(', ')}. Use JPG, PNG, WebP, or TIFF.`,
+          error: `Unsupported file types: ${invalidFiles.map((f) => f.name).join(', ')}. Use JPG, PNG, WebP, TIFF, or SVG.`,
         },
         { status: 400 }
       );

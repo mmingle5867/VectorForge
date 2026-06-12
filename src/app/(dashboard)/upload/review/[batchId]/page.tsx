@@ -495,6 +495,14 @@ export default function ReviewPage() {
     });
   };
 
+  const wheelZoomPreview = (deltaY: number) => {
+    setSvgZoom((prev) => {
+      const normalizedSteps = Math.max(-4, Math.min(4, deltaY / 100));
+      const scale = 1 - normalizedSteps * 0.05;
+      return Math.min(6, Math.max(0.25, Number((prev * scale).toFixed(3))));
+    });
+  };
+
   const resetPreviewZoom = () => {
     setSvgZoom(1);
     setCanvasPan({ x: 0, y: 0 });
@@ -510,8 +518,7 @@ export default function ReviewPage() {
     if (!tunePreview && previewViewMode === 'processed') return;
 
     event.preventDefault();
-    const nextDirection = event.deltaY > 0 ? 'out' : 'in';
-    zoomPreview(nextDirection);
+    wheelZoomPreview(event.deltaY);
   };
 
   const beginCanvasPan = (event: MouseEvent<HTMLDivElement>) => {
@@ -600,7 +607,6 @@ export default function ReviewPage() {
       setTunePreview(data.preview);
       setPreviewStatus('success');
       setPreviewStatusMessage('Preview generated successfully');
-      setSvgZoom(1);
     } catch {
       const message = 'Failed to generate preview';
       setPreviewError(message);

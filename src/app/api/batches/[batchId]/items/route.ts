@@ -4,10 +4,26 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { access } from 'fs/promises';
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { updateBatchItemSchema } from '@/lib/validations';
 import { logger } from '@/lib/logger';
+import {
+  findExistingFilePath,
+  findExistingNamedFilePath,
+  getPackageBaseName,
+} from '@/lib/output-naming';
+
+async function fileExists(filePath: string | null | undefined) {
+  if (!filePath) return false;
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // GET - List all items in a batch
 export async function GET(
@@ -40,19 +56,41 @@ export async function GET(
         upscaleFactor: batch.upscaleFactor,
         smartUpscaleThreshold: batch.smartUpscaleThreshold,
       },
-      items: batch.items.map((item) => ({
-        id: item.id,
-        originalFilename: item.originalFilename,
-        baseName: item.baseName,
-        sequenceNumber: item.sequenceNumber,
-        mimeType: item.mimeType,
-        originalWidth: item.originalWidth,
-        originalHeight: item.originalHeight,
-        originalSize: item.originalSize,
-        upscaleFactor: item.upscaleFactor,
-        status: item.status,
-        previewUrl: `/api/preview/${item.id}`,
-      })),
+      items: await Promise.all(
+        batch.items.map(async (item) => {
+          const packageBaseName = item.outputFolderPath
+            ? getPackageBaseName(item.outputFolderPath)
+            : item.baseName;
+          const candidateBaseNames = [packageBaseName, item.baseName];
+          const svgPath = await findExistingFilePath([
+            item.svgPath,
+            await findExistingNamedFilePath(item.outputFolderPath, candidateBaseNames, '.svg'),
+          ]);
+          const pngPath = await findExistingNamedFilePath(item.outputFolderPath, candidateBaseNames, '.png');
+          const jpgPath = await findExistingNamedFilePath(item.outputFolderPath, candidateBaseNames, '.jpg');
+
+          return {
+            id: item.id,
+            originalFilename: item.originalFilename,
+            baseName: item.baseName,
+            sequenceNumber: item.sequenceNumber,
+            mimeType: item.mimeType,
+            originalWidth: item.originalWidth,
+            originalHeight: item.originalHeight,
+            originalSize: item.originalSize,
+            upscaleFactor: item.upscaleFactor,
+            status: item.status,
+            outputFolderPath: item.outputFolderPath,
+            zipPath: item.zipPath,
+            files: {
+              svg: { exists: await fileExists(svgPath), path: svgPath },
+              png: { exists: await fileExists(pngPath), path: pngPath },
+              jpg: { exists: await fileExists(jpgPath), path: jpgPath },
+            },
+            previewUrl: `/api/preview/${item.id}`,
+          };
+        })
+      ),
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {

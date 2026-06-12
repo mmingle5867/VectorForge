@@ -38,7 +38,7 @@ interface Batch {
   firstOutputFolderPath: string | null;
 }
 
-const STATUS_FILTERS = ['All', 'Pending', 'Processing', 'Completed', 'Failed', 'Cancelled'] as const;
+const STATUS_FILTERS = ['All', 'Pending', 'Processing', 'Needs Manual Edit', 'Completed', 'Failed', 'Cancelled'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
 
 const FILE_LABELS: Record<FileKind, string> = {
@@ -161,6 +161,32 @@ export default function DashboardPage() {
     }
   }
 
+  async function markItemComplete(batchId: string, itemId: string) {
+    if (!confirm('Mark this item complete and refresh its ZIP package?')) {
+      return;
+    }
+
+    setBusyAction(`complete-item:${itemId}`);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/items/${itemId}/manual-edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'complete' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotice(`Item marked complete. Batch status: ${data.batchStatus || 'COMPLETED'}.`);
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to mark item complete.');
+      }
+    } catch {
+      setNotice('Failed to mark item complete.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   async function deleteBatch(batchId: string, deleteFiles: boolean) {
     const message = deleteFiles
       ? 'Delete this batch database record, its batch upload folder, and all item output folders? This cannot be undone.'
@@ -259,6 +285,7 @@ export default function DashboardPage() {
     const configs: Record<string, { bg: string; text: string }> = {
       PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300' },
       PROCESSING: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300' },
+      NEEDS_MANUAL_EDIT: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-800 dark:text-amber-300' },
       COMPLETED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300' },
       FAILED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300' },
       CANCELLED: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-800 dark:text-gray-300' },
@@ -268,7 +295,7 @@ export default function DashboardPage() {
 
   const filteredBatches = statusFilter === 'All'
     ? batches
-    : batches.filter((batch) => batch.status === statusFilter.toUpperCase());
+    : batches.filter((batch) => batch.status === statusFilter.toUpperCase().replaceAll(' ', '_'));
 
   const getBatchDisplayName = (batch: Batch) => {
     if (batch.name?.trim()) return batch.name;
@@ -384,6 +411,7 @@ export default function DashboardPage() {
             const progressPercent = itemCount > 0 ? Math.round((batch.completedItems / itemCount) * 100) : 0;
             const isActive = batch.status === 'PROCESSING';
             const outputFolderPath = batch.firstOutputFolderPath || batch.items.find((item) => item.outputFolderPath)?.outputFolderPath;
+            const firstManualEditItem = batch.items.find((item) => item.status === 'NEEDS_MANUAL_EDIT');
             const canDelete = batch.status !== 'PROCESSING';
             const isExpanded = expandedBatches.has(batch.id);
 
@@ -474,6 +502,14 @@ export default function DashboardPage() {
                           {cancelling === batch.id ? 'Cancelling...' : 'Cancel'}
                         </button>
                       </>
+                    )}
+                    {batch.status === 'NEEDS_MANUAL_EDIT' && (
+                      <Link
+                        href={`/upload/review/${batch.id}${firstManualEditItem ? `?itemId=${firstManualEditItem.id}` : ''}`}
+                        className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400 transition-colors"
+                      >
+                        Continue Editing
+                      </Link>
                     )}
                     {batch.status === 'COMPLETED' && (
                       <Link
@@ -610,6 +646,14 @@ export default function DashboardPage() {
                                     Open Editable Files
                                   </button>
                                 )}
+                                {item.status === 'NEEDS_MANUAL_EDIT' && (
+                                  <Link
+                                    href={`/upload/review/${batch.id}?itemId=${item.id}`}
+                                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400 transition-colors"
+                                  >
+                                    Continue Editing
+                                  </Link>
+                                )}
                                 {item.status === 'FAILED' && (
                                   <button
                                     onClick={() => retryItem(batch.id, item.id)}
@@ -617,6 +661,15 @@ export default function DashboardPage() {
                                     className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-400 transition-colors"
                                   >
                                     Retry Item
+                                  </button>
+                                )}
+                                {item.status === 'NEEDS_MANUAL_EDIT' && (
+                                  <button
+                                    onClick={() => markItemComplete(batch.id, item.id)}
+                                    disabled={busyAction === `complete-item:${item.id}`}
+                                    className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400 transition-colors"
+                                  >
+                                    Mark Complete
                                   </button>
                                 )}
                                 {itemCanDelete && (

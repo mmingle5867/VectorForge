@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { formatBytes } from '@/lib/utils';
 import SubstitutionTable, {
   type SubstitutionRow,
@@ -24,6 +24,9 @@ interface BatchItem {
   originalSize: number | null;
   upscaleFactor: number;
   status: string;
+  outputFolderPath: string | null;
+  zipPath: string | null;
+  files?: Record<'svg' | 'png' | 'jpg', { exists: boolean; path: string | null }>;
   previewUrl: string;
 }
 
@@ -85,6 +88,30 @@ interface SavedOutputFile {
 
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
+type ManualEditAction = 'needs_manual_edit' | 'complete';
+
+function getStatusMessage(status: string | undefined, pendingCount: number, manualCount: number, completedCount: number) {
+  if (!status) return null;
+  if (status === 'PENDING' && pendingCount > 0) {
+    return `${pendingCount} item${pendingCount === 1 ? '' : 's'} pending and eligible for conversion.`;
+  }
+  if (status === 'NEEDS_MANUAL_EDIT') {
+    return `${manualCount} item${manualCount === 1 ? '' : 's'} need manual editing before final completion.`;
+  }
+  if (status === 'COMPLETED') {
+    return `${completedCount} item${completedCount === 1 ? '' : 's'} completed.`;
+  }
+  if (status === 'PROCESSING') {
+    return 'This batch is already processing. Start Conversion is unavailable.';
+  }
+  if (status === 'FAILED') {
+    return 'This batch has failed items. Use the dashboard retry actions to continue.';
+  }
+  if (status === 'CANCELLED') {
+    return 'This batch was cancelled. Start Conversion is unavailable.';
+  }
+  return 'This batch is not eligible for Start Conversion.';
+}
 
 const DEFAULT_TUNE_SETTINGS: TuneSettings = {
   colorMode: 'binary',
@@ -218,7 +245,9 @@ const PREVIEW_STATUS_STYLES: Record<PreviewStatus, string> = {
 export default function ReviewPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const batchId = params.batchId as string;
+  const requestedItemId = searchParams.get('itemId');
 
   const [batch, setBatch] = useState<BatchInfo | null>(null);
   const [items, setItems] = useState<BatchItem[]>([]);
@@ -226,6 +255,7 @@ export default function ReviewPage() {
   const [saving, setSaving] = useState(false);
   const [converting, setConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [globalUpscale, setGlobalUpscale] = useState<number>(2);
   const [substitutions, setSubstitutions] = useState<SubstitutionRow[]>([]);
   const [tuneItem, setTuneItem] = useState<BatchItem | null>(null);
@@ -242,29 +272,48 @@ export default function ReviewPage() {
   const [savedOutputFolderPath, setSavedOutputFolderPath] = useState<string | null>(null);
   const [localEditorMessage, setLocalEditorMessage] = useState<string | null>(null);
   const [svgZoom, setSvgZoom] = useState(1);
+  const [autoOpenedItemId, setAutoOpenedItemId] = useState<string | null>(null);
+
+  const pendingItems = items.filter((item) => item.status === 'PENDING');
+  const manualEditItems = items.filter((item) => item.status === 'NEEDS_MANUAL_EDIT');
+  const completedItems = items.filter((item) => item.status === 'COMPLETED');
+  const canStartConversion = pendingItems.length > 0 && batch?.status === 'PENDING';
+  const canEditBatchSettings = batch?.status === 'PENDING';
+  const statusMessage = getStatusMessage(
+    batch?.status,
+    pendingItems.length,
+    manualEditItems.length,
+    completedItems.length
+  );
 
   // Fetch batch items
-  useEffect(() => {
-    async function fetchBatch() {
-      try {
-        const res = await fetch(`/api/batches/${batchId}/items`);
-        const data = await res.json();
-
-        if (!res.ok || !data.success) {
-          setError(data.error || 'Failed to load batch');
-          return;
-        }
-
-        setBatch(data.batch);
-        setItems(data.items);
-        setGlobalUpscale(data.batch.upscaleFactor);
-      } catch {
-        setError('Failed to load batch data');
-      } finally {
-        setLoading(false);
-      }
+  const fetchBatch = async (options: { keepLoading?: boolean } = {}) => {
+    if (!options.keepLoading) {
+      setLoading(true);
     }
 
+    try {
+      const res = await fetch(`/api/batches/${batchId}/items`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Failed to load batch');
+        return false;
+      }
+
+      setBatch(data.batch);
+      setItems(data.items);
+      setGlobalUpscale(data.batch.upscaleFactor);
+      return true;
+    } catch {
+      setError('Failed to load batch data');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchBatch();
   }, [batchId]);
 
@@ -315,20 +364,48 @@ export default function ReviewPage() {
     );
   };
 
+  const getSavedFilesForItem = (item: BatchItem): SavedOutputFile[] => {
+    if (!item.files) return [];
+
+    return (Object.entries(item.files) as Array<['svg' | 'png' | 'jpg', { exists: boolean; path: string | null }]>)
+      .filter(([, file]) => file.exists && file.path)
+      .map(([type, file]) => ({
+        type,
+        filename: file.path!.split(/[\\/]/).pop() || `${item.baseName}.${type}`,
+        path: file.path!,
+        size: 0,
+      }));
+  };
+
   const openTunePanel = (item: BatchItem) => {
+    const existingFiles = getSavedFilesForItem(item);
     setTuneItem(item);
     setTuneSettings(siteTuneDefaults);
     setTunePreview(null);
     setPreviewError(null);
     setPreviewStatus('idle');
     setPreviewStatusMessage(null);
-    setSaveStatus('idle');
-    setSaveMessage(null);
-    setSavedFiles([]);
-    setSavedOutputFolderPath(null);
+    setSaveStatus(existingFiles.length > 0 ? 'success' : 'idle');
+    setSaveMessage(
+      existingFiles.length > 0
+        ? 'Existing saved outputs loaded. Continue editing, open files, or mark complete.'
+        : null
+    );
+    setSavedFiles(existingFiles);
+    setSavedOutputFolderPath(item.outputFolderPath || null);
     setLocalEditorMessage(null);
     setSvgZoom(1);
   };
+
+  useEffect(() => {
+    if (!requestedItemId || loading || autoOpenedItemId === requestedItemId) return;
+
+    const item = items.find((candidate) => candidate.id === requestedItemId);
+    if (!item) return;
+
+    openTunePanel(item);
+    setAutoOpenedItemId(requestedItemId);
+  }, [requestedItemId, loading, autoOpenedItemId, items, siteTuneDefaults]);
 
   const updateTuneSetting = (key: Exclude<keyof TuneSettings, 'colorMode'>, value: number) => {
     setTuneSettings((prev) => ({ ...prev, [key]: value }));
@@ -423,12 +500,119 @@ export default function ReviewPage() {
       setLocalEditorMessage(null);
       setItems((prev) =>
         prev.map((item) =>
-          item.id === tuneItem.id ? { ...item, status: 'COMPLETED' } : item
+          item.id === tuneItem.id ? { ...item, status: data.itemStatus || 'NEEDS_MANUAL_EDIT' } : item
         )
       );
     } catch {
       setSaveStatus('error');
       setSaveMessage('Failed to save approved item');
+    }
+  };
+
+  const updateManualEditStatus = async (action: ManualEditAction) => {
+    if (!tuneItem) return false;
+
+    setLocalEditorMessage(action === 'complete' ? 'Marking item complete...' : 'Marking item as needing manual edit...');
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${tuneItem.id}/manual-edit`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setLocalEditorMessage(data.error || 'Failed to update manual edit status');
+        return false;
+      }
+
+      const itemStatus = data.itemStatus || (action === 'complete' ? 'COMPLETED' : 'NEEDS_MANUAL_EDIT');
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === tuneItem.id ? { ...item, status: itemStatus } : item
+        )
+      );
+      setLocalEditorMessage(
+        action === 'complete'
+          ? 'Marked complete and refreshed ZIP package.'
+          : 'Saved outputs and marked as Needs Manual Edit.'
+      );
+      return true;
+    } catch {
+      setLocalEditorMessage('Failed to update manual edit status');
+      return false;
+    }
+  };
+
+  const openEditableFilesForManualEdit = async () => {
+    const updated = await updateManualEditStatus('needs_manual_edit');
+    if (!updated) return;
+    await openLocalEditor('editable');
+  };
+
+  const openItemLocalTarget = async (
+    item: BatchItem,
+    action: 'file' | 'folder' | 'editable',
+    fileType?: string
+  ) => {
+    const itemFiles = getSavedFilesForItem(item);
+
+    if (!item.outputFolderPath) {
+      setError('No output folder is available for this item.');
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+
+    try {
+      const res = await fetch('/api/local-editor/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          fileType,
+          files: itemFiles,
+          outputFolderPath: item.outputFolderPath,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Failed to open local target');
+      }
+    } catch {
+      setError('Failed to open local target');
+    }
+  };
+
+  const markItemCompleteFromCard = async (item: BatchItem) => {
+    setError(null);
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${item.id}/manual-edit`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'complete' }),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Failed to mark item complete');
+        return;
+      }
+
+      await fetchBatch({ keepLoading: true });
+      setNotice('Item marked complete and ZIP refreshed.');
+    } catch {
+      setError('Failed to mark item complete');
     }
   };
 
@@ -468,6 +652,7 @@ export default function ReviewPage() {
   const saveChanges = async () => {
     setSaving(true);
     setError(null);
+    setNotice(null);
 
     try {
       const res = await fetch(`/api/batches/${batchId}/items`, {
@@ -495,8 +680,15 @@ export default function ReviewPage() {
 
   // Start conversion
   const startConversion = async () => {
+    if (!canStartConversion) {
+      await fetchBatch({ keepLoading: true });
+      setNotice('There are no pending items eligible for Start Conversion.');
+      return;
+    }
+
     setConverting(true);
     setError(null);
+    setNotice(null);
 
     // Save changes first
     await saveChanges();
@@ -511,7 +703,13 @@ export default function ReviewPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setError(data.error || 'Failed to start conversion');
+        const message = data.error || 'Failed to start conversion';
+        if (message.includes('already been started') || message.includes('no pending items')) {
+          await fetchBatch({ keepLoading: true });
+          setNotice('This batch is no longer eligible for Start Conversion. The page has been refreshed with the current status.');
+        } else {
+          setError(message);
+        }
         setConverting(false);
         return;
       }
@@ -545,24 +743,28 @@ export default function ReviewPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Pre-Conversion Review</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Review and edit base names, set upscale factors before conversion.
+            {statusMessage || 'Review and edit base names, set upscale factors before conversion.'}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={saveChanges}
-            disabled={saving}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-          <button
-            onClick={startConversion}
-            disabled={converting}
-            className="rounded-lg bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
-          >
-            {converting ? 'Starting...' : 'Start Conversion'}
-          </button>
+          {canEditBatchSettings && (
+            <button
+              onClick={saveChanges}
+              disabled={saving}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+          {canStartConversion && (
+            <button
+              onClick={startConversion}
+              disabled={converting}
+              className="rounded-lg bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              {converting ? 'Starting...' : 'Start Conversion'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -573,32 +775,46 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {/* Global Upscale Control */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-medium text-gray-700">Global Upscale Factor:</span>
-          <select
-            value={globalUpscale}
-            onChange={(e) => setGlobalUpscale(Number(e.target.value))}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value={1}>1x (No upscale)</option>
-            <option value={2}>2x</option>
-            <option value={4}>4x</option>
-          </select>
-          <button
-            onClick={applyGlobalUpscale}
-            className="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
-          >
-            Apply to All
-          </button>
-          {batch && (
-            <span className="ml-auto text-xs text-gray-500">
-              Smart threshold: {batch.smartUpscaleThreshold}px - {batch.totalItems} items
-            </span>
-          )}
+      {notice && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          {notice}
         </div>
-      </div>
+      )}
+
+      {batch && !canStartConversion && statusMessage && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          {statusMessage}
+        </div>
+      )}
+
+      {/* Global Upscale Control */}
+      {canEditBatchSettings && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-700">Global Upscale Factor:</span>
+            <select
+              value={globalUpscale}
+              onChange={(e) => setGlobalUpscale(Number(e.target.value))}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value={1}>1x (No upscale)</option>
+              <option value={2}>2x</option>
+              <option value={4}>4x</option>
+            </select>
+            <button
+              onClick={applyGlobalUpscale}
+              className="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              Apply to All
+            </button>
+            {batch && (
+              <span className="ml-auto text-xs text-gray-500">
+                Smart threshold: {batch.smartUpscaleThreshold}px - {batch.totalItems} items
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Items Grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -624,6 +840,9 @@ export default function ReviewPage() {
                 <p className="truncate text-xs text-gray-500" title={item.originalFilename}>
                   {item.originalFilename}
                 </p>
+                <span className="mt-1 inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                  {item.status}
+                </span>
                 {item.originalWidth && item.originalHeight && (
                   <p className="text-xs text-gray-400">
                     {item.originalWidth} x {item.originalHeight}px -{' '}
@@ -641,6 +860,7 @@ export default function ReviewPage() {
                   type="text"
                   value={item.baseName}
                   onChange={(e) => updateBaseName(item.id, e.target.value)}
+                  disabled={!canEditBatchSettings || item.status !== 'PENDING'}
                   className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="Enter base name"
                 />
@@ -654,6 +874,7 @@ export default function ReviewPage() {
                 <select
                   value={item.upscaleFactor}
                   onChange={(e) => updateItemUpscale(item.id, Number(e.target.value))}
+                  disabled={!canEditBatchSettings || item.status !== 'PENDING'}
                   className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value={1}>1x (No upscale)</option>
@@ -662,12 +883,65 @@ export default function ReviewPage() {
                 </select>
               </div>
 
-              <button
-                onClick={() => openTunePanel(item)}
-                className="w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-              >
-                Preview/Tune
-              </button>
+              {item.status === 'PENDING' && (
+                <button
+                  onClick={() => openTunePanel(item)}
+                  className="w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                >
+                  Preview/Tune
+                </button>
+              )}
+
+              {item.status === 'NEEDS_MANUAL_EDIT' && (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => openTunePanel(item)}
+                    className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 transition-colors"
+                  >
+                    Continue Editing
+                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => openItemLocalTarget(item, 'editable')}
+                      className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Open Editable Files
+                    </button>
+                    <button
+                      onClick={() => markItemCompleteFromCard(item)}
+                      className="rounded-md bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700"
+                    >
+                      Mark Complete
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {item.status === 'COMPLETED' && (
+                <div className="space-y-2">
+                  <p className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800">
+                    Completed
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {item.outputFolderPath && (
+                      <button
+                        onClick={() => openItemLocalTarget(item, 'folder')}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Open Output Folder
+                      </button>
+                    )}
+                    {item.zipPath && (
+                      <a
+                        href={`/api/batches/${batchId}/download?itemId=${item.id}`}
+                        className="rounded-md border border-gray-300 px-3 py-2 text-center text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Download ZIP
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -690,7 +964,9 @@ export default function ReviewPage() {
       {items.length > 0 && (
         <div className="mt-8 flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-600">
-            {items.length} image{items.length > 1 ? 's' : ''} ready for conversion
+            {canStartConversion
+              ? `${pendingItems.length} image${pendingItems.length > 1 ? 's' : ''} ready for conversion`
+              : statusMessage || `${items.length} image${items.length > 1 ? 's' : ''} loaded`}
           </p>
           <div className="flex items-center gap-3">
             <button
@@ -699,13 +975,15 @@ export default function ReviewPage() {
             >
               Back to Upload
             </button>
-            <button
-              onClick={startConversion}
-              disabled={converting}
-              className="rounded-lg bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
-            >
-              {converting ? 'Starting...' : 'Start Conversion'}
-            </button>
+            {canStartConversion && (
+              <button
+                onClick={startConversion}
+                disabled={converting}
+                className="rounded-lg bg-green-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                {converting ? 'Starting...' : 'Start Conversion'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -905,6 +1183,41 @@ export default function ReviewPage() {
 
                     {saveStatus === 'success' && savedFiles.length > 0 && (
                       <div className="rounded-md border border-gray-200 bg-white p-3">
+                        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                          <p className="text-sm font-semibold text-amber-900">
+                            Have you completed any needed manual fill/editing for the PNG/JPG files?
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateManualEditStatus('complete')}
+                              className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                            >
+                              Yes, files are ready / Mark Complete
+                            </button>
+                            <button
+                              type="button"
+                              onClick={openEditableFilesForManualEdit}
+                              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                            >
+                              No, open editable files
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateManualEditStatus('needs_manual_edit')}
+                              className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                            >
+                              Save outputs but mark as Needs Manual Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTuneItem(null)}
+                              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                              Cancel / come back later
+                            </button>
+                          </div>
+                        </div>
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
                             Local Only

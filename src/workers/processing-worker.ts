@@ -390,9 +390,10 @@ async function updateBatchProgress(batchId: string) {
 
   const completed = items.filter((i) => i.status === 'COMPLETED').length;
   const failed = items.filter((i) => i.status === 'FAILED').length;
+  const needsManualEdit = items.filter((i) => i.status === 'NEEDS_MANUAL_EDIT').length;
   const total = items.length;
 
-  const allDone = completed + failed === total;
+  const allDone = completed + failed + needsManualEdit === total;
 
   await prisma.batch.update({
     where: { id: batchId },
@@ -400,7 +401,9 @@ async function updateBatchProgress(batchId: string) {
       completedItems: completed,
       failedItems: failed,
       status: allDone
-        ? failed === total
+        ? needsManualEdit > 0
+          ? 'NEEDS_MANUAL_EDIT' as any
+          : failed === total
           ? 'FAILED'
           : 'COMPLETED'
         : 'PROCESSING',

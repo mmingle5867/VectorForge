@@ -11,6 +11,7 @@ import { getJpgPath, getPngPath, getSvgPath } from '@/lib/output-naming';
 import { createFixedCanvasRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
+import { recomputeBatchStatus } from '@/services/batch-status';
 import {
   generateTunedSvg,
   getPreviewValidationError,
@@ -106,7 +107,7 @@ export async function POST(
       const originalSvg = imageBuffer.toString('utf-8');
       const svgExport = await exportImportedSvgPackage(originalSvg, outputDir, {
         pngExportArtworkColor,
-        createZip: true,
+        createZip: false,
       });
 
       await prisma.batchItem.update({
@@ -114,19 +115,21 @@ export async function POST(
         data: {
           svgPath: svgExport.svgPath,
           outputFolderPath: outputDir,
-          zipPath: svgExport.zipPath,
-          status: 'COMPLETED',
+          status: 'NEEDS_MANUAL_EDIT' as any,
           progress: 100,
           currentStep: null,
-          completedAt: new Date(),
+          errorMsg: null,
+          completedAt: null,
         },
       });
+      await recomputeBatchStatus(batchId);
 
       return NextResponse.json({
         success: true,
         message: 'Approved SVG item saved successfully',
+        itemStatus: 'NEEDS_MANUAL_EDIT',
         outputFolderPath: outputDir,
-        files: svgExport.files.filter((file) => file.type !== 'zip'),
+        files: svgExport.files,
         warnings: ['DXF export is not yet implemented for approved preview saves.'],
       });
     }
@@ -171,16 +174,19 @@ export async function POST(
       data: {
         svgPath,
         outputFolderPath: outputDir,
-        status: 'COMPLETED',
+        status: 'NEEDS_MANUAL_EDIT' as any,
         progress: 100,
         currentStep: null,
-        completedAt: new Date(),
+        errorMsg: null,
+        completedAt: null,
       },
     });
+    await recomputeBatchStatus(batchId);
 
     return NextResponse.json({
       success: true,
       message: 'Approved item saved successfully',
+      itemStatus: 'NEEDS_MANUAL_EDIT',
       outputFolderPath: outputDir,
       files: [
         { type: 'svg', filename: svgFilename, path: svgPath, size: await fileSize(svgPath) },

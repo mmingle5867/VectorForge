@@ -43,9 +43,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (batch.items.length === 0) {
+    const itemsToProcess = batch.items.filter((item) => item.status === 'PENDING');
+
+    if (itemsToProcess.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Batch has no items to process' },
+        { success: false, error: 'Batch has no pending items to process' },
         { status: 400 }
       );
     }
@@ -77,7 +79,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Enqueue each item for processing
-    for (const item of batch.items) {
+    for (const item of itemsToProcess) {
       await enqueueProcessingJob({
         batchId: batch.id,
         batchItemId: item.id,
@@ -107,13 +109,13 @@ export async function POST(req: NextRequest) {
 
     logger.info(`Conversion started for batch ${batchId}`, {
       batchId,
-      itemCount: batch.items.length,
+      itemCount: itemsToProcess.length,
       userId: user.id,
     });
 
     return NextResponse.json({
       success: true,
-      message: `Processing started for ${batch.items.length} items`,
+      message: `Processing started for ${itemsToProcess.length} items`,
       batchId,
     });
   } catch (error) {

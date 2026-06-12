@@ -14,6 +14,7 @@ import {
   findExistingNamedFilePath,
   getPackageBaseName,
 } from '@/lib/output-naming';
+import { getBatchSummaryStatus } from '@/services/batch-status';
 
 async function fileExists(filePath: string | null | undefined) {
   if (!filePath) return false;
@@ -46,12 +47,15 @@ export async function GET(
     if (!batch || batch.userId !== user.id) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
+    const summary = getBatchSummaryStatus(batch.items);
 
     return NextResponse.json({
       success: true,
       batch: {
         id: batch.id,
-        status: batch.status,
+        status: summary.status,
+        statusLabel: summary.label,
+        statusCounts: summary.counts,
         totalItems: batch.totalItems,
         upscaleFactor: batch.upscaleFactor,
         smartUpscaleThreshold: batch.smartUpscaleThreshold,

@@ -33,6 +33,8 @@ interface BatchItem {
 interface BatchInfo {
   id: string;
   status: string;
+  statusLabel?: string;
+  statusCounts?: Record<string, number>;
   totalItems: number;
   upscaleFactor: number;
   smartUpscaleThreshold: number;
@@ -88,15 +90,24 @@ interface SavedOutputFile {
 
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
-type ManualEditAction = 'needs_manual_edit' | 'complete';
+type ManualEditAction = 'needs_manual_edit' | 'ready_to_process';
 
-function getStatusMessage(status: string | undefined, pendingCount: number, manualCount: number, completedCount: number) {
+function getStatusMessage(
+  status: string | undefined,
+  pendingCount: number,
+  manualCount: number,
+  readyCount: number,
+  completedCount: number
+) {
   if (!status) return null;
-  if (status === 'PENDING' && pendingCount > 0) {
-    return `${pendingCount} item${pendingCount === 1 ? '' : 's'} pending and eligible for conversion.`;
+  if (pendingCount > 0) {
+    return `${pendingCount} item${pendingCount === 1 ? '' : 's'} still need review before conversion.`;
   }
-  if (status === 'NEEDS_MANUAL_EDIT') {
+  if (manualCount > 0) {
     return `${manualCount} item${manualCount === 1 ? '' : 's'} need manual editing before final completion.`;
+  }
+  if (readyCount > 0 && status === 'READY_TO_PROCESS') {
+    return `${readyCount} item${readyCount === 1 ? ' is' : 's are'} ready for final package generation.`;
   }
   if (status === 'COMPLETED') {
     return `${completedCount} item${completedCount === 1 ? '' : 's'} completed.`;
@@ -276,13 +287,19 @@ export default function ReviewPage() {
 
   const pendingItems = items.filter((item) => item.status === 'PENDING');
   const manualEditItems = items.filter((item) => item.status === 'NEEDS_MANUAL_EDIT');
+  const readyItems = items.filter((item) => item.status === 'READY_TO_PROCESS');
   const completedItems = items.filter((item) => item.status === 'COMPLETED');
-  const canStartConversion = pendingItems.length > 0 && batch?.status === 'PENDING';
+  const nonCancelledItems = items.filter((item) => item.status !== 'CANCELLED');
+  const canStartConversion =
+    batch?.status === 'READY_TO_PROCESS' &&
+    nonCancelledItems.length > 0 &&
+    nonCancelledItems.every((item) => item.status === 'READY_TO_PROCESS');
   const canEditBatchSettings = batch?.status === 'PENDING';
   const statusMessage = getStatusMessage(
     batch?.status,
     pendingItems.length,
     manualEditItems.length,
+    readyItems.length,
     completedItems.length
   );
 
@@ -388,7 +405,7 @@ export default function ReviewPage() {
     setSaveStatus(existingFiles.length > 0 ? 'success' : 'idle');
     setSaveMessage(
       existingFiles.length > 0
-        ? 'Existing saved outputs loaded. Continue editing, open files, or mark complete.'
+        ? 'Existing saved outputs loaded. Continue editing, open files, or mark Ready To Process.'
         : null
     );
     setSavedFiles(existingFiles);
@@ -509,10 +526,14 @@ export default function ReviewPage() {
     }
   };
 
-  const updateManualEditStatus = async (action: ManualEditAction) => {
+  const updateManualEditStatus = async (
+    action: ManualEditAction,
+    options: { closePanel?: boolean } = {}
+  ) => {
     if (!tuneItem) return false;
 
-    setLocalEditorMessage(action === 'complete' ? 'Marking item complete...' : 'Marking item as needing manual edit...');
+    const shouldClosePanel = options.closePanel ?? true;
+    setLocalEditorMessage(action === 'ready_to_process' ? 'Marking item ready to process...' : 'Marking item as needing manual edit...');
 
     try {
       const res = await fetch(
@@ -530,17 +551,26 @@ export default function ReviewPage() {
         return false;
       }
 
-      const itemStatus = data.itemStatus || (action === 'complete' ? 'COMPLETED' : 'NEEDS_MANUAL_EDIT');
+      const itemStatus = data.itemStatus || (action === 'ready_to_process' ? 'READY_TO_PROCESS' : 'NEEDS_MANUAL_EDIT');
       setItems((prev) =>
         prev.map((item) =>
           item.id === tuneItem.id ? { ...item, status: itemStatus } : item
         )
       );
       setLocalEditorMessage(
-        action === 'complete'
-          ? 'Marked complete and refreshed ZIP package.'
+        action === 'ready_to_process'
+          ? 'Marked Ready To Process.'
           : 'Saved outputs and marked as Needs Manual Edit.'
       );
+      if (shouldClosePanel) {
+        setTuneItem(null);
+        setNotice(
+          action === 'ready_to_process'
+            ? `${tuneItem.baseName} marked Ready To Process.`
+            : `${tuneItem.baseName} saved and marked as Needs Manual Edit.`
+        );
+        await fetchBatch({ keepLoading: true });
+      }
       return true;
     } catch {
       setLocalEditorMessage('Failed to update manual edit status');
@@ -549,7 +579,7 @@ export default function ReviewPage() {
   };
 
   const openEditableFilesForManualEdit = async () => {
-    const updated = await updateManualEditStatus('needs_manual_edit');
+    const updated = await updateManualEditStatus('needs_manual_edit', { closePanel: false });
     if (!updated) return;
     await openLocalEditor('editable');
   };
@@ -590,8 +620,33 @@ export default function ReviewPage() {
     }
   };
 
-  const markItemCompleteFromCard = async (item: BatchItem) => {
+  const processReadyItem = async (item: BatchItem) => {
     setError(null);
+    setNotice(null);
+
+    try {
+      const res = await fetch('/api/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId, itemId: item.id }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setError(data.error || 'Failed to process item');
+        return;
+      }
+
+      await fetchBatch({ keepLoading: true });
+      setNotice(data.message || 'Item processed successfully.');
+    } catch {
+      setError('Failed to process item');
+    }
+  };
+
+  const markItemReadyFromCard = async (item: BatchItem) => {
+    setError(null);
+    setNotice(null);
 
     try {
       const res = await fetch(
@@ -599,20 +654,20 @@ export default function ReviewPage() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'complete' }),
+          body: JSON.stringify({ action: 'ready_to_process' }),
         }
       );
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setError(data.error || 'Failed to mark item complete');
+        setError(data.error || 'Failed to mark item ready');
         return;
       }
 
       await fetchBatch({ keepLoading: true });
-      setNotice('Item marked complete and ZIP refreshed.');
+      setNotice(`${item.baseName} marked Ready To Process.`);
     } catch {
-      setError('Failed to mark item complete');
+      setError('Failed to mark item ready');
     }
   };
 
@@ -682,16 +737,13 @@ export default function ReviewPage() {
   const startConversion = async () => {
     if (!canStartConversion) {
       await fetchBatch({ keepLoading: true });
-      setNotice('There are no pending items eligible for Start Conversion.');
+      setNotice('Every non-cancelled item must be Ready To Process before batch Start Conversion is available.');
       return;
     }
 
     setConverting(true);
     setError(null);
     setNotice(null);
-
-    // Save changes first
-    await saveChanges();
 
     try {
       const res = await fetch('/api/convert', {
@@ -704,9 +756,9 @@ export default function ReviewPage() {
 
       if (!res.ok || !data.success) {
         const message = data.error || 'Failed to start conversion';
-        if (message.includes('already been started') || message.includes('no pending items')) {
+        if (message.includes('Ready To Process') || message.includes('already been started') || message.includes('processable')) {
           await fetchBatch({ keepLoading: true });
-          setNotice('This batch is no longer eligible for Start Conversion. The page has been refreshed with the current status.');
+          setNotice('This batch is not currently eligible for Start Conversion. The page has been refreshed with the current status.');
         } else {
           setError(message);
         }
@@ -908,12 +960,26 @@ export default function ReviewPage() {
                       Open Editable Files
                     </button>
                     <button
-                      onClick={() => markItemCompleteFromCard(item)}
+                      onClick={() => markItemReadyFromCard(item)}
                       className="rounded-md bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700"
                     >
-                      Mark Complete
+                      Mark Ready
                     </button>
                   </div>
+                </div>
+              )}
+
+              {item.status === 'READY_TO_PROCESS' && (
+                <div className="space-y-2">
+                  <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800">
+                    Ready To Process
+                  </p>
+                  <button
+                    onClick={() => processReadyItem(item)}
+                    className="w-full rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                  >
+                    Process Item
+                  </button>
                 </div>
               )}
 
@@ -965,7 +1031,7 @@ export default function ReviewPage() {
         <div className="mt-8 flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-600">
             {canStartConversion
-              ? `${pendingItems.length} image${pendingItems.length > 1 ? 's' : ''} ready for conversion`
+              ? `${readyItems.length} image${readyItems.length > 1 ? 's' : ''} ready for final package generation`
               : statusMessage || `${items.length} image${items.length > 1 ? 's' : ''} loaded`}
           </p>
           <div className="flex items-center gap-3">
@@ -1185,15 +1251,15 @@ export default function ReviewPage() {
                       <div className="rounded-md border border-gray-200 bg-white p-3">
                         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
                           <p className="text-sm font-semibold text-amber-900">
-                            Have you completed any needed manual fill/editing for the PNG/JPG files?
+                            Are the saved files ready for final processing?
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => updateManualEditStatus('complete')}
+                              onClick={() => updateManualEditStatus('ready_to_process')}
                               className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
                             >
-                              Yes, files are ready / Mark Complete
+                              Yes, files are ready / Mark Ready To Process
                             </button>
                             <button
                               type="button"

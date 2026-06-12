@@ -27,6 +27,8 @@ interface Batch {
   id: string;
   name: string | null;
   status: string;
+  statusLabel?: string;
+  statusCounts?: Record<string, number>;
   itemCount: number;
   totalItems: number;
   completedItems: number;
@@ -38,8 +40,18 @@ interface Batch {
   firstOutputFolderPath: string | null;
 }
 
-const STATUS_FILTERS = ['All', 'Pending', 'Processing', 'Needs Manual Edit', 'Completed', 'Failed', 'Cancelled'] as const;
+const STATUS_FILTERS = ['All', 'Pending', 'Needs Manual Edit', 'Ready To Process', 'Processing', 'Completed', 'Failed', 'Cancelled'] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+const WORKFLOW_STATUSES = [
+  ['PENDING', 'Pending'],
+  ['NEEDS_MANUAL_EDIT', 'Needs Manual Edit'],
+  ['READY_TO_PROCESS', 'Ready To Process'],
+  ['PROCESSING', 'Processing'],
+  ['COMPLETED', 'Completed'],
+  ['FAILED', 'Failed'],
+  ['CANCELLED', 'Cancelled'],
+] as const;
 
 const FILE_LABELS: Record<FileKind, string> = {
   png: 'PNG',
@@ -161,27 +173,76 @@ export default function DashboardPage() {
     }
   }
 
-  async function markItemComplete(batchId: string, itemId: string) {
-    if (!confirm('Mark this item complete and refresh its ZIP package?')) {
+  async function markItemReady(batchId: string, itemId: string) {
+    if (!confirm('Mark this item Ready To Process?')) {
       return;
     }
 
-    setBusyAction(`complete-item:${itemId}`);
+    setBusyAction(`ready-item:${itemId}`);
     try {
       const res = await fetch(`/api/batches/${batchId}/items/${itemId}/manual-edit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'complete' }),
+        body: JSON.stringify({ action: 'ready_to_process' }),
       });
       const data = await res.json();
       if (data.success) {
-        setNotice(`Item marked complete. Batch status: ${data.batchStatus || 'COMPLETED'}.`);
+        setNotice(`Item marked Ready To Process. Batch status: ${data.batchStatus || 'READY_TO_PROCESS'}.`);
         fetchBatches();
       } else {
-        setNotice(data.error || 'Failed to mark item complete.');
+        setNotice(data.error || 'Failed to mark item ready.');
       }
     } catch {
-      setNotice('Failed to mark item complete.');
+      setNotice('Failed to mark item ready.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function processItem(batchId: string, itemId: string) {
+    setBusyAction(`process-item:${itemId}`);
+    try {
+      const res = await fetch('/api/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId, itemId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotice(data.message || 'Item processed.');
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to process item.');
+      }
+    } catch {
+      setNotice('Failed to process item.');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function processBatch(batch: Batch) {
+    const itemCount = batch.statusCounts?.READY_TO_PROCESS || 0;
+    if (!confirm(`Process ${itemCount} ready item${itemCount === 1 ? '' : 's'} in this batch?`)) {
+      return;
+    }
+
+    setBusyAction(`process:${batch.id}`);
+    try {
+      const res = await fetch('/api/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId: batch.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNotice(data.message || 'Batch processed.');
+        fetchBatches();
+      } else {
+        setNotice(data.error || 'Failed to process batch.');
+      }
+    } catch {
+      setNotice('Failed to process batch.');
     } finally {
       setBusyAction(null);
     }
@@ -286,6 +347,7 @@ export default function DashboardPage() {
       PENDING: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300' },
       PROCESSING: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300' },
       NEEDS_MANUAL_EDIT: { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-800 dark:text-amber-300' },
+      READY_TO_PROCESS: { bg: 'bg-sky-100 dark:bg-sky-900/30', text: 'text-sky-800 dark:text-sky-300' },
       COMPLETED: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300' },
       FAILED: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300' },
       CANCELLED: { bg: 'bg-gray-100 dark:bg-gray-700', text: 'text-gray-800 dark:text-gray-300' },
@@ -412,6 +474,10 @@ export default function DashboardPage() {
             const isActive = batch.status === 'PROCESSING';
             const outputFolderPath = batch.firstOutputFolderPath || batch.items.find((item) => item.outputFolderPath)?.outputFolderPath;
             const firstManualEditItem = batch.items.find((item) => item.status === 'NEEDS_MANUAL_EDIT');
+            const nonCancelledItems = batch.items.filter((item) => item.status !== 'CANCELLED');
+            const canProcessBatch =
+              nonCancelledItems.length > 0 &&
+              nonCancelledItems.every((item) => item.status === 'READY_TO_PROCESS');
             const canDelete = batch.status !== 'PROCESSING';
             const isExpanded = expandedBatches.has(batch.id);
 
@@ -427,7 +493,7 @@ export default function DashboardPage() {
                         {getBatchDisplayName(batch)}
                       </h3>
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusConfig.bg} ${statusConfig.text}`}>
-                        {batch.status}
+                        {batch.statusLabel || batch.status}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -437,6 +503,23 @@ export default function DashboardPage() {
                     <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
                       {itemCount} items / {batch.completedItems} completed / {batch.failedItems} failed
                     </p>
+                    {batch.statusCounts && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {WORKFLOW_STATUSES.map(([status, label]) => {
+                          const count = batch.statusCounts?.[status] || 0;
+                          if (count === 0) return null;
+                          const countConfig = getStatusConfig(status);
+                          return (
+                            <span
+                              key={status}
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${countConfig.bg} ${countConfig.text}`}
+                            >
+                              {label}: {count}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                     {batch.items.length > 0 && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {batch.items.slice(0, 3).map((item) => (
@@ -485,6 +568,15 @@ export default function DashboardPage() {
                       >
                         Review & Start
                       </Link>
+                    )}
+                    {canProcessBatch && (
+                      <button
+                        onClick={() => processBatch(batch)}
+                        disabled={busyAction === `process:${batch.id}`}
+                        className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                      >
+                        Start Conversion
+                      </button>
                     )}
                     {batch.status === 'PROCESSING' && (
                       <>
@@ -646,6 +738,14 @@ export default function DashboardPage() {
                                     Open Editable Files
                                   </button>
                                 )}
+                                {item.status === 'PENDING' && (
+                                  <Link
+                                    href={`/upload/review/${batch.id}?itemId=${item.id}`}
+                                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-400 transition-colors"
+                                  >
+                                    Review/Tune
+                                  </Link>
+                                )}
                                 {item.status === 'NEEDS_MANUAL_EDIT' && (
                                   <Link
                                     href={`/upload/review/${batch.id}?itemId=${item.id}`}
@@ -663,13 +763,30 @@ export default function DashboardPage() {
                                     Retry Item
                                   </button>
                                 )}
+                                {item.status === 'FAILED' && (
+                                  <Link
+                                    href={`/upload/review/${batch.id}?itemId=${item.id}`}
+                                    className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400 transition-colors"
+                                  >
+                                    Continue Editing
+                                  </Link>
+                                )}
                                 {item.status === 'NEEDS_MANUAL_EDIT' && (
                                   <button
-                                    onClick={() => markItemComplete(batch.id, item.id)}
-                                    disabled={busyAction === `complete-item:${item.id}`}
+                                    onClick={() => markItemReady(batch.id, item.id)}
+                                    disabled={busyAction === `ready-item:${item.id}`}
                                     className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50 dark:border-green-700 dark:bg-green-900/30 dark:text-green-400 transition-colors"
                                   >
-                                    Mark Complete
+                                    Mark Ready To Process
+                                  </button>
+                                )}
+                                {item.status === 'READY_TO_PROCESS' && (
+                                  <button
+                                    onClick={() => processItem(batch.id, item.id)}
+                                    disabled={busyAction === `process-item:${item.id}`}
+                                    className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    Process Item
                                   </button>
                                 )}
                                 {itemCanDelete && (

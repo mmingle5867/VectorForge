@@ -3,13 +3,11 @@ import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { recomputeBatchStatus } from '@/services/batch-status';
-import { finalizeManualEditPackage } from '@/services/package-finalization';
-import config from '@/lib/config';
 
-type ManualEditAction = 'needs_manual_edit' | 'complete';
+type ManualEditAction = 'needs_manual_edit' | 'ready_to_process';
 
 function getAction(value: unknown): ManualEditAction | null {
-  return value === 'needs_manual_edit' || value === 'complete' ? value : null;
+  return value === 'needs_manual_edit' || value === 'ready_to_process' ? value : null;
 }
 
 export async function POST(
@@ -24,7 +22,7 @@ export async function POST(
 
     if (!action) {
       return NextResponse.json(
-        { success: false, error: 'action must be needs_manual_edit or complete' },
+        { success: false, error: 'action must be needs_manual_edit or ready_to_process' },
         { status: 400 }
       );
     }
@@ -38,55 +36,22 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
-    if (item.batch.status === 'PROCESSING') {
+    if (item.status === 'PROCESSING' || item.batch.status === 'PROCESSING') {
       return NextResponse.json(
         { success: false, error: 'Wait for processing to finish before changing manual edit status' },
         { status: 400 }
       );
     }
 
-    let zipPath = item.zipPath;
-
-    if (action === 'complete') {
-      if (!item.outputFolderPath) {
-        return NextResponse.json(
-          { success: false, error: 'No output folder is available for this item' },
-          { status: 400 }
-        );
-      }
-
-      const settings = user.settings;
-      const settingsJson = (settings?.defaultSubstitutions as Record<string, unknown>) || {};
-      const baseAssetsPath = settings?.baseAssetsPath || config.paths.baseAssets;
-      const finalization = await finalizeManualEditPackage({
-        item,
-        substitutionData: (item.batch.substitutionData as Record<string, string>) || {},
-        baseAssetsPath,
-        copyBaseAssetsToOutput: (settingsJson.copyBaseAssetsToOutput as boolean) ?? false,
-        enableMarketplacePreview: (settingsJson.enableMarketplacePreview as boolean) ?? true,
-        enableColorTint: (settingsJson.enableColorTint as boolean) ?? false,
-        tintColor: (settingsJson.tintColor as string) ?? '#FFFFFF',
-        watermarkOpacity: (settingsJson.watermarkOpacity as number) ?? 80,
-        backgroundFilename: (settingsJson.backgroundFilename as string) ?? 'preview-background.jpg',
-        watermarkFilename: (settingsJson.watermarkFilename as string) ?? 'watermark.png',
-        cncMode: (settingsJson.cncMode as boolean) ?? true,
-      });
-      zipPath = finalization.zipPath;
-
+    if (action === 'ready_to_process') {
       await prisma.batchItem.update({
         where: { id: item.id },
         data: {
-          status: 'COMPLETED' as any,
+          status: 'READY_TO_PROCESS' as any,
           progress: 100,
           currentStep: null,
           errorMsg: null,
-          sku: finalization.sku,
-          svgPath: finalization.svgPath,
-          zipPath,
-          skuFilePath: finalization.skuFilePath,
-          metadataPath: finalization.metadataPath,
-          previewPath: finalization.marketplacePreviewPath,
-          completedAt: new Date(),
+          completedAt: null,
         },
       });
     } else {
@@ -108,15 +73,15 @@ export async function POST(
       batchId,
       itemId,
       action,
-      itemStatus: action === 'complete' ? 'COMPLETED' : 'NEEDS_MANUAL_EDIT',
+      itemStatus: action === 'ready_to_process' ? 'READY_TO_PROCESS' : 'NEEDS_MANUAL_EDIT',
       batchStatus: batch.status,
     });
 
     return NextResponse.json({
       success: true,
-      itemStatus: action === 'complete' ? 'COMPLETED' : 'NEEDS_MANUAL_EDIT',
+      itemStatus: action === 'ready_to_process' ? 'READY_TO_PROCESS' : 'NEEDS_MANUAL_EDIT',
       batchStatus: batch.status,
-      zipPath,
+      zipPath: item.zipPath,
       completedItems: batch.completedItems,
       failedItems: batch.failedItems,
       needsManualEditItems: batch.needsManualEditItems,

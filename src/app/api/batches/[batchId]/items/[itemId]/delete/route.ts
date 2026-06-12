@@ -5,6 +5,7 @@ import { requireAuth } from '@/lib/auth';
 import config from '@/lib/config';
 import { logger } from '@/lib/logger';
 import prisma from '@/lib/prisma';
+import { recomputeBatchStatus } from '@/services/batch-status';
 
 function resolveConfiguredPath(configuredPath: string) {
   return path.resolve(process.cwd(), configuredPath);
@@ -25,24 +26,6 @@ async function removeIfSafe(targetPath: string, rootPath: string) {
 
   await rm(resolvedTarget, { recursive: true, force: true });
   return { path: targetPath, deleted: true };
-}
-
-async function recalculateBatchCounts(batchId: string) {
-  const items = await prisma.batchItem.findMany({
-    where: { batchId },
-    select: { status: true },
-  });
-  const completedItems = items.filter((item) => item.status === 'COMPLETED').length;
-  const failedItems = items.filter((item) => item.status === 'FAILED').length;
-
-  await prisma.batch.update({
-    where: { id: batchId },
-    data: {
-      totalItems: items.length,
-      completedItems,
-      failedItems,
-    },
-  });
 }
 
 export async function POST(
@@ -96,7 +79,7 @@ export async function POST(
     await prisma.batchItem.delete({
       where: { id: itemId },
     });
-    await recalculateBatchCounts(batchId);
+    await recomputeBatchStatus(batchId);
 
     logger.info(`Batch item ${itemId} deleted by user ${user.id}`, {
       batchId,

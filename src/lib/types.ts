@@ -11,6 +11,7 @@ export type BatchStatusType =
   | 'PENDING'
   | 'PROCESSING'
   | 'NEEDS_MANUAL_EDIT'
+  | 'READY_TO_PROCESS'
   | 'COMPLETED'
   | 'FAILED'
   | 'CANCELLED';
@@ -22,6 +23,9 @@ export type BatchItemStatusType =
   | 'GENERATING_FILES'
   | 'ZIPPING'
   | 'NEEDS_MANUAL_EDIT'
+  | 'READY_TO_PROCESS'
+  | 'PROCESSING'
+  | 'CANCELLED'
   | 'COMPLETED'
   | 'FAILED';
 

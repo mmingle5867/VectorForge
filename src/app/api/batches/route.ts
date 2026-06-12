@@ -12,6 +12,7 @@ import {
   getPackageBaseName,
 } from '@/lib/output-naming';
 import prisma from '@/lib/prisma';
+import { getBatchSummaryStatus } from '@/services/batch-status';
 
 async function fileExists(filePath: string | null | undefined) {
   if (!filePath) return false;
@@ -80,12 +81,18 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       batches: await Promise.all(
-        batches.map(async (batch) => ({
-          ...batch,
-          itemCount: batch.totalItems,
-          firstOutputFolderPath: firstOutputFolderByBatch.get(batch.id) || null,
-          items: await Promise.all(
-            batch.items.map(async (item) => {
+        batches.map(async (batch) => {
+          const summary = getBatchSummaryStatus(batch.items);
+
+          return {
+            ...batch,
+            status: summary.status,
+            statusLabel: summary.label,
+            statusCounts: summary.counts,
+            itemCount: batch.totalItems,
+            firstOutputFolderPath: firstOutputFolderByBatch.get(batch.id) || null,
+            items: await Promise.all(
+              batch.items.map(async (item) => {
               const packageBaseName = item.outputFolderPath
                 ? getPackageBaseName(item.outputFolderPath)
                 : item.baseName;
@@ -112,9 +119,10 @@ export async function GET() {
                   jpg: { exists: await fileExists(jpgPath), path: jpgPath },
                 },
               };
-            })
-          ),
-        }))
+              })
+            ),
+          };
+        })
       ),
     });
   } catch (error) {

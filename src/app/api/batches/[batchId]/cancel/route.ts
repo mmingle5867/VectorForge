@@ -40,14 +40,14 @@ export async function POST(
       },
     });
 
-    // Mark all pending items as failed (no CANCELLED status for items)
+    // Mark open workflow items as cancelled.
     await prisma.batchItem.updateMany({
       where: {
         batchId,
-        status: 'PENDING',
+        status: { in: ['PENDING', 'NEEDS_MANUAL_EDIT', 'READY_TO_PROCESS'] as any },
       },
       data: {
-        status: 'FAILED',
+        status: 'CANCELLED' as any,
         currentStep: null,
       },
     });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent, type WheelEvent } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { formatBytes } from '@/lib/utils';
 import SubstitutionTable, {
@@ -91,6 +91,9 @@ interface SavedOutputFile {
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
 type ManualEditAction = 'needs_manual_edit' | 'ready_to_process';
+type PreviewViewMode = 'processed' | 'split' | 'original';
+type TuneTab = 'controls' | 'details' | 'warnings';
+type Point = { x: number; y: number };
 
 function getStatusMessage(
   status: string | undefined,
@@ -253,6 +256,24 @@ const PREVIEW_STATUS_STYLES: Record<PreviewStatus, string> = {
   error: 'border-red-200 bg-red-50 text-red-900',
 };
 
+const TUNE_CONTROL_GROUPS: Array<{
+  title: string;
+  keys: Array<Exclude<keyof TuneSettings, 'colorMode'>>;
+}> = [
+  {
+    title: 'Vectorization',
+    keys: ['pathPrecision', 'cornerThreshold', 'lengthThreshold', 'spliceThreshold'],
+  },
+  {
+    title: 'Cleanup',
+    keys: ['preUpscaleBlur', 'blur', 'blurPasses', 'filterSpeckle'],
+  },
+  {
+    title: 'Export',
+    keys: ['colorPrecision', 'layerDifference'],
+  },
+];
+
 export default function ReviewPage() {
   const router = useRouter();
   const params = useParams();
@@ -283,6 +304,14 @@ export default function ReviewPage() {
   const [savedOutputFolderPath, setSavedOutputFolderPath] = useState<string | null>(null);
   const [localEditorMessage, setLocalEditorMessage] = useState<string | null>(null);
   const [svgZoom, setSvgZoom] = useState(1);
+  const [previewViewMode, setPreviewViewMode] = useState<PreviewViewMode>('processed');
+  const [tuneTab, setTuneTab] = useState<TuneTab>('controls');
+  const [tunePanelCollapsed, setTunePanelCollapsed] = useState(false);
+  const [compactTunePanel, setCompactTunePanel] = useState(false);
+  const [tunePanelPosition, setTunePanelPosition] = useState<Point>({ x: 0, y: 0 });
+  const [panelDragStart, setPanelDragStart] = useState<{ pointer: Point; panel: Point } | null>(null);
+  const [canvasPan, setCanvasPan] = useState<Point>({ x: 0, y: 0 });
+  const [canvasPanStart, setCanvasPanStart] = useState<{ pointer: Point; pan: Point } | null>(null);
   const [autoOpenedItemId, setAutoOpenedItemId] = useState<string | null>(null);
 
   const pendingItems = items.filter((item) => item.status === 'PENDING');
@@ -412,6 +441,11 @@ export default function ReviewPage() {
     setSavedOutputFolderPath(item.outputFolderPath || null);
     setLocalEditorMessage(null);
     setSvgZoom(1);
+    setPreviewViewMode('processed');
+    setTuneTab('controls');
+    setTunePanelCollapsed(false);
+    setTunePanelPosition({ x: 0, y: 0 });
+    setCanvasPan({ x: 0, y: 0 });
   };
 
   useEffect(() => {
@@ -435,6 +469,101 @@ export default function ReviewPage() {
   const previewSvgDataUrl = tunePreview
     ? `data:image/svg+xml;base64,${tunePreview.svgBase64}`
     : '';
+
+  const previewWarnings = [
+    ...(previewError ? [previewError] : []),
+    ...(tunePreview && tunePreview.diagnostics.pathCount === 0
+      ? ['No SVG paths were detected in the generated preview.']
+      : []),
+    ...(tunePreview &&
+    tunePreview.diagnostics.hasVisibleStroke &&
+    !tunePreview.diagnostics.hasVisibleFill
+      ? ['SVG contains visible strokes but no visible fills. Manual fill may be required.']
+      : []),
+    ...(tunePreview && tunePreview.upscaleApplied
+      ? [`Large or low-resolution source was processed after ${tunePreview.upscaleFactor}x smart upscale.`]
+      : []),
+    ...(tunePreview && tunePreview.diagnostics.pathCount > 10000
+      ? ['High path count may produce a complex package and slower downstream editing.']
+      : []),
+  ];
+
+  const zoomPreview = (direction: 'in' | 'out') => {
+    setSvgZoom((prev) => {
+      const delta = direction === 'in' ? 0.25 : -0.25;
+      return Math.min(6, Math.max(0.25, Number((prev + delta).toFixed(2))));
+    });
+  };
+
+  const resetPreviewZoom = () => {
+    setSvgZoom(1);
+    setCanvasPan({ x: 0, y: 0 });
+  };
+
+  const fitPreviewToScreen = () => {
+    setSvgZoom(1);
+    setCanvasPan({ x: 0, y: 0 });
+  };
+
+  const handleCanvasWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('[data-floating-panel="true"]')) return;
+    if (!tunePreview && previewViewMode === 'processed') return;
+
+    event.preventDefault();
+    const nextDirection = event.deltaY > 0 ? 'out' : 'in';
+    zoomPreview(nextDirection);
+  };
+
+  const beginCanvasPan = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    if ((event.target as HTMLElement).closest('[data-floating-panel="true"]')) return;
+    setCanvasPanStart({
+      pointer: { x: event.clientX, y: event.clientY },
+      pan: canvasPan,
+    });
+  };
+
+  const updateCanvasPan = (event: MouseEvent<HTMLDivElement>) => {
+    if (!canvasPanStart) return;
+
+    setCanvasPan({
+      x: canvasPanStart.pan.x + event.clientX - canvasPanStart.pointer.x,
+      y: canvasPanStart.pan.y + event.clientY - canvasPanStart.pointer.y,
+    });
+  };
+
+  const endCanvasPan = () => {
+    setCanvasPanStart(null);
+  };
+
+  const beginPanelDrag = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+
+    setPanelDragStart({
+      pointer: { x: event.clientX, y: event.clientY },
+      panel: tunePanelPosition,
+    });
+  };
+
+  const updatePanelDrag = (event: MouseEvent<HTMLDivElement>) => {
+    if (!panelDragStart) return;
+
+    const nextX = panelDragStart.panel.x + event.clientX - panelDragStart.pointer.x;
+    const nextY = panelDragStart.panel.y + event.clientY - panelDragStart.pointer.y;
+    setTunePanelPosition({
+      x: Math.min(760, Math.max(-760, nextX)),
+      y: Math.min(520, Math.max(-80, nextY)),
+    });
+  };
+
+  const endPanelDrag = () => {
+    setPanelDragStart(null);
+  };
+
+  const resetPanelPosition = () => {
+    setTunePanelPosition({ x: 0, y: 0 });
+  };
 
   const generatePreview = async () => {
     if (!tuneItem) return;
@@ -1055,8 +1184,8 @@ export default function ReviewPage() {
       )}
 
       {tuneItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-lg bg-white shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4">
+          <div className="max-h-[94vh] w-full max-w-7xl overflow-hidden rounded-lg bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Preview/Tune</h2>
@@ -1070,366 +1199,567 @@ export default function ReviewPage() {
               </button>
             </div>
 
-            <div className="max-h-[calc(92vh-73px)] overflow-y-auto">
-              <div className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-[minmax(280px,420px)_minmax(0,1fr)]">
-                <div className="space-y-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-gray-800">Original</h3>
-                    {tuneItem.originalWidth && tuneItem.originalHeight && (
-                      <span className="text-xs text-gray-500">
-                        {tuneItem.originalWidth} x {tuneItem.originalHeight}px
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                    <img
-                      src={tuneItem.previewUrl}
-                      alt={tuneItem.originalFilename}
-                      className="h-full w-full object-contain"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setTuneSettings(siteTuneDefaults)}
-                      className="rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Restore Defaults
-                    </button>
-                    <button
-                      onClick={generatePreview}
-                      disabled={previewLoading}
-                      className="rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {previewLoading ? 'Generating...' : 'Generate Preview'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex max-h-[476px] flex-col overflow-hidden rounded-lg border border-gray-200">
-                  <div className={`border-b px-4 py-3 ${PREVIEW_STATUS_STYLES[previewStatus]}`}>
-                    <h3 className="text-sm font-semibold">Temporary Settings</h3>
-                    {previewStatusMessage && (
-                      <p className="mt-1 text-xs leading-4">{previewStatusMessage}</p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-x-5 gap-y-4 overflow-y-auto p-4 md:grid-cols-2">
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-xs font-medium text-gray-700">
-                        Color Mode
-                      </label>
-                      <select
-                        value={tuneSettings.colorMode}
-                        onChange={(e) => updateTuneColorMode(e.target.value as 'color' | 'binary')}
-                        className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="binary">binary</option>
-                        <option value="color">color</option>
-                      </select>
+            <div
+              className="relative h-[calc(94vh-73px)] overflow-hidden bg-gray-100"
+              onMouseMove={(event) => {
+                updatePanelDrag(event);
+                updateCanvasPan(event);
+              }}
+              onMouseUp={() => {
+                endPanelDrag();
+                endCanvasPan();
+              }}
+              onMouseLeave={() => {
+                endPanelDrag();
+                endCanvasPan();
+              }}
+            >
+              <div className="absolute inset-0 flex flex-col">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/95 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div className={`rounded-md border px-2.5 py-1.5 text-xs ${PREVIEW_STATUS_STYLES[previewStatus]}`}>
+                      <span className="font-semibold">Preview</span>
+                      {previewStatusMessage && <span className="ml-2">{previewStatusMessage}</span>}
                     </div>
-
-                    {TUNE_CONTROLS.map((control) => (
-                      <div key={control.key} className="space-y-1.5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <label className="text-xs font-medium text-gray-700">
-                              {control.label}
-                            </label>
-                            <p className="mt-0.5 text-[11px] leading-4 text-gray-500">
-                              {control.help}
-                            </p>
-                          </div>
-                          <input
-                            type="number"
-                            min={control.min}
-                            max={control.max}
-                            step={control.step}
-                            value={tuneSettings[control.key]}
-                            onChange={(e) =>
-                              updateTuneSetting(control.key, Number(e.target.value))
-                            }
-                            className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                        </div>
-                        <input
-                          type="range"
-                          min={control.min}
-                          max={control.max}
-                          step={control.step}
-                          value={tuneSettings[control.key]}
-                          onChange={(e) =>
-                            updateTuneSetting(control.key, Number(e.target.value))
-                          }
-                          className="w-full accent-blue-600"
-                        />
-                        <div className="flex justify-between text-[10px] text-gray-400">
-                          <span>{control.min}</span>
-                          <span>{control.max}</span>
-                        </div>
-                      </div>
+                    {(['processed', 'split', 'original'] as PreviewViewMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setPreviewViewMode(mode)}
+                        className={`rounded-md px-2.5 py-1.5 text-xs font-medium ${
+                          previewViewMode === mode
+                            ? 'bg-gray-900 text-white'
+                            : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {mode === 'processed' ? 'Processed' : mode === 'split' ? 'Split View' : 'Original'}
+                      </button>
                     ))}
-
-                    {previewError && (
-                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 md:col-span-2">
-                        {previewError}
-                      </div>
-                    )}
-
-                    <p className="text-xs leading-5 text-gray-500 md:col-span-2">
-                      These settings are temporary for visual testing only. Nothing is saved or queued.
-                    </p>
+                    <button
+                      onClick={() => zoomPreview('out')}
+                      disabled={!tunePreview && previewViewMode === 'processed'}
+                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Zoom Out
+                    </button>
+                    <span className="w-12 text-center text-xs font-medium text-gray-600">
+                      {Math.round(svgZoom * 100)}%
+                    </span>
+                    <button
+                      onClick={() => zoomPreview('in')}
+                      disabled={!tunePreview && previewViewMode === 'processed'}
+                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Zoom In
+                    </button>
+                    <button
+                      onClick={resetPreviewZoom}
+                      disabled={!tunePreview && previewViewMode === 'processed'}
+                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={fitPreviewToScreen}
+                      disabled={!tunePreview && previewViewMode === 'processed'}
+                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Fit
+                    </button>
                   </div>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 p-5">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-800">SVG Preview</h3>
-                  </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {tunePreview && (
                       <button
                         onClick={approveAndSaveItem}
                         disabled={saveStatus === 'saving'}
-                        className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
+                        className="rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
                       >
-                        {saveStatus === 'saving' ? 'Saving...' : 'Approve & Save This Item'}
+                        {saveStatus === 'saving' ? 'Saving...' : 'Approve & Save'}
                       </button>
                     )}
                     <a
                       href={previewSvgDataUrl}
                       download={tuneItem ? `${tuneItem.baseName || tuneItem.id}-preview.svg` : 'preview.svg'}
-                      className={`rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 ${
+                      className={`rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 ${
                         tunePreview ? '' : 'pointer-events-none opacity-50'
                       }`}
                     >
-                      Download Preview SVG
+                      Download SVG
                     </a>
-                    <button
-                      onClick={() => setSvgZoom((prev) => Math.max(0.25, Number((prev - 0.25).toFixed(2))))}
-                      disabled={!tunePreview}
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Zoom Out
-                    </button>
-                    <span className="w-14 text-center text-xs font-medium text-gray-600">
-                      {Math.round(svgZoom * 100)}%
-                    </span>
-                    <button
-                      onClick={() => setSvgZoom((prev) => Math.min(6, Number((prev + 0.25).toFixed(2))))}
-                      disabled={!tunePreview}
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Zoom In
-                    </button>
-                    <button
-                      onClick={() => setSvgZoom(1)}
-                      disabled={!tunePreview}
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Reset Zoom
-                    </button>
                   </div>
                 </div>
-
-                {saveMessage && (
-                  <div className="mb-4 space-y-3">
-                    <div
-                      className={`rounded-md border p-3 text-sm ${
-                        saveStatus === 'success'
-                          ? 'border-green-200 bg-green-50 text-green-800'
-                          : saveStatus === 'error'
-                            ? 'border-red-200 bg-red-50 text-red-700'
-                            : 'border-gray-200 bg-gray-50 text-gray-700'
-                      }`}
-                    >
-                      {saveMessage}
-                    </div>
-
-                    {saveStatus === 'success' && savedFiles.length > 0 && (
-                      <div className="rounded-md border border-gray-200 bg-white p-3">
-                        <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3">
-                          <p className="text-sm font-semibold text-amber-900">
-                            Are the saved files ready for final processing?
-                          </p>
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={() => updateManualEditStatus('ready_to_process')}
-                              className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-                            >
-                              Yes, files are ready / Mark Ready To Process
-                            </button>
-                            <button
-                              type="button"
-                              onClick={openEditableFilesForManualEdit}
-                              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                            >
-                              No, open editable files
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateManualEditStatus('needs_manual_edit')}
-                              className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                            >
-                              Save outputs but mark as Needs Manual Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setTuneItem(null)}
-                              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              Cancel / come back later
-                            </button>
-                          </div>
-                        </div>
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                            Local Only
-                          </span>
-                          <p className="text-xs text-gray-500">
-                            Open approved files on this machine with your configured editor.
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {['PNG', 'JPG', 'SVG'].map((fileType) => (
-                            <button
-                              key={fileType}
-                              type="button"
-                              onClick={() => openLocalEditor('file', fileType)}
-                              className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              Open {fileType}
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => openLocalEditor('folder')}
-                            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                          >
-                            Open Output Folder
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openLocalEditor('editable')}
-                            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                          >
-                            Open Editable Files
-                          </button>
-                        </div>
-                        {localEditorMessage && (
-                          <p className="mt-2 text-xs text-gray-600">{localEditorMessage}</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 <div
-                  className="h-[58vh] min-h-[480px] overflow-auto rounded-lg border border-gray-200"
-                  style={{
-                    backgroundColor: '#f8fafc',
-                    backgroundImage:
-                      'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
-                    backgroundSize: '24px 24px',
-                    backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0px',
-                  }}
+                  className={`relative flex-1 overflow-hidden p-3 ${canvasPanStart ? 'cursor-grabbing' : 'cursor-grab'}`}
+                  onWheel={handleCanvasWheel}
+                  onMouseDown={beginCanvasPan}
                 >
-                  <div className="flex min-h-full min-w-full items-center justify-center p-8">
-                    {previewLoading ? (
-                      <div className="rounded-md bg-white/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
-                        Generating preview...
+                  <div className="grid h-full grid-cols-1 gap-3">
+                    {previewViewMode !== 'processed' && (
+                      <div className={`${previewViewMode === 'split' ? 'md:col-start-1 md:row-start-1 md:w-[calc(50%-0.375rem)]' : 'h-full'}`}>
+                        <div className="mb-2 flex items-center justify-between text-xs text-gray-600">
+                          <span className="font-semibold text-gray-800">Original</span>
+                          {tuneItem.originalWidth && tuneItem.originalHeight && (
+                            <span>{tuneItem.originalWidth} x {tuneItem.originalHeight}px</span>
+                          )}
+                        </div>
+                        <div className="flex h-[calc(100%-1.5rem)] items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 p-4">
+                          <img
+                            src={tuneItem.previewUrl}
+                            alt={tuneItem.originalFilename}
+                            className="max-h-full max-w-full object-contain"
+                            draggable={false}
+                            style={{
+                              transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${svgZoom})`,
+                              transformOrigin: 'center center',
+                            }}
+                          />
+                        </div>
                       </div>
-                    ) : tunePreview ? (
-                      <img
-                        src={previewSvgDataUrl}
-                        alt="Generated SVG preview"
-                        style={{
-                          width: tunePreview.traceWidth * svgZoom,
-                          height: tunePreview.traceHeight * svgZoom,
-                          maxWidth: 'none',
-                        }}
-                      />
-                    ) : (
-                      <div className="rounded-md bg-white/90 px-6 py-4 text-center text-sm text-gray-500 shadow-sm">
-                        Adjust settings, then generate a preview for this item.
+                    )}
+
+                    {previewViewMode !== 'original' && (
+                      <div className={`${previewViewMode === 'split' ? 'md:col-start-1 md:row-start-1 md:ml-[calc(50%+0.375rem)] md:w-[calc(50%-0.375rem)]' : 'h-full'}`}>
+                        <div className="mb-2 flex items-center justify-between text-xs text-gray-600">
+                          <span className="font-semibold text-gray-800">Processed</span>
+                          {tunePreview && <span>{tunePreview.traceWidth} x {tunePreview.traceHeight}px</span>}
+                        </div>
+                        <div
+                          className="h-[calc(100%-1.5rem)] overflow-auto rounded-lg border border-gray-200"
+                          style={{
+                            backgroundColor: '#f8fafc',
+                            backgroundImage:
+                              'linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%)',
+                            backgroundSize: '24px 24px',
+                            backgroundPosition: '0 0, 0 12px, 12px -12px, -12px 0px',
+                          }}
+                        >
+                          <div className="flex min-h-full min-w-full items-center justify-center p-6">
+                            {previewLoading ? (
+                              <div className="rounded-md bg-white/90 px-4 py-3 text-sm text-gray-600 shadow-sm">
+                                Generating preview...
+                              </div>
+                            ) : tunePreview ? (
+                              <img
+                                src={previewSvgDataUrl}
+                                alt="Generated SVG preview"
+                                style={{
+                                  width: tunePreview.traceWidth * svgZoom,
+                                  height: tunePreview.traceHeight * svgZoom,
+                                  maxWidth: 'none',
+                                  transform: `translate(${canvasPan.x}px, ${canvasPan.y}px)`,
+                                }}
+                                draggable={false}
+                              />
+                            ) : (
+                              <div className="rounded-md bg-white/90 px-6 py-4 text-center text-sm text-gray-500 shadow-sm">
+                                Adjust settings, then generate a preview for this item.
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
+
+                  {saveMessage && (
+                    <div className="absolute bottom-3 left-3 max-w-3xl space-y-2 rounded-lg border border-gray-200 bg-white/95 p-3 shadow-lg">
+                      <div
+                        className={`rounded-md border p-3 text-sm ${
+                          saveStatus === 'success'
+                            ? 'border-green-200 bg-green-50 text-green-800'
+                            : saveStatus === 'error'
+                              ? 'border-red-200 bg-red-50 text-red-700'
+                              : 'border-gray-200 bg-gray-50 text-gray-700'
+                        }`}
+                      >
+                        {saveMessage}
+                      </div>
+
+                      {saveStatus === 'success' && savedFiles.length > 0 && (
+                        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                            <p className="text-sm font-semibold text-amber-900">
+                              Are the saved files ready for final processing?
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => updateManualEditStatus('ready_to_process')}
+                                className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                              >
+                                Yes, files are ready / Mark Ready To Process
+                              </button>
+                              <button
+                                type="button"
+                                onClick={openEditableFilesForManualEdit}
+                                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                              >
+                                No, open editable files
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateManualEditStatus('needs_manual_edit')}
+                                className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                              >
+                                Save outputs but mark as Needs Manual Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTuneItem(null)}
+                                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                              >
+                                Cancel / come back later
+                              </button>
+                            </div>
+                          </div>
+                          <div>
+                            <div className="mb-2 flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                                Local Only
+                              </span>
+                              <p className="text-xs text-gray-500">
+                                Open approved files on this machine with your configured editor.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {['PNG', 'JPG', 'SVG'].map((fileType) => (
+                                <button
+                                  key={fileType}
+                                  type="button"
+                                  onClick={() => openLocalEditor('file', fileType)}
+                                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                >
+                                  Open {fileType}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => openLocalEditor('folder')}
+                                className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                              >
+                                Open Output Folder
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openLocalEditor('editable')}
+                                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                              >
+                                Open Editable Files
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {localEditorMessage && (
+                        <p className="text-xs text-gray-600">{localEditorMessage}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {tunePreview && (
-                  <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <p className="mb-3 text-xs text-gray-500">
-                      {formatBytes(tunePreview.svgSize)} - {tunePreview.processingTimeMs}ms - traced at{' '}
-                      {tunePreview.traceWidth} x {tunePreview.traceHeight}px
-                      {tunePreview.upscaleApplied
-                        ? ` after ${tunePreview.upscaleFactor}x smart upscale`
-                        : ' without smart upscale'}
-                    </p>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-700 md:grid-cols-4">
-                      <div>
-                        <span className="font-medium">SVG length:</span>{' '}
-                        {tunePreview.diagnostics.svgLength}
-                      </div>
-                      <div>
-                        <span className="font-medium">Paths:</span>{' '}
-                        {tunePreview.diagnostics.pathCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">fill none:</span>{' '}
-                        {tunePreview.diagnostics.fillNoneCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">stroke:</span>{' '}
-                        {tunePreview.diagnostics.strokeCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">opacity 0:</span>{' '}
-                        {tunePreview.diagnostics.opacityZeroCount}
-                      </div>
-                      <div>
-                        <span className="font-medium">visible fill:</span>{' '}
-                        {tunePreview.diagnostics.hasVisibleFill ? 'yes' : 'no'}
-                      </div>
-                      <div>
-                        <span className="font-medium">visible stroke:</span>{' '}
-                        {tunePreview.diagnostics.hasVisibleStroke ? 'yes' : 'no'}
-                      </div>
-                      <div>
-                        <span className="font-medium">debug file:</span>{' '}
-                        {tunePreview.debugSvgPath || 'not saved'}
-                      </div>
-                      <div>
-                        <span className="font-medium">viewBox:</span>{' '}
-                        {tunePreview.diagnostics.viewBox || 'none'}
-                      </div>
-                      <div>
-                        <span className="font-medium">width:</span>{' '}
-                        {tunePreview.diagnostics.width || 'none'}
-                      </div>
-                      <div>
-                        <span className="font-medium">height:</span>{' '}
-                        {tunePreview.diagnostics.height || 'none'}
-                      </div>
+                <aside
+                  data-floating-panel="true"
+                  className="absolute right-3 top-3 z-10 w-[min(360px,calc(100%-1.5rem))] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
+                  style={{
+                    transform: `translate(${tunePanelPosition.x}px, ${tunePanelPosition.y}px)`,
+                  }}
+                >
+                  <div
+                    className={`flex cursor-move items-center justify-between gap-2 border-b border-gray-200 px-3 py-2 ${panelDragStart ? 'bg-blue-50' : ''}`}
+                    onMouseDown={beginPanelDrag}
+                  >
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-gray-900">Controls</h3>
+                      <p className="truncate text-[11px] text-gray-500">{tuneItem.originalFilename}</p>
                     </div>
-                    <div className="mt-3 space-y-2">
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-gray-700">Root SVG tag</p>
-                        <pre className="max-h-20 overflow-auto rounded border border-gray-200 bg-white p-2 text-[11px] text-gray-700">
-                          {tunePreview.diagnostics.rootSvgTag || 'none'}
-                        </pre>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-xs font-medium text-gray-700">First path tag</p>
-                        <pre className="max-h-24 overflow-auto rounded border border-gray-200 bg-white p-2 text-[11px] text-gray-700">
-                          {tunePreview.diagnostics.firstPathTag || 'none'}
-                        </pre>
-                      </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          resetPanelPosition();
+                        }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Reset Pos
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setCompactTunePanel((value) => !value);
+                        }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        {compactTunePanel ? 'Normal' : 'Compact'}
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setTunePanelCollapsed((value) => !value);
+                        }}
+                        className="rounded-md border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        {tunePanelCollapsed ? 'Expand' : 'Minimize'}
+                      </button>
                     </div>
                   </div>
-                )}
+
+                  {!tunePanelCollapsed && (
+                    <div className="max-h-[calc(94vh-136px)] overflow-y-auto">
+                      <div className={`border-b border-gray-200 ${compactTunePanel ? 'p-2' : 'p-3'}`}>
+                        <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-2">
+                          <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                            <img
+                              src={tuneItem.previewUrl}
+                              alt={tuneItem.originalFilename}
+                              className="h-full w-full object-contain"
+                            />
+                          </div>
+                          <div className="min-w-0 text-xs text-gray-600">
+                            <p className="truncate font-medium text-gray-900">{tuneItem.originalFilename}</p>
+                            <p className="mt-1">{tuneItem.originalWidth && tuneItem.originalHeight ? `${tuneItem.originalWidth} x ${tuneItem.originalHeight}px` : 'Dimensions unknown'}</p>
+                            <p className="mt-1">
+                              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                                {tuneItem.status}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={`grid grid-cols-2 gap-1.5 border-b border-gray-200 ${compactTunePanel ? 'p-2' : 'p-3'}`}>
+                      <button
+                        onClick={generatePreview}
+                        disabled={previewLoading}
+                        className="rounded-md bg-blue-600 px-2 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {previewLoading ? 'Generating...' : 'Generate Preview'}
+                      </button>
+                      <button
+                        onClick={() => setTuneSettings(siteTuneDefaults)}
+                        className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Restore Defaults
+                      </button>
+                      {savedFiles.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openLocalEditor('editable')}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Open Editable Files
+                        </button>
+                      )}
+                      {tuneItem.status === 'NEEDS_MANUAL_EDIT' && (
+                        <button
+                          type="button"
+                          onClick={() => setTuneTab('controls')}
+                          className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                        >
+                          Continue Editing
+                        </button>
+                      )}
+                      {savedFiles.length > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => updateManualEditStatus('ready_to_process')}
+                            className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                          >
+                            Mark Ready To Process
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateManualEditStatus('needs_manual_edit')}
+                            className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                          >
+                            Mark Needs Manual Edit
+                          </button>
+                        </>
+                      )}
+                      {tuneItem.status === 'READY_TO_PROCESS' && (
+                        <button
+                          type="button"
+                          onClick={() => processReadyItem(tuneItem)}
+                          className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                        >
+                          Start Conversion
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setTuneItem(null)}
+                        className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Back
+                      </button>
+                      </div>
+                      {localEditorMessage && (
+                        <p className="border-b border-gray-200 px-3 py-2 text-xs text-gray-600">{localEditorMessage}</p>
+                      )}
+
+                      <div className="flex gap-1.5 border-b border-gray-200 px-2 py-2">
+                        {(['controls', 'details'] as TuneTab[]).map((tab) => (
+                          <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setTuneTab(tab)}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
+                              tuneTab === tab
+                                ? 'bg-blue-600 text-white'
+                                : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            {tab === 'controls' ? 'Controls' : 'Details'}
+                          </button>
+                        ))}
+                        {previewWarnings.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setTuneTab('warnings')}
+                            className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium ${
+                              tuneTab === 'warnings'
+                                ? 'bg-amber-600 text-white'
+                                : 'border border-amber-300 text-amber-800 hover:bg-amber-50'
+                            }`}
+                          >
+                            Warnings
+                          </button>
+                        )}
+                      </div>
+
+                      {tuneTab === 'controls' && (
+                        <div className={compactTunePanel ? 'space-y-2 p-2' : 'space-y-3 p-3'}>
+                          <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-2">
+                            <label className="flex items-center gap-1.5 text-[11px] font-medium text-gray-700">
+                              Color Mode
+                              <button
+                                type="button"
+                                title="Controls whether preview tracing uses binary or color output."
+                                aria-label="Color Mode help"
+                                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[10px] text-gray-500"
+                              >
+                                i
+                              </button>
+                            </label>
+                            <select
+                              value={tuneSettings.colorMode}
+                              onChange={(e) => updateTuneColorMode(e.target.value as 'color' | 'binary')}
+                              className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="binary">binary</option>
+                              <option value="color">color</option>
+                            </select>
+                          </div>
+
+                          {TUNE_CONTROL_GROUPS.map((group, groupIndex) => (
+                            <details key={group.title} open={groupIndex < 2} className="rounded-md border border-gray-200 bg-white">
+                              <summary className="cursor-pointer px-2 py-1.5 text-xs font-semibold text-gray-800">
+                                {group.title}
+                              </summary>
+                              <div className={compactTunePanel ? 'space-y-2 px-2 pb-2' : 'space-y-3 px-2 pb-3'}>
+                                {group.keys.map((key) => {
+                                  const control = TUNE_CONTROLS.find((candidate) => candidate.key === key);
+                                  if (!control) return null;
+
+                                  return (
+                                    <div key={control.key} className="grid grid-cols-[minmax(0,1fr)_64px] items-center gap-x-2 gap-y-1">
+                                      <label className="flex min-w-0 items-center gap-1.5 truncate text-[11px] font-medium text-gray-700">
+                                        <span className="truncate">{control.label}</span>
+                                        <button
+                                          type="button"
+                                          title={control.help}
+                                          aria-label={`${control.label} help`}
+                                          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-gray-300 text-[10px] text-gray-500"
+                                        >
+                                          i
+                                        </button>
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={control.min}
+                                        max={control.max}
+                                        step={control.step}
+                                        value={tuneSettings[control.key]}
+                                        onChange={(e) =>
+                                          updateTuneSetting(control.key, Number(e.target.value))
+                                        }
+                                        className="w-16 rounded-md border border-gray-300 px-1.5 py-1 text-right text-[11px] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                      />
+                                      <input
+                                        type="range"
+                                        min={control.min}
+                                        max={control.max}
+                                        step={control.step}
+                                        value={tuneSettings[control.key]}
+                                        onChange={(e) =>
+                                          updateTuneSetting(control.key, Number(e.target.value))
+                                        }
+                                        className="col-span-2 h-4 w-full accent-blue-600"
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      )}
+
+                      {tuneTab === 'details' && (
+                        <div className="space-y-3 p-3 text-xs text-gray-700">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div><span className="font-medium">Status:</span> {tuneItem.status}</div>
+                            <div><span className="font-medium">File Size:</span> {tuneItem.originalSize ? formatBytes(tuneItem.originalSize) : 'unknown'}</div>
+                            <div><span className="font-medium">Dimensions:</span> {tuneItem.originalWidth && tuneItem.originalHeight ? `${tuneItem.originalWidth} x ${tuneItem.originalHeight}px` : 'unknown'}</div>
+                            <div><span className="font-medium">DPI:</span> unknown</div>
+                            <div><span className="font-medium">Colors:</span> {tuneSettings.colorMode}</div>
+                            <div><span className="font-medium">Paths:</span> {tunePreview ? tunePreview.diagnostics.pathCount : 'not generated'}</div>
+                            <div><span className="font-medium">Nodes:</span> not measured</div>
+                            <div><span className="font-medium">Time:</span> {tunePreview ? `${tunePreview.processingTimeMs}ms` : 'not generated'}</div>
+                            <div><span className="font-medium">Preview:</span> {tunePreview ? formatBytes(tunePreview.svgSize) : 'not generated'}</div>
+                            <div><span className="font-medium">Trace:</span> {tunePreview ? `${tunePreview.traceWidth} x ${tunePreview.traceHeight}px` : 'not generated'}</div>
+                          </div>
+
+                          {tunePreview && (
+                            <details className="rounded-md border border-gray-200 bg-gray-50">
+                              <summary className="cursor-pointer px-2 py-1.5 text-xs font-semibold text-gray-800">
+                                SVG Diagnostics
+                              </summary>
+                              <div className="grid grid-cols-2 gap-2 px-2 pb-2">
+                                <div><span className="font-medium">Length:</span> {tunePreview.diagnostics.svgLength}</div>
+                                <div><span className="font-medium">fill none:</span> {tunePreview.diagnostics.fillNoneCount}</div>
+                                <div><span className="font-medium">stroke:</span> {tunePreview.diagnostics.strokeCount}</div>
+                                <div><span className="font-medium">opacity 0:</span> {tunePreview.diagnostics.opacityZeroCount}</div>
+                                <div><span className="font-medium">fill:</span> {tunePreview.diagnostics.hasVisibleFill ? 'yes' : 'no'}</div>
+                                <div><span className="font-medium">visible stroke:</span> {tunePreview.diagnostics.hasVisibleStroke ? 'yes' : 'no'}</div>
+                                <div className="col-span-2"><span className="font-medium">viewBox:</span> {tunePreview.diagnostics.viewBox || 'none'}</div>
+                                <div><span className="font-medium">width:</span> {tunePreview.diagnostics.width || 'none'}</div>
+                                <div><span className="font-medium">height:</span> {tunePreview.diagnostics.height || 'none'}</div>
+                              </div>
+                            </details>
+                          )}
+                        </div>
+                      )}
+
+                      {tuneTab === 'warnings' && previewWarnings.length > 0 && (
+                        <div className="space-y-2 p-3">
+                          {previewWarnings.map((warning, index) => (
+                            <div key={`${warning}-${index}`} className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                              {warning}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </aside>
               </div>
             </div>
           </div>

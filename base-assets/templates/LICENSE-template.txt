@@ -1,0 +1,28 @@
+License Type:
+{{LICENSE_TYPE}}
+
+Artwork ID:
+{{ARTWORK_ID}}
+
+Profile ID:
+{{PROFILE_ID}}
+
+SKU:
+{{SKU}}
+
+Company:
+{{COMPANY_NAME}}
+
+Copyright Owner:
+{{COPYRIGHT_OWNER}}
+
+For support contact:
+
+{{CONTACT_NAME}}
+{{EMAIL}}
+{{PHONE}}
+{{WEBSITE}}
+{{SUPPORT_URL}}
+
+Generated:
+{{CURRENT_DATE}}

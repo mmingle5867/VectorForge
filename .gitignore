@@ -39,6 +39,10 @@ node_modules/.prisma/
 /uploads
 /output
 /base-assets
+!/base-assets/
+/base-assets/*
+!/base-assets/templates/
+!/base-assets/templates/*.txt
 /logs
 
 # Logs

@@ -72,6 +72,18 @@ const DEFAULT_SETTINGS: UserSettings = {
 
 const MANUAL_EDITOR_FILE_TYPES = ['PNG', 'JPG', 'SVG'];
 const MANUAL_EDITOR_ACTIONS = ['Open Preferred File Type', 'Open All Selected File Types'];
+const BUILT_IN_TEMPLATE_VARIABLES = [
+  'ARTWORK_ID',
+  'PROFILE_ID',
+  'SKU',
+  'PRODUCT_NAME',
+  'ARTWORK_TITLE',
+  'PROFILE_TYPE',
+  'FILE_TYPES',
+  'CURRENT_YEAR',
+  'CURRENT_DATE',
+  'PURCHASE_DATE',
+];
 
 // ============================================================================
 // Tooltip Component
@@ -494,6 +506,10 @@ export default function SettingsPage() {
       return { ...s, manualEditorFileTypes: fileTypes };
     });
   };
+
+  const customTemplateVariableKeys = substitutions
+    .map((row) => row.key.trim().toUpperCase())
+    .filter(Boolean);
 
   // Test paths
   const testPaths = async () => {
@@ -1167,6 +1183,41 @@ export default function SettingsPage() {
           showPlaceholders={true}
           maxRows={50}
         />
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+            Available Template Variables
+          </h3>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Use these as double-brace placeholders in README and LICENSE templates. Generated values override matching custom keys.
+          </p>
+          <p className="mt-3 text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+            Built-in
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {BUILT_IN_TEMPLATE_VARIABLES.map((key) => (
+              <code key={key} className="rounded bg-gray-50 px-1.5 py-1 text-[11px] text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                {key}
+              </code>
+            ))}
+          </div>
+
+          <p className="mt-4 text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+            Custom
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {customTemplateVariableKeys.length > 0 ? (
+              Array.from(new Set(customTemplateVariableKeys)).map((key) => (
+                <code key={key} className="rounded bg-gray-50 px-1.5 py-1 text-[11px] text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                  {key}
+                </code>
+              ))
+            ) : (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Add substitution variables above to make them available to templates.
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Action Buttons */}

@@ -11,6 +11,28 @@ import { logger } from '@/lib/logger';
 import { finalizeManualEditPackage } from '@/services/package-finalization';
 import { recomputeBatchStatus } from '@/services/batch-status';
 
+function getTemplateVariables(settingsJson: Record<string, unknown>) {
+  const variables: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(settingsJson)) {
+    if (typeof value === 'string') {
+      variables[key] = value;
+    }
+  }
+
+  if (
+    settingsJson.templateVariables &&
+    typeof settingsJson.templateVariables === 'object' &&
+    !Array.isArray(settingsJson.templateVariables)
+  ) {
+    for (const [key, value] of Object.entries(settingsJson.templateVariables)) {
+      variables[key] = typeof value === 'string' ? value : String(value ?? '');
+    }
+  }
+
+  return variables;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth();
@@ -73,6 +95,16 @@ export async function POST(req: NextRequest) {
       backgroundFilename: (settingsJson.backgroundFilename as string) ?? 'preview-background.jpg',
       watermarkFilename: (settingsJson.watermarkFilename as string) ?? 'watermark.png',
       cncMode: (settingsJson.cncMode as boolean) ?? true,
+      documentSettings: {
+        companyName: (settingsJson.companyName as string) ?? '',
+        contactName: (settingsJson.contactName as string) ?? '',
+        website: (settingsJson.website as string) ?? '',
+        email: (settingsJson.email as string) ?? '',
+        phone: (settingsJson.phone as string) ?? '',
+        supportUrl: (settingsJson.supportUrl as string) ?? '',
+        defaultLicenseType: (settingsJson.defaultLicenseType as string) ?? '',
+        templateVariables: getTemplateVariables(settingsJson),
+      },
     };
 
     await prisma.batch.update({

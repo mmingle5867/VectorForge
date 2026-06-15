@@ -49,6 +49,14 @@ const EXTENDED_KEYS = [
   'manualEditorAllowMultipleFiles',
   'manualEditorFileTypes',
   'manualEditorDefaultAction',
+  'companyName',
+  'contactName',
+  'website',
+  'email',
+  'phone',
+  'supportUrl',
+  'defaultLicenseType',
+  'templateVariables',
 ] as const;
 
 const TUNING_EXPORT_KEYS = [
@@ -80,6 +88,67 @@ const settingsFallbacks = {
 function getStringArraySetting(value: unknown, fallback: string[]) {
   if (!Array.isArray(value)) return fallback;
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function normalizeTemplateVariables(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const variables: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = key.trim().toUpperCase();
+    if (/^[A-Z0-9_]+$/.test(normalizedKey)) {
+      variables[normalizedKey] = typeof rawValue === 'string' ? rawValue : String(rawValue ?? '');
+    }
+  }
+  return variables;
+}
+
+function addLegacyTemplateSetting(
+  substitutions: Record<string, string>,
+  key: string,
+  value: unknown
+) {
+  if (typeof value === 'string' && value && substitutions[key] === undefined) {
+    substitutions[key] = value;
+  }
+}
+
+function mergeLegacyTemplateVariables(
+  substitutions: Record<string, string>,
+  extended: Record<string, unknown>
+) {
+  const merged = {
+    ...normalizeTemplateVariables(extended.templateVariables),
+    ...substitutions,
+  };
+
+  addLegacyTemplateSetting(merged, 'COMPANY_NAME', extended.companyName);
+  addLegacyTemplateSetting(merged, 'CONTACT_NAME', extended.contactName);
+  addLegacyTemplateSetting(merged, 'WEBSITE', extended.website);
+  addLegacyTemplateSetting(merged, 'EMAIL', extended.email);
+  addLegacyTemplateSetting(merged, 'PHONE', extended.phone);
+  addLegacyTemplateSetting(merged, 'SUPPORT_URL', extended.supportUrl);
+  addLegacyTemplateSetting(merged, 'LICENSE_TYPE', extended.defaultLicenseType);
+
+  return merged;
+}
+
+function validateTemplateVariables(value: unknown) {
+  if (value === undefined) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return 'Template variables must be key/value pairs';
+  }
+
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    const trimmedKey = key.trim();
+    if (!/^[A-Z0-9_]+$/.test(trimmedKey)) {
+      return `Template variable "${key}" must use uppercase letters, numbers, and underscores only`;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -179,6 +248,7 @@ export async function GET() {
     // Parse the defaultSubstitutions to separate extended settings from user substitutions
     const rawSubs = (user.settings.defaultSubstitutions as Record<string, unknown>) || {};
     const { extended, substitutions } = extractExtendedSettings(rawSubs);
+    const mergedSubstitutionVariables = mergeLegacyTemplateVariables(substitutions, extended);
 
     return NextResponse.json({
       success: true,
@@ -187,7 +257,7 @@ export async function GET() {
         smartUpscaleThreshold: user.settings.smartUpscaleThreshold,
         baseAssetsPath: user.settings.baseAssetsPath,
         outputPath: user.settings.outputPath,
-        defaultSubstitutions: substitutions,
+        defaultSubstitutions: mergedSubstitutionVariables,
         // Extended settings
         enableMarketplacePreview: extended.enableMarketplacePreview ?? true,
         enableColorTint: extended.enableColorTint ?? false,
@@ -240,6 +310,14 @@ export async function PUT(req: NextRequest) {
       manualEditorAllowMultipleFiles,
       manualEditorFileTypes,
       manualEditorDefaultAction,
+      companyName,
+      contactName,
+      website,
+      email,
+      phone,
+      supportUrl,
+      defaultLicenseType,
+      templateVariables,
       preUpscaleBlur,
       preprocessingBlur,
       blurPasses,
@@ -352,8 +430,16 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    const templateVariableError = validateTemplateVariables(templateVariables);
+    if (templateVariableError) {
+      return NextResponse.json({ success: false, error: templateVariableError }, { status: 400 });
+    }
+
     // Merge user substitutions with extended settings into a single JSON blob
-    const mergedSubstitutions: Record<string, string | number | boolean | string[]> = {
+    const mergedSubstitutions: Record<
+      string,
+      string | number | boolean | string[] | Record<string, string>
+    > = {
       ...(defaultSubstitutions || {}),
     };
 
@@ -376,6 +462,20 @@ export async function PUT(req: NextRequest) {
     if (manualEditorDefaultAction !== undefined) {
       mergedSubstitutions.manualEditorDefaultAction = String(manualEditorDefaultAction);
     }
+    if (templateVariables !== undefined) {
+      Object.assign(mergedSubstitutions, normalizeTemplateVariables(templateVariables));
+    }
+    addLegacyTemplateSetting(mergedSubstitutions as Record<string, string>, 'COMPANY_NAME', companyName);
+    addLegacyTemplateSetting(mergedSubstitutions as Record<string, string>, 'CONTACT_NAME', contactName);
+    addLegacyTemplateSetting(mergedSubstitutions as Record<string, string>, 'WEBSITE', website);
+    addLegacyTemplateSetting(mergedSubstitutions as Record<string, string>, 'EMAIL', email);
+    addLegacyTemplateSetting(mergedSubstitutions as Record<string, string>, 'PHONE', phone);
+    addLegacyTemplateSetting(mergedSubstitutions as Record<string, string>, 'SUPPORT_URL', supportUrl);
+    addLegacyTemplateSetting(
+      mergedSubstitutions as Record<string, string>,
+      'LICENSE_TYPE',
+      defaultLicenseType
+    );
     for (const key of TUNING_EXPORT_KEYS) {
       if (tuningExportBody[key] !== undefined) {
         mergedSubstitutions[key] =

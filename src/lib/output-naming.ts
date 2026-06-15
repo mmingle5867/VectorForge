@@ -67,6 +67,14 @@ export function getManifestPath(itemOutputDir: string) {
   return path.join(itemOutputDir, 'manifest.json');
 }
 
+export function getReadmePath(itemOutputDir: string) {
+  return path.join(itemOutputDir, 'README.txt');
+}
+
+export function getLicensePath(itemOutputDir: string) {
+  return path.join(itemOutputDir, 'LICENSE.txt');
+}
+
 export function getOriginalSourcePath(itemOutputDir: string, extension: string) {
   return path.join(
     itemOutputDir,

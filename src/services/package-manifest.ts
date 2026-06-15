@@ -30,6 +30,8 @@ type ManifestInput = {
   marketplacePreviewPath: string | null;
   metadataPath: string | null;
   skuFilePath: string | null;
+  readmePath?: string | null;
+  licensePath?: string | null;
 };
 
 function slugify(value: string) {
@@ -142,6 +144,8 @@ export async function generatePackageManifest(input: ManifestInput) {
   const metadataEntries = await collectEntries([
     fileEntry(input.outputDir, input.metadataPath, 'listing-info'),
     fileEntry(input.outputDir, input.skuFilePath, 'sku-file'),
+    fileEntry(input.outputDir, input.readmePath, 'readme'),
+    fileEntry(input.outputDir, input.licensePath, 'license'),
   ]);
   const listingPreviewEntry = await fileEntry(
     input.outputDir,

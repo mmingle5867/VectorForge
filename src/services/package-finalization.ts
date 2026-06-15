@@ -11,6 +11,10 @@ import { generateSkuFile } from '@/services/sku-generator';
 import { applyBaseAssets } from '@/services/base-assets';
 import { createZipFromFolder } from '@/services/zip-generator';
 import { generatePackageManifest } from '@/services/package-manifest';
+import {
+  generatePackageDocuments,
+  type PackageDocumentSettings,
+} from '@/services/template-renderer';
 import type { SubstitutionData } from '@/lib/types';
 
 interface FinalizePackageInput {
@@ -43,6 +47,7 @@ interface FinalizePackageInput {
   backgroundFilename: string;
   watermarkFilename: string;
   cncMode: boolean;
+  documentSettings?: PackageDocumentSettings;
 }
 
 async function readImageDimensions(imagePath: string | null) {
@@ -136,6 +141,24 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     await applyBaseAssets(outputDir, input.baseAssetsPath);
   }
 
+  const fileTypes = [
+    svgPath ? 'SVG' : null,
+    pngPath ? 'PNG' : null,
+    jpgPath ? 'JPG' : null,
+  ].filter((type): type is string => Boolean(type));
+  const { readmePath, licensePath } = await generatePackageDocuments({
+    outputDir,
+    baseAssetsPath: input.baseAssetsPath,
+    productName: input.item.baseName,
+    sku,
+    artworkId: input.item.artworkNumber || input.item.artworkId,
+    profileId: input.item.profileNumber || input.item.assetProfileId,
+    fileTypes,
+    profileType: 'digital',
+    artworkTitle: input.item.baseName,
+    settings: input.documentSettings,
+  });
+
   const manifestPath = await generatePackageManifest({
     outputDir,
     item: input.item,
@@ -146,6 +169,8 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     marketplacePreviewPath,
     metadataPath,
     skuFilePath: skuFile.path,
+    readmePath,
+    licensePath,
   });
 
   const zipPath = getZipPath(outputDir);
@@ -155,6 +180,8 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     sku,
     skuFilePath: skuFile.path,
     metadataPath,
+    readmePath,
+    licensePath,
     manifestPath,
     marketplacePreviewPath,
     zipPath,

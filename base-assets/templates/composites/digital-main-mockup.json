@@ -1,0 +1,43 @@
+{
+  "id": "digital-main-mockup",
+  "name": "Digital Main Mockup",
+  "description": "Primary square mockup for a digital download listing.",
+  "assetProfile": "digital",
+  "marketplace": "etsy",
+  "outputRole": "main-image",
+  "slot": 1,
+  "priority": 10,
+  "width": 2000,
+  "height": 2000,
+  "format": "jpg",
+  "quality": 90,
+  "outputFilename": "{{PROFILE_ID}}-etsy-01-main.jpg",
+  "layers": [
+    {
+      "type": "background",
+      "source": "base-assets/digital/backgrounds/wood.jpg",
+      "required": true,
+      "fit": "cover",
+      "anchor": "center",
+      "opacity": 1
+    },
+    {
+      "type": "artwork",
+      "source": "primary-png",
+      "required": true,
+      "fit": "contain",
+      "scale": 0.82,
+      "anchor": "center",
+      "opacity": 1
+    },
+    {
+      "type": "watermark",
+      "source": "base-assets/shared/watermarks/default.png",
+      "required": false,
+      "fit": "contain",
+      "scale": 0.25,
+      "anchor": "bottom-right",
+      "opacity": 0.35
+    }
+  ]
+}

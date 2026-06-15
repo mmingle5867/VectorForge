@@ -1,0 +1,46 @@
+{
+  "id": "digital-files-included",
+  "name": "Digital Files Included",
+  "description": "Graphic showing included digital file formats.",
+  "assetProfile": "digital",
+  "marketplace": "etsy",
+  "outputRole": "files-included",
+  "slot": 2,
+  "priority": 20,
+  "width": 2000,
+  "height": 2000,
+  "format": "jpg",
+  "quality": 90,
+  "outputFilename": "{{PROFILE_ID}}-etsy-02-files-included.jpg",
+  "layers": [
+    {
+      "type": "background",
+      "source": "base-assets/digital/backgrounds/neutral-paper.jpg",
+      "required": true,
+      "fit": "cover",
+      "anchor": "center",
+      "opacity": 1
+    },
+    {
+      "type": "artwork",
+      "source": "primary-png",
+      "required": true,
+      "fit": "contain",
+      "scale": 0.58,
+      "anchor": "top",
+      "y": 180,
+      "opacity": 1
+    },
+    {
+      "type": "text",
+      "required": false,
+      "text": "Included files: SVG, PNG, JPG",
+      "font": "Arial",
+      "fontSize": 72,
+      "color": "#111111",
+      "anchor": "bottom",
+      "y": -220,
+      "opacity": 1
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "id": "laser-main-mockup",
+  "name": "Laser Main Mockup",
+  "description": "Primary square mockup for a laser-cut product listing.",
+  "assetProfile": "laser",
+  "marketplace": "etsy",
+  "outputRole": "main-image",
+  "slot": 1,
+  "priority": 10,
+  "width": 2000,
+  "height": 2000,
+  "format": "jpg",
+  "quality": 90,
+  "outputFilename": "{{PROFILE_ID}}-etsy-01-main.jpg",
+  "layers": [
+    {
+      "type": "background",
+      "source": "base-assets/laser/backgrounds/workbench.jpg",
+      "required": true,
+      "fit": "cover",
+      "anchor": "center",
+      "opacity": 1
+    },
+    {
+      "type": "shadow",
+      "required": false,
+      "scale": 0.78,
+      "anchor": "center",
+      "opacity": 0.28
+    },
+    {
+      "type": "artwork",
+      "source": "primary-png",
+      "required": true,
+      "fit": "contain",
+      "scale": 0.76,
+      "anchor": "center",
+      "opacity": 1
+    },
+    {
+      "type": "text",
+      "required": false,
+      "text": "Laser-ready design",
+      "font": "Arial",
+      "fontSize": 64,
+      "color": "#222222",
+      "anchor": "bottom",
+      "y": -160,
+      "opacity": 1
+    }
+  ]
+}

@@ -343,6 +343,126 @@ Composite images will be generated from:
 
 Composite templates should be profile-specific and marketplace-aware. Marketplace profiles should define slot counts, preferred sizes, accepted formats, and required image or video rules.
 
+## Marketplace Profiles
+
+Marketplace profiles describe channel rules without hard-coding one marketplace into processing logic.
+
+Initial profile keys:
+
+- `etsy`
+- `shopify`
+- `bigcommerce`
+- `ebay`
+- `custom`
+
+Each marketplace profile defines:
+
+- marketplace key
+- display label
+- maximum image count
+- maximum video count
+- preferred image size
+- allowed image formats
+- allowed video formats
+- whether square images are preferred
+- main image rules
+- notes
+
+Current Etsy defaults:
+
+- max images: 20
+- max videos: 2
+- preferred image size: 2000 x 2000
+- allowed image formats: JPG and PNG
+- square preferred: true
+
+Other marketplace defaults are placeholders and should be editable later.
+
+## Composite Template Storage
+
+Composite templates are data files, not hard-coded rendering logic.
+
+Current planned storage:
+
+```text
+base-assets/templates/composites/
+  digital-main-mockup.json
+  digital-files-included.json
+  laser-main-mockup.json
+```
+
+Template files should be portable JSON and may reference specific source assets in `base-assets`.
+
+Example template fields:
+
+```json
+{
+  "id": "digital-main-mockup",
+  "name": "Digital Main Mockup",
+  "assetProfile": "digital",
+  "marketplace": "etsy",
+  "outputRole": "main-image",
+  "slot": 1,
+  "priority": 10,
+  "width": 2000,
+  "height": 2000,
+  "format": "jpg",
+  "quality": 90,
+  "outputFilename": "{{PROFILE_ID}}-etsy-01-main.jpg",
+  "layers": []
+}
+```
+
+Layer types planned in the schema:
+
+- background
+- artwork
+- watermark
+- mask
+- shadow
+- text
+- border
+
+Text layers are included in the schema for future rendering, but text rendering does not need to be implemented in the data-definition phase.
+
+## Listing Image Output Strategy
+
+Use a hybrid model.
+
+Profile-owned listing images should live under profile folders:
+
+```text
+digital/listing-images/
+laser/listing-images/
+vinyl/listing-images/
+cnc/listing-images/
+sewing/listing-images/
+print/listing-images/
+```
+
+Marketplace-specific export sets may later live under marketplace folders:
+
+```text
+marketplace/etsy/
+marketplace/shopify/
+marketplace/bigcommerce/
+marketplace/ebay/
+marketplace/custom/
+```
+
+Reason:
+
+- Most generated images describe an asset profile first.
+- Marketplace export folders are channel-specific packaging views.
+- Future listing software can import either profile-owned images or marketplace export sets.
+
+Rules:
+
+- Generated listing images may be regenerated.
+- Generated listing images should not overwrite manually edited base artwork files.
+- Templates should reference specific files and should not copy all of `base-assets`.
+- Manifest entries should eventually record marketplace key, asset profile, template ID, output role, slot, dimensions, and format.
+
 ## Implementation Phases
 
 Phase 1: Document structure only.

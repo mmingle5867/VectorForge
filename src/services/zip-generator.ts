@@ -1,7 +1,7 @@
 /**
  * VectorForge - ZIP Generation Service
- * Creates ZIP bundles containing all generated files for a batch item.
- * The ZIP contains the exact same files as the unzipped output folder.
+ * Creates customer ZIP bundles for generated batch item files.
+ * Internal package files remain on disk but are not included in customer archives.
  */
 
 import JSZip from 'jszip';
@@ -12,7 +12,7 @@ import type { GeneratedFile } from '@/lib/types';
 
 /**
  * Create a ZIP file from an output folder.
- * The ZIP mirrors the exact contents of the unzipped folder.
+ * Internal files and nested archives are excluded from the customer ZIP.
  */
 export async function createZipFromFolder(
   folderPath: string,
@@ -48,6 +48,11 @@ export async function createZipFromFolder(
   };
 }
 
+function shouldExcludeFromCustomerZip(fileName: string): boolean {
+  const normalized = fileName.toLowerCase();
+  return normalized === 'manifest.json' || path.extname(normalized) === '.zip';
+}
+
 /**
  * Recursively add a folder's contents to a JSZip instance.
  */
@@ -64,7 +69,7 @@ async function addFolderToZip(
 
     if (entry.isDirectory()) {
       await addFolderToZip(zip, fullPath, zipPath);
-    } else if (path.extname(entry.name).toLowerCase() !== '.zip') {
+    } else if (!shouldExcludeFromCustomerZip(entry.name)) {
       const fileBuffer = await fs.readFile(fullPath);
       zip.file(zipPath, fileBuffer);
     }
@@ -88,6 +93,10 @@ export async function createZipFromFiles(
   });
 
   for (const file of files) {
+    if (shouldExcludeFromCustomerZip(file.filename)) {
+      continue;
+    }
+
     try {
       const fileBuffer = await fs.readFile(file.path);
       zip.file(`${folderName}/${file.filename}`, fileBuffer);

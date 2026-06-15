@@ -8,6 +8,7 @@ import JSZip from 'jszip';
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '@/lib/logger';
+import { isInternalPackagePath } from '@/lib/package-structure';
 import type { GeneratedFile } from '@/lib/types';
 
 /**
@@ -48,9 +49,8 @@ export async function createZipFromFolder(
   };
 }
 
-function shouldExcludeFromCustomerZip(fileName: string): boolean {
-  const normalized = fileName.toLowerCase();
-  return normalized === 'manifest.json' || path.extname(normalized) === '.zip';
+function shouldExcludeFromCustomerZip(relativePath: string): boolean {
+  return isInternalPackagePath(relativePath) || path.extname(relativePath).toLowerCase() === '.zip';
 }
 
 /**
@@ -59,17 +59,23 @@ function shouldExcludeFromCustomerZip(fileName: string): boolean {
 async function addFolderToZip(
   zip: JSZip,
   folderPath: string,
-  zipFolderName: string
+  zipFolderName: string,
+  relativeFolder = ''
 ): Promise<void> {
   const entries = await fs.readdir(folderPath, { withFileTypes: true });
 
   for (const entry of entries) {
     const fullPath = path.join(folderPath, entry.name);
     const zipPath = `${zipFolderName}/${entry.name}`;
+    const relativePath = relativeFolder ? `${relativeFolder}/${entry.name}` : entry.name;
+
+    if (shouldExcludeFromCustomerZip(relativePath)) {
+      continue;
+    }
 
     if (entry.isDirectory()) {
-      await addFolderToZip(zip, fullPath, zipPath);
-    } else if (!shouldExcludeFromCustomerZip(entry.name)) {
+      await addFolderToZip(zip, fullPath, zipPath, relativePath);
+    } else {
       const fileBuffer = await fs.readFile(fullPath);
       zip.file(zipPath, fileBuffer);
     }

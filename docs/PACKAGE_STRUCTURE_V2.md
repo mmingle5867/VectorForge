@@ -289,7 +289,9 @@ Future V2:
 - `manifest.json` should move to `_internal/manifest.json`.
 - Listing software may read a root manifest from V1 packages.
 - Listing software may read `_internal/manifest.json` from V2 packages.
+- Listing software should check `_internal/manifest.json` first, then fall back to root `manifest.json`.
 - Listing software must not require VectorForge packages.
+- Customer ZIP packages must exclude both root `manifest.json` and anything under `_internal/`.
 
 File path rules:
 

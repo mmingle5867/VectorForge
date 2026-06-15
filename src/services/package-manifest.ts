@@ -1,7 +1,10 @@
 import fs from 'fs/promises';
 import path from 'path';
 import packageJson from '../../package.json';
-import { getManifestPath } from '@/lib/output-naming';
+import {
+  getPackageManifestPath,
+  type PackageStructureVersion,
+} from '@/lib/output-naming';
 
 type ManifestFileEntry = {
   role: string;
@@ -32,6 +35,7 @@ type ManifestInput = {
   skuFilePath: string | null;
   readmePath?: string | null;
   licensePath?: string | null;
+  structureVersion?: PackageStructureVersion;
 };
 
 function slugify(value: string) {
@@ -101,18 +105,20 @@ async function collectEntries(entries: Array<Promise<ManifestFileEntry | null>>)
 
 async function writeManifestWithSelfEntry(
   manifestPath: string,
-  manifest: Record<string, unknown>
+  manifest: Record<string, unknown>,
+  manifestRelativePath: string
 ) {
   let nextManifest = manifest;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    await fs.mkdir(path.dirname(manifestPath), { recursive: true });
     await fs.writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, 'utf-8');
     const stats = await fs.stat(manifestPath);
     const files = nextManifest.files as { package: ManifestFileEntry[] };
     const packageFiles = files.package.filter((entry) => entry.role !== 'manifest');
     const manifestEntry: ManifestFileEntry = {
       role: 'manifest',
-      path: 'manifest.json',
+      path: manifestRelativePath,
       format: 'json',
       mimeType: 'application/json',
       sizeBytes: stats.size,
@@ -132,11 +138,16 @@ async function writeManifestWithSelfEntry(
     nextManifest = updatedManifest;
   }
 
+  await fs.mkdir(path.dirname(manifestPath), { recursive: true });
   await fs.writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, 'utf-8');
 }
 
 export async function generatePackageManifest(input: ManifestInput) {
-  const manifestPath = getManifestPath(input.outputDir);
+  const manifestPath = getPackageManifestPath(input.outputDir, {
+    structureVersion: input.structureVersion,
+  });
+  const manifestRelativePath =
+    relativePackagePath(input.outputDir, manifestPath) || 'manifest.json';
   const createdAt = new Date().toISOString();
   const artworkId = input.item.artworkNumber || input.item.artworkId || '';
   const profileId = input.item.profileNumber || input.item.assetProfileId || '';
@@ -256,6 +267,6 @@ export async function generatePackageManifest(input: ManifestInput) {
     },
   };
 
-  await writeManifestWithSelfEntry(manifestPath, manifest);
+  await writeManifestWithSelfEntry(manifestPath, manifest, manifestRelativePath);
   return manifestPath;
 }

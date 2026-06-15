@@ -176,6 +176,7 @@ export function isInternalPackagePath(relativePath: string) {
   const rootFileName = normalized.split('/')[0];
 
   return (
+    normalized === '_internal' ||
     normalized.startsWith('_internal/') ||
     rootFileName === 'manifest.json' ||
     rootFileName === 'processing-history.json' ||

@@ -1,5 +1,8 @@
 import { access, readdir } from 'fs/promises';
 import path from 'path';
+import { getInternalManifestPath } from '@/lib/package-structure';
+
+export type PackageStructureVersion = 'v1' | 'v2';
 
 function normalizeExtension(extension: string) {
   return extension.startsWith('.') ? extension : `.${extension}`;
@@ -65,6 +68,30 @@ export function getMarketplacePreviewPath(itemOutputDir: string) {
 
 export function getManifestPath(itemOutputDir: string) {
   return path.join(itemOutputDir, 'manifest.json');
+}
+
+export function getPackageManifestPath(
+  itemOutputDir: string,
+  options?: { structureVersion?: PackageStructureVersion }
+) {
+  return options?.structureVersion === 'v2'
+    ? getInternalManifestPath(itemOutputDir)
+    : getManifestPath(itemOutputDir);
+}
+
+export async function findManifestPath(itemOutputDir: string) {
+  const candidates = [
+    getPackageManifestPath(itemOutputDir, { structureVersion: 'v2' }),
+    getPackageManifestPath(itemOutputDir, { structureVersion: 'v1' }),
+  ];
+
+  for (const candidate of candidates) {
+    if (await pathExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 export function getReadmePath(itemOutputDir: string) {

@@ -63,6 +63,10 @@ export function getMarketplacePreviewPath(itemOutputDir: string) {
   return path.join(itemOutputDir, `${getPackageBaseName(itemOutputDir)}-preview.jpg`);
 }
 
+export function getManifestPath(itemOutputDir: string) {
+  return path.join(itemOutputDir, 'manifest.json');
+}
+
 export function getOriginalSourcePath(itemOutputDir: string, extension: string) {
   return path.join(
     itemOutputDir,

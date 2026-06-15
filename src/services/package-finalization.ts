@@ -10,6 +10,7 @@ import { generateMetadataFile } from '@/services/metadata';
 import { generateSkuFile } from '@/services/sku-generator';
 import { applyBaseAssets } from '@/services/base-assets';
 import { createZipFromFolder } from '@/services/zip-generator';
+import { generatePackageManifest } from '@/services/package-manifest';
 import type { SubstitutionData } from '@/lib/types';
 
 interface FinalizePackageInput {
@@ -17,14 +18,20 @@ interface FinalizePackageInput {
     originalFilename: string;
     baseName: string;
     sequenceNumber: number;
+    mimeType: string | null;
     originalWidth: number | null;
     originalHeight: number | null;
     upscaledWidth: number | null;
     upscaledHeight: number | null;
     upscaleFactor: number;
     upscaleApplied: boolean;
+    uploadPath: string | null;
     svgPath: string | null;
     outputFolderPath: string | null;
+    artworkId?: string | null;
+    assetProfileId?: string | null;
+    artworkNumber?: string | null;
+    profileNumber?: string | null;
   };
   substitutionData: SubstitutionData;
   baseAssetsPath: string;
@@ -129,6 +136,18 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     await applyBaseAssets(outputDir, input.baseAssetsPath);
   }
 
+  const manifestPath = await generatePackageManifest({
+    outputDir,
+    item: input.item,
+    sku,
+    svgPath,
+    pngPath,
+    jpgPath,
+    marketplacePreviewPath,
+    metadataPath,
+    skuFilePath: skuFile.path,
+  });
+
   const zipPath = getZipPath(outputDir);
   await createZipFromFolder(outputDir, zipPath);
 
@@ -136,6 +155,7 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     sku,
     skuFilePath: skuFile.path,
     metadataPath,
+    manifestPath,
     marketplacePreviewPath,
     zipPath,
     svgPath,

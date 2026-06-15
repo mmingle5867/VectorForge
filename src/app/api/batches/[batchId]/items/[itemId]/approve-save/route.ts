@@ -8,6 +8,7 @@ import prisma from '@/lib/prisma';
 import { getIncrementalFolderName } from '@/lib/server-utils';
 import { logger } from '@/lib/logger';
 import { getJpgPath, getPngPath, getSvgPath } from '@/lib/output-naming';
+import { getArtworkPackageFolderName } from '@/lib/package-structure';
 import { createFixedCanvasRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
@@ -90,16 +91,29 @@ export async function POST(
         : '#000000';
     const outputBasePath = user.settings?.outputPath || config.paths.output;
     const imageBuffer = await readFile(item.uploadPath);
-    const outputDir = await ensureOutputDirectory(outputBasePath, item.baseName, item.outputFolderPath);
+    const identity = await ensureArtworkIdentityForBatchItem({
+      itemId: item.id,
+      batchId,
+      userId: user.id,
+      title: item.baseName,
+    });
+    const packageFolderName = identity.artworkNumber
+      ? getArtworkPackageFolderName(identity.artworkNumber, item.baseName)
+      : item.baseName;
+    const outputDir = await ensureOutputDirectory(
+      outputBasePath,
+      packageFolderName,
+      item.outputFolderPath
+    );
     if (item.outputFolderPath !== outputDir) {
       await prisma.batchItem.update({
         where: { id: item.id },
         data: { outputFolderPath: outputDir },
       });
     }
-    const svgPath = getSvgPath(outputDir);
-    const pngPath = getPngPath(outputDir);
-    const jpgPath = getJpgPath(outputDir);
+    const svgPath = getSvgPath(outputDir, item.baseName);
+    const pngPath = getPngPath(outputDir, item.baseName);
+    const jpgPath = getJpgPath(outputDir, item.baseName);
     const svgFilename = path.basename(svgPath);
     const pngFilename = path.basename(pngPath);
     const jpgFilename = path.basename(jpgPath);
@@ -109,13 +123,7 @@ export async function POST(
       const svgExport = await exportImportedSvgPackage(originalSvg, outputDir, {
         pngExportArtworkColor,
         createZip: false,
-      });
-
-      await ensureArtworkIdentityForBatchItem({
-        itemId: item.id,
-        batchId,
-        userId: user.id,
-        title: item.baseName,
+        fileBaseName: item.baseName,
       });
 
       await prisma.batchItem.update({
@@ -175,13 +183,6 @@ export async function POST(
       height: config.processing.rasterExportHeight,
       format: 'jpg',
       quality: 90,
-    });
-
-    await ensureArtworkIdentityForBatchItem({
-      itemId: item.id,
-      batchId,
-      userId: user.id,
-      title: item.baseName,
     });
 
     await prisma.batchItem.update({

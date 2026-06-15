@@ -35,7 +35,7 @@ export async function generateMetadataFile(
   outputDir: string,
   input: MetadataInput
 ): Promise<string> {
-  const metadataPath = getListingInfoPath(outputDir);
+  const metadataPath = getListingInfoPath(outputDir, input.baseName);
 
   // Build the metadata content
   let content = `================================================================================

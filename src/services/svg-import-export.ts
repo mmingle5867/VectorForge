@@ -9,6 +9,7 @@ import { createZipFromFolder } from '@/services/zip-generator';
 interface SvgImportExportOptions {
   pngExportArtworkColor: string;
   createZip?: boolean;
+  fileBaseName?: string;
 }
 
 async function fileInfo(type: string, filePath: string) {
@@ -27,10 +28,10 @@ export async function exportImportedSvgPackage(
   options: SvgImportExportOptions
 ) {
   const normalized = normalizeImportedSvg(originalSvg);
-  const svgPath = getSvgPath(outputDir);
-  const pngPath = getPngPath(outputDir);
-  const jpgPath = getJpgPath(outputDir);
-  const zipPath = getZipPath(outputDir);
+  const svgPath = getSvgPath(outputDir, options.fileBaseName);
+  const pngPath = getPngPath(outputDir, options.fileBaseName);
+  const jpgPath = getJpgPath(outputDir, options.fileBaseName);
+  const zipPath = getZipPath(outputDir, options.fileBaseName);
   const strokeWidth = config.processing.svgRasterStrokeWidth;
   const pngSvg = normalized.isStrokeOnly
     ? prepareStrokeOnlySvgForRaster(normalized.svg, {

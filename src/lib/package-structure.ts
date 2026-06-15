@@ -52,6 +52,19 @@ function sanitizePathSegment(value: string) {
     .slice(0, 120);
 }
 
+function sanitizePackageTitle(value: string) {
+  const words = value
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean);
+  const title = words
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join('');
+
+  return (title || 'Untitled').slice(0, 120);
+}
+
 function normalizeRelativePath(relativePath: string) {
   return relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
 }
@@ -76,7 +89,7 @@ export function getArtworkPackageFolderName(
   titleOrSlug: string | null | undefined
 ) {
   const safeArtworkNumber = sanitizePathSegment(artworkNumber || '');
-  const safeTitle = sanitizePathSegment(titleOrSlug || 'Untitled');
+  const safeTitle = sanitizePackageTitle(titleOrSlug || 'Untitled');
 
   return safeArtworkNumber ? `${safeArtworkNumber}_${safeTitle}` : safeTitle;
 }

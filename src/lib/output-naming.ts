@@ -21,12 +21,24 @@ export function getPackageBaseName(itemOutputDir: string) {
   return path.basename(itemOutputDir);
 }
 
-export function getPackageFileName(itemOutputDir: string, extension: string) {
-  return `${getPackageBaseName(itemOutputDir)}${normalizeExtension(extension)}`;
+function getOutputBaseName(itemOutputDir: string, fileBaseName?: string | null) {
+  return fileBaseName || getPackageBaseName(itemOutputDir);
 }
 
-export function getPackageFilePath(itemOutputDir: string, extension: string) {
-  return path.join(itemOutputDir, getPackageFileName(itemOutputDir, extension));
+export function getPackageFileName(
+  itemOutputDir: string,
+  extension: string,
+  fileBaseName?: string | null
+) {
+  return `${getOutputBaseName(itemOutputDir, fileBaseName)}${normalizeExtension(extension)}`;
+}
+
+export function getPackageFilePath(
+  itemOutputDir: string,
+  extension: string,
+  fileBaseName?: string | null
+) {
+  return path.join(itemOutputDir, getPackageFileName(itemOutputDir, extension, fileBaseName));
 }
 
 export async function getUniqueFilePath(folder: string, baseName: string, extension: string) {
@@ -42,28 +54,34 @@ export async function getUniqueFilePath(folder: string, baseName: string, extens
   return candidate;
 }
 
-export function getZipPath(itemOutputDir: string) {
-  return getPackageFilePath(itemOutputDir, '.zip');
+export function getZipPath(itemOutputDir: string, fileBaseName?: string | null) {
+  return getPackageFilePath(itemOutputDir, '.zip', fileBaseName);
 }
 
-export function getSvgPath(itemOutputDir: string) {
-  return getPackageFilePath(itemOutputDir, '.svg');
+export function getSvgPath(itemOutputDir: string, fileBaseName?: string | null) {
+  return getPackageFilePath(itemOutputDir, '.svg', fileBaseName);
 }
 
-export function getPngPath(itemOutputDir: string) {
-  return getPackageFilePath(itemOutputDir, '.png');
+export function getPngPath(itemOutputDir: string, fileBaseName?: string | null) {
+  return getPackageFilePath(itemOutputDir, '.png', fileBaseName);
 }
 
-export function getJpgPath(itemOutputDir: string) {
-  return getPackageFilePath(itemOutputDir, '.jpg');
+export function getJpgPath(itemOutputDir: string, fileBaseName?: string | null) {
+  return getPackageFilePath(itemOutputDir, '.jpg', fileBaseName);
 }
 
-export function getListingInfoPath(itemOutputDir: string) {
-  return path.join(itemOutputDir, `${getPackageBaseName(itemOutputDir)}-listing-info.txt`);
+export function getListingInfoPath(itemOutputDir: string, fileBaseName?: string | null) {
+  return path.join(
+    itemOutputDir,
+    `${getOutputBaseName(itemOutputDir, fileBaseName)}-listing-info.txt`
+  );
 }
 
-export function getMarketplacePreviewPath(itemOutputDir: string) {
-  return path.join(itemOutputDir, `${getPackageBaseName(itemOutputDir)}-preview.jpg`);
+export function getMarketplacePreviewPath(itemOutputDir: string, fileBaseName?: string | null) {
+  return path.join(
+    itemOutputDir,
+    `${getOutputBaseName(itemOutputDir, fileBaseName)}-preview.jpg`
+  );
 }
 
 export function getManifestPath(itemOutputDir: string) {

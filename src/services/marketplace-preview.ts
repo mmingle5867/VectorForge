@@ -64,7 +64,7 @@ export async function generateMarketplacePreview(
   options: Partial<MarketplacePreviewOptions> = {}
 ): Promise<{ path: string; size: number } | null> {
   const opts = { ...DEFAULT_PREVIEW_OPTIONS, ...options };
-  const outputPath = getMarketplacePreviewPath(outputDir);
+  const outputPath = getMarketplacePreviewPath(outputDir, baseName);
 
   try {
     logger.info(`MarketplacePreview: Generating preview for ${baseName}`, {

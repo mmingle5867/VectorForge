@@ -173,7 +173,7 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     licensePath,
   });
 
-  const zipPath = getZipPath(outputDir);
+  const zipPath = getZipPath(outputDir, input.item.baseName);
   await createZipFromFolder(outputDir, zipPath);
 
   return {

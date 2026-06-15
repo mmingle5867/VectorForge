@@ -12,6 +12,7 @@ import { createFixedCanvasRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
 import { recomputeBatchStatus } from '@/services/batch-status';
+import { ensureArtworkIdentityForBatchItem } from '@/services/numbering-service';
 import {
   generateTunedSvg,
   getPreviewValidationError,
@@ -110,6 +111,13 @@ export async function POST(
         createZip: false,
       });
 
+      await ensureArtworkIdentityForBatchItem({
+        itemId: item.id,
+        batchId,
+        userId: user.id,
+        title: item.baseName,
+      });
+
       await prisma.batchItem.update({
         where: { id: item.id },
         data: {
@@ -167,6 +175,13 @@ export async function POST(
       height: config.processing.rasterExportHeight,
       format: 'jpg',
       quality: 90,
+    });
+
+    await ensureArtworkIdentityForBatchItem({
+      itemId: item.id,
+      batchId,
+      userId: user.id,
+      title: item.baseName,
     });
 
     await prisma.batchItem.update({

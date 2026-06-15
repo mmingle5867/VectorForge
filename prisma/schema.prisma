@@ -31,6 +31,7 @@ model User {
   // Relations
   batches  Batch[]
   settings UserSettings?
+  artworks Artwork[]
 
   @@map("users")
 }
@@ -128,6 +129,12 @@ model BatchItem {
   // SKU
   sku String? // Format: DIGI-001-[basename]-[sequencenumber]
 
+  // Permanent identity foundation (future artwork/profile naming)
+  artworkId      String?
+  assetProfileId String?
+  artworkNumber  String?
+  profileNumber  String?
+
   // Processing status
   status        BatchItemStatus @default(PENDING)
   progress      Int     @default(0)   // 0-100 percentage complete
@@ -166,11 +173,114 @@ model BatchItem {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  batch Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batch        Batch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  artwork      Artwork?      @relation(fields: [artworkId], references: [id], onDelete: SetNull)
+  assetProfile AssetProfile? @relation(fields: [assetProfileId], references: [id], onDelete: SetNull)
 
   @@index([batchId])
   @@index([status])
+  @@index([artworkId])
+  @@index([assetProfileId])
   @@map("batch_items")
+}
+
+// =============================================================================
+// Permanent Numbering Models
+// =============================================================================
+
+model NumberSequence {
+  id               String   @id @default(cuid())
+  sequenceKey      String   @unique
+  label            String
+  prefix           String
+  paddingLength    Int      @default(6)
+  nextNumber       Int
+  lastIssuedNumber Int?
+  startingNumber   Int
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("number_sequences")
+}
+
+model IssuedNumber {
+  id              String             @id @default(cuid())
+  sequenceKey     String
+  prefix          String
+  numericSequence Int
+  issuedNumber    String             @unique
+  itemId          String?
+  batchId         String?
+  artworkId       String?
+  assetProfileId  String?
+  status          IssuedNumberStatus @default(ISSUED)
+  createdAt       DateTime           @default(now())
+  assignedAt      DateTime?
+  voidedAt        DateTime?
+  notes           String?
+
+  @@unique([sequenceKey, numericSequence])
+  @@index([itemId])
+  @@index([batchId])
+  @@index([artworkId])
+  @@index([assetProfileId])
+  @@map("issued_numbers")
+}
+
+model Artwork {
+  id              String        @id @default(cuid())
+  userId          String
+  artworkNumber   String        @unique
+  numericSequence Int
+  title           String
+  sourceItemId    String?
+  status          ArtworkStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batchItems    BatchItem[]
+  assetProfiles AssetProfile[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("artworks")
+}
+
+model AssetProfile {
+  id              String             @id @default(cuid())
+  artworkId       String
+  profileType     AssetProfileType
+  profileNumber   String             @unique
+  numericSequence Int
+  status          AssetProfileStatus @default(ACTIVE)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  artwork       Artwork          @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  batchItems    BatchItem[]
+  variants      ProductVariant[]
+
+  @@unique([artworkId, profileType])
+  @@index([status])
+  @@map("asset_profiles")
+}
+
+model ProductVariant {
+  id             String               @id @default(cuid())
+  assetProfileId String
+  sku            String               @unique
+  optionData     Json                 @default("{}")
+  status         ProductVariantStatus @default(ACTIVE)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  assetProfile AssetProfile @relation(fields: [assetProfileId], references: [id], onDelete: Cascade)
+
+  @@index([assetProfileId])
+  @@index([status])
+  @@map("product_variants")
 }
 
 // =============================================================================
@@ -199,4 +309,38 @@ enum BatchItemStatus {
   CANCELLED
   COMPLETED
   FAILED
+}
+
+enum IssuedNumberStatus {
+  ISSUED
+  ASSIGNED
+  VOIDED
+  RETIRED
+}
+
+enum ArtworkStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum AssetProfileType {
+  DIGITAL
+  LASER
+  VINYL
+  CNC
+  SEWING
+  PRINT
+}
+
+enum AssetProfileStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum ProductVariantStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
 }

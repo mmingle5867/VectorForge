@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type MouseEvent, type WheelEvent } from 'react';
+import { useState, useEffect, useRef, type MouseEvent, type WheelEvent } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { formatBytes } from '@/lib/utils';
 import SubstitutionTable, {
@@ -357,9 +357,11 @@ export default function ReviewPage() {
   const [compactTunePanel, setCompactTunePanel] = useState(false);
   const [tunePanelPosition, setTunePanelPosition] = useState<Point>({ x: 0, y: 0 });
   const [panelDragStart, setPanelDragStart] = useState<{ pointer: Point; panel: Point } | null>(null);
+  const [previewToolbarHeight, setPreviewToolbarHeight] = useState(56);
   const [canvasPan, setCanvasPan] = useState<Point>({ x: 0, y: 0 });
   const [canvasPanStart, setCanvasPanStart] = useState<{ pointer: Point; pan: Point } | null>(null);
   const [autoOpenedItemId, setAutoOpenedItemId] = useState<string | null>(null);
+  const previewToolbarRef = useRef<HTMLDivElement | null>(null);
 
   const pendingItems = items.filter((item) => item.status === 'PENDING');
   const manualEditItems = items.filter((item) => item.status === 'NEEDS_MANUAL_EDIT');
@@ -506,6 +508,21 @@ export default function ReviewPage() {
     setAutoOpenedItemId(requestedItemId);
   }, [requestedItemId, loading, autoOpenedItemId, items, siteTuneDefaults]);
 
+  useEffect(() => {
+    const toolbar = previewToolbarRef.current;
+    if (!toolbar) return;
+
+    const updateToolbarHeight = () => {
+      setPreviewToolbarHeight(Math.ceil(toolbar.getBoundingClientRect().height));
+    };
+
+    updateToolbarHeight();
+    const observer = new ResizeObserver(updateToolbarHeight);
+    observer.observe(toolbar);
+
+    return () => observer.disconnect();
+  }, [tuneItem]);
+
   const updateTuneSetting = (key: Exclude<keyof TuneSettings, 'colorMode'>, value: number) => {
     setTuneSettings((prev) => ({ ...prev, [key]: value }));
   };
@@ -612,7 +629,7 @@ export default function ReviewPage() {
     const nextY = panelDragStart.panel.y + event.clientY - panelDragStart.pointer.y;
     setTunePanelPosition({
       x: Math.min(760, Math.max(-760, nextX)),
-      y: Math.min(520, Math.max(-80, nextY)),
+      y: Math.min(520, Math.max(0, nextY)),
     });
   };
 
@@ -1459,7 +1476,10 @@ export default function ReviewPage() {
               }}
             >
               <div className="absolute inset-0 flex flex-col">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/95 px-3 py-2">
+                <div
+                  ref={previewToolbarRef}
+                  className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/95 px-3 py-2"
+                >
                   <div className="flex flex-wrap items-center gap-1.5">
                     <div className={`rounded-md border px-2.5 py-1.5 text-xs ${PREVIEW_STATUS_STYLES[previewStatus]}`}>
                       <span className="font-semibold">Preview</span>
@@ -1704,8 +1724,9 @@ export default function ReviewPage() {
 
                 <aside
                   data-floating-panel="true"
-                  className="absolute right-3 top-16 z-10 w-[min(360px,calc(100%-1.5rem))] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
+                  className="absolute right-3 z-10 w-[min(360px,calc(100%-1.5rem))] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
                   style={{
+                    top: previewToolbarHeight + 16,
                     transform: `translate(${tunePanelPosition.x}px, ${tunePanelPosition.y}px)`,
                   }}
                 >

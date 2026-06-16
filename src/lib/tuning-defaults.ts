@@ -80,7 +80,7 @@ export const TUNING_EXPORT_HELP: Record<TuningExportSettingKey, string> = {
   preprocessingBlur: 'Preview/Tune: smooths raster edges after upscaling and before tracing. Recommended 0.75-2.0.',
   blurPasses: 'Preview/Tune: repeats the post-upscale blur before edge padding. Use 1 normally.',
   edgePaddingPx: 'Preview/Tune default: white padding added before tracing so artwork does not touch image edges.',
-  svgCanvasPaddingPx: 'Final SVG viewport padding added after tracing. Expands the canvas/viewBox without moving or changing paths.',
+  svgCanvasPaddingPx: 'Final SVG viewport padding after tracing; V1 also uses this as raster source padding before smart upscaling/export sizing.',
   pathPrecision: 'Preview/Tune: decimal precision for SVG path coordinates. VTracer accepts 0-8.',
   cornerThreshold: 'Preview/Tune: higher values preserve more hard corners; lower values smooth and round more corners.',
   filterSpeckle: 'Preview/Tune: removes small noisy shapes. Higher is cleaner but may remove details.',

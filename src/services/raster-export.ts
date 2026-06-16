@@ -11,6 +11,7 @@ export interface RasterExportOptions {
   quality?: number;
   artworkColor?: string;
   canvasPaddingPx?: number;
+  forceArtworkColor?: boolean;
 }
 
 export interface SvgRasterExportOptions extends RasterExportOptions {
@@ -226,7 +227,7 @@ export async function createFixedCanvasRaster(
     })
     .png()
     .toBuffer();
-  const artwork = isPng
+  const artwork = isPng || options.forceArtworkColor
     ? await preparePngArtwork(resized, options.artworkColor || '#000000')
     : resized;
 

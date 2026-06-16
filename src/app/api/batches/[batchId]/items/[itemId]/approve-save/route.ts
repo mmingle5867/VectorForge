@@ -9,7 +9,7 @@ import { getIncrementalFolderName } from '@/lib/server-utils';
 import { logger } from '@/lib/logger';
 import { getJpgPath, getPngPath, getSvgPath } from '@/lib/output-naming';
 import { getArtworkPackageFolderName } from '@/lib/package-structure';
-import { createFixedCanvasSvgRaster } from '@/services/raster-export';
+import { createFixedCanvasRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
 import { recomputeBatchStatus } from '@/services/batch-status';
@@ -47,6 +47,50 @@ function decodeApprovedSvg(value: unknown) {
 
   const svg = Buffer.from(value, 'base64').toString('utf-8');
   return /<svg\b/i.test(svg) ? svg : null;
+}
+
+async function prepareRasterExportBuffer(
+  imageBuffer: Buffer,
+  originalWidth: number,
+  originalHeight: number,
+  upscaleFactor: 1 | 2 | 4,
+  smartUpscaleThreshold: number,
+  sourcePaddingPx: number,
+  format: 'png' | 'jpg'
+) {
+  const shouldUpscale =
+    upscaleFactor > 1 &&
+    (originalWidth < smartUpscaleThreshold || originalHeight < smartUpscaleThreshold);
+  const safePadding = Number.isFinite(sourcePaddingPx) && sourcePaddingPx > 0
+    ? Math.round(sourcePaddingPx)
+    : 0;
+  const paddedWidth = originalWidth + safePadding * 2;
+  const paddedHeight = originalHeight + safePadding * 2;
+
+  let raster = sharp(imageBuffer).ensureAlpha();
+
+  if (safePadding > 0) {
+    raster = raster.extend({
+      top: safePadding,
+      bottom: safePadding,
+      left: safePadding,
+      right: safePadding,
+      background: format === 'png'
+        ? { r: 255, g: 255, b: 255, alpha: 0 }
+        : { r: 255, g: 255, b: 255, alpha: 1 },
+    });
+  }
+
+  if (shouldUpscale) {
+    raster = raster.resize(paddedWidth * upscaleFactor, paddedHeight * upscaleFactor, {
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: false,
+    });
+  }
+
+  return raster
+    .png()
+    .toBuffer();
 }
 
 export async function POST(
@@ -182,27 +226,47 @@ export async function POST(
         smartUpscaleThreshold: item.batch.smartUpscaleThreshold,
         cncMode,
         settings: parsed.data,
+        sourceMimeType: item.mimeType,
+        sourcePath: item.uploadPath,
       });
 
       await writeFile(svgPath, result.svg, 'utf-8');
     }
-    const savedSvg = await readFile(svgPath);
-    await createFixedCanvasSvgRaster(savedSvg, pngPath, {
+    // V1 reuses svgCanvasPaddingPx for raster source padding so raster outputs
+    // get source breathing room before smart upscaling and final export sizing.
+    const rasterSourcePaddingPx = parsed.data.svgCanvasPaddingPx;
+    const pngRasterExportBuffer = await prepareRasterExportBuffer(
+      imageBuffer,
+      originalWidth,
+      originalHeight,
+      item.upscaleFactor as 1 | 2 | 4,
+      item.batch.smartUpscaleThreshold,
+      rasterSourcePaddingPx,
+      'png'
+    );
+    const jpgRasterExportBuffer = await prepareRasterExportBuffer(
+      imageBuffer,
+      originalWidth,
+      originalHeight,
+      item.upscaleFactor as 1 | 2 | 4,
+      item.batch.smartUpscaleThreshold,
+      rasterSourcePaddingPx,
+      'jpg'
+    );
+
+    await createFixedCanvasRaster(pngRasterExportBuffer, pngPath, {
       width: config.processing.rasterExportWidth,
       height: config.processing.rasterExportHeight,
       format: 'png',
       artworkColor: pngExportArtworkColor,
-      canvasPaddingPx: parsed.data.svgCanvasPaddingPx,
-      preserveColors: false,
-      forceOpaqueVisiblePixels: true,
     });
-    await createFixedCanvasSvgRaster(savedSvg, jpgPath, {
+    await createFixedCanvasRaster(jpgRasterExportBuffer, jpgPath, {
       width: config.processing.rasterExportWidth,
       height: config.processing.rasterExportHeight,
       format: 'jpg',
       quality: 90,
-      canvasPaddingPx: parsed.data.svgCanvasPaddingPx,
-      preserveColors: false,
+      artworkColor: '#000000',
+      forceArtworkColor: true,
     });
 
     await prisma.batchItem.update({

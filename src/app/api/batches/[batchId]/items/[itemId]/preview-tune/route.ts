@@ -104,6 +104,8 @@ export async function POST(
       smartUpscaleThreshold: item.batch.smartUpscaleThreshold,
       cncMode,
       settings: parsed.data,
+      sourceMimeType: item.mimeType,
+      sourcePath: item.uploadPath,
     });
 
     const debugDir = path.join(process.cwd(), 'logs');

@@ -4,8 +4,10 @@ import path from 'path';
 import { spawn } from 'child_process';
 import { requireAuth } from '@/lib/auth';
 import config from '@/lib/config';
+import prisma from '@/lib/prisma';
 
 type EditableFileType = 'PNG' | 'JPG' | 'SVG';
+type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster';
 
 interface GeneratedFileInput {
   type: string;
@@ -13,6 +15,14 @@ interface GeneratedFileInput {
 }
 
 const EDITABLE_FILE_TYPES: EditableFileType[] = ['PNG', 'JPG', 'SVG'];
+const RASTER_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/tiff',
+]);
+const RASTER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff']);
 
 function resolveConfiguredPath(configuredPath: string) {
   return path.resolve(process.cwd(), configuredPath);
@@ -35,6 +45,14 @@ function getSelectedFileTypes(value: unknown): EditableFileType[] {
   );
 
   return selected.length > 0 ? selected : ['PNG'];
+}
+
+function isRasterUpload(mimeType?: string | null, filename?: string | null) {
+  const normalizedMime = (mimeType || '').toLowerCase();
+  const extension = path.extname(filename || '').toLowerCase();
+  return normalizedMime !== 'image/svg+xml' && (
+    RASTER_MIME_TYPES.has(normalizedMime) || RASTER_EXTENSIONS.has(extension)
+  );
 }
 
 async function assertExistingPath(filePath: string, expected: 'file' | 'directory') {
@@ -66,14 +84,85 @@ function openFolder(folderPath: string) {
   launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [folderPath]);
 }
 
+async function getManualEditorPath(extended: Record<string, unknown>) {
+  const editorPath =
+    typeof extended.manualEditorPath === 'string' ? extended.manualEditorPath.trim() : '';
+
+  if (!editorPath) {
+    throw new Error('Local Only: manual editor is not configured in Settings');
+  }
+
+  if (!path.isAbsolute(editorPath)) {
+    throw new Error('Local Only: manual editor path must be an absolute path');
+  }
+
+  await assertExistingPath(editorPath, 'file');
+  return editorPath;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth();
     const body = await req.json();
-    const action = body.action as 'file' | 'folder' | 'editable';
+    const action = body.action as EditorAction;
     const files = Array.isArray(body.files) ? (body.files as GeneratedFileInput[]) : [];
     const outputFolderPath = typeof body.outputFolderPath === 'string' ? body.outputFolderPath : '';
     const requestedFileType = typeof body.fileType === 'string' ? body.fileType.toUpperCase() : '';
+    const extended = getExtendedSettings(user.settings?.defaultSubstitutions);
+
+    if (action === 'original-raster') {
+      const batchId = typeof body.batchId === 'string' ? body.batchId : '';
+      const itemId = typeof body.itemId === 'string' ? body.itemId : '';
+
+      const item = await prisma.batchItem.findUnique({
+        where: { id: itemId },
+        include: { batch: true },
+      });
+
+      if (!item || item.batchId !== batchId || item.batch.userId !== user.id) {
+        return NextResponse.json(
+          { success: false, error: 'Batch item was not found' },
+          { status: 404 }
+        );
+      }
+
+      if (!isRasterUpload(item.mimeType, item.originalFilename)) {
+        return NextResponse.json(
+          { success: false, error: 'Original raster editing is only available for JPG, PNG, WEBP, or TIFF uploads' },
+          { status: 400 }
+        );
+      }
+
+      if (!item.uploadPath) {
+        return NextResponse.json(
+          { success: false, error: 'Original raster file path is missing' },
+          { status: 400 }
+        );
+      }
+
+      const uploadsRoot = resolveConfiguredPath(config.paths.uploads);
+      const resolvedUploadPath = path.resolve(item.uploadPath);
+
+      if (!isInsideDirectory(resolvedUploadPath, uploadsRoot)) {
+        return NextResponse.json(
+          { success: false, error: 'Original raster file is outside the configured uploads directory' },
+          { status: 400 }
+        );
+      }
+
+      try {
+        await assertExistingPath(resolvedUploadPath, 'file');
+      } catch {
+        return NextResponse.json(
+          { success: false, error: 'Original raster file is missing on disk' },
+          { status: 404 }
+        );
+      }
+
+      const editorPath = await getManualEditorPath(extended);
+      launchDetached(editorPath, [resolvedUploadPath]);
+      return NextResponse.json({ success: true });
+    }
 
     const configuredOutputPath = user.settings?.outputPath || config.paths.output;
     const outputRoot = resolveConfiguredPath(configuredOutputPath);
@@ -92,24 +181,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    const extended = getExtendedSettings(user.settings?.defaultSubstitutions);
-    const editorPath = typeof extended.manualEditorPath === 'string' ? extended.manualEditorPath.trim() : '';
-
-    if (!editorPath) {
-      return NextResponse.json(
-        { success: false, error: 'Local Only: manual editor is not configured in Settings' },
-        { status: 400 }
-      );
-    }
-
-    if (!path.isAbsolute(editorPath)) {
-      return NextResponse.json(
-        { success: false, error: 'Local Only: manual editor path must be an absolute path' },
-        { status: 400 }
-      );
-    }
-
-    await assertExistingPath(editorPath, 'file');
+    const editorPath = await getManualEditorPath(extended);
 
     const requestedTypes =
       action === 'editable'

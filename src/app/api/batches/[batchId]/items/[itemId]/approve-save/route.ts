@@ -9,7 +9,7 @@ import { getIncrementalFolderName } from '@/lib/server-utils';
 import { logger } from '@/lib/logger';
 import { getJpgPath, getPngPath, getSvgPath } from '@/lib/output-naming';
 import { getArtworkPackageFolderName } from '@/lib/package-structure';
-import { createFixedCanvasRaster } from '@/services/raster-export';
+import { createFixedCanvasSvgRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
 import { recomputeBatchStatus } from '@/services/batch-status';
@@ -42,6 +42,13 @@ function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
+function decodeApprovedSvg(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+
+  const svg = Buffer.from(value, 'base64').toString('utf-8');
+  return /<svg\b/i.test(svg) ? svg : null;
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ batchId: string; itemId: string }> }
@@ -49,7 +56,8 @@ export async function POST(
   try {
     const user = await requireAuth();
     const { batchId, itemId } = await params;
-    const parsed = previewTuneSchema.safeParse(await req.json());
+    const body = await req.json();
+    const parsed = previewTuneSchema.safeParse(body);
 
     if (!parsed.success) {
       const { message, field, allowedRange } = getPreviewValidationError(parsed.error);
@@ -122,6 +130,7 @@ export async function POST(
       const originalSvg = imageBuffer.toString('utf-8');
       const svgExport = await exportImportedSvgPackage(originalSvg, outputDir, {
         pngExportArtworkColor,
+        svgCanvasPaddingPx: parsed.data.svgCanvasPaddingPx,
         createZip: false,
         fileBaseName: item.baseName,
       });
@@ -161,28 +170,39 @@ export async function POST(
       );
     }
 
-    const result = await generateTunedSvg({
-      imageBuffer,
-      originalWidth,
-      originalHeight,
-      upscaleFactor: item.upscaleFactor as 1 | 2 | 4,
-      smartUpscaleThreshold: item.batch.smartUpscaleThreshold,
-      cncMode,
-      settings: parsed.data,
-    });
+    const approvedSvg = decodeApprovedSvg(body.approvedSvgBase64);
+    if (approvedSvg) {
+      await writeFile(svgPath, approvedSvg, 'utf-8');
+    } else {
+      const result = await generateTunedSvg({
+        imageBuffer,
+        originalWidth,
+        originalHeight,
+        upscaleFactor: item.upscaleFactor as 1 | 2 | 4,
+        smartUpscaleThreshold: item.batch.smartUpscaleThreshold,
+        cncMode,
+        settings: parsed.data,
+      });
 
-    await writeFile(svgPath, result.svg, 'utf-8');
-    await createFixedCanvasRaster(imageBuffer, pngPath, {
+      await writeFile(svgPath, result.svg, 'utf-8');
+    }
+    const savedSvg = await readFile(svgPath);
+    await createFixedCanvasSvgRaster(savedSvg, pngPath, {
       width: config.processing.rasterExportWidth,
       height: config.processing.rasterExportHeight,
       format: 'png',
       artworkColor: pngExportArtworkColor,
+      canvasPaddingPx: parsed.data.svgCanvasPaddingPx,
+      preserveColors: false,
+      forceOpaqueVisiblePixels: true,
     });
-    await createFixedCanvasRaster(imageBuffer, jpgPath, {
+    await createFixedCanvasSvgRaster(savedSvg, jpgPath, {
       width: config.processing.rasterExportWidth,
       height: config.processing.rasterExportHeight,
       format: 'jpg',
       quality: 90,
+      canvasPaddingPx: parsed.data.svgCanvasPaddingPx,
+      preserveColors: false,
     });
 
     await prisma.batchItem.update({

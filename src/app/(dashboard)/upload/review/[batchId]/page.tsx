@@ -45,6 +45,7 @@ interface TuneSettings {
   preUpscaleBlur: number;
   blur: number;
   blurPasses: number;
+  svgCanvasPaddingPx: number;
   pathPrecision: number;
   cornerThreshold: number;
   filterSpeckle: number;
@@ -132,6 +133,7 @@ const DEFAULT_TUNE_SETTINGS: TuneSettings = {
   preUpscaleBlur: FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
   blur: FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
   blurPasses: FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
+  svgCanvasPaddingPx: FACTORY_TUNING_EXPORT_DEFAULTS.svgCanvasPaddingPx,
   pathPrecision: FACTORY_TUNING_EXPORT_DEFAULTS.pathPrecision,
   cornerThreshold: FACTORY_TUNING_EXPORT_DEFAULTS.cornerThreshold,
   filterSpeckle: FACTORY_TUNING_EXPORT_DEFAULTS.filterSpeckle,
@@ -149,6 +151,7 @@ function getTuneSettingsFromSiteSettings(
     preUpscaleBlur: settings?.preUpscaleBlur ?? DEFAULT_TUNE_SETTINGS.preUpscaleBlur,
     blur: settings?.preprocessingBlur ?? DEFAULT_TUNE_SETTINGS.blur,
     blurPasses: settings?.blurPasses ?? DEFAULT_TUNE_SETTINGS.blurPasses,
+    svgCanvasPaddingPx: settings?.svgCanvasPaddingPx ?? DEFAULT_TUNE_SETTINGS.svgCanvasPaddingPx,
     pathPrecision: settings?.pathPrecision ?? DEFAULT_TUNE_SETTINGS.pathPrecision,
     cornerThreshold: settings?.cornerThreshold ?? DEFAULT_TUNE_SETTINGS.cornerThreshold,
     filterSpeckle: settings?.filterSpeckle ?? DEFAULT_TUNE_SETTINGS.filterSpeckle,
@@ -190,6 +193,14 @@ const TUNE_CONTROLS: Array<{
     max: 3,
     step: 1,
     help: 'Repeats the same blur before border padding. Use 1 normally; 2-3 for difficult stair-stepping.',
+  },
+  {
+    key: 'svgCanvasPaddingPx',
+    label: 'SVG Canvas Padding',
+    min: 0,
+    max: 100,
+    step: 1,
+    help: 'Adds final SVG viewport padding after tracing. This does not move, scale, or repair paths.',
   },
   {
     key: 'pathPrecision',
@@ -270,9 +281,44 @@ const TUNE_CONTROL_GROUPS: Array<{
   },
   {
     title: 'Export',
-    keys: ['colorPrecision', 'layerDifference'],
+    keys: ['svgCanvasPaddingPx', 'colorPrecision', 'layerDifference'],
   },
 ];
+
+const RASTER_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/tiff',
+]);
+const RASTER_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff']);
+
+function getFileExtension(filename: string) {
+  const index = filename.lastIndexOf('.');
+  return index >= 0 ? filename.slice(index).toLowerCase() : '';
+}
+
+function isRasterUpload(item: BatchItem) {
+  const mimeType = (item.mimeType || '').toLowerCase();
+  const extension = getFileExtension(item.originalFilename);
+  return mimeType !== 'image/svg+xml' && (
+    RASTER_MIME_TYPES.has(mimeType) || RASTER_EXTENSIONS.has(extension)
+  );
+}
+
+function hasSavedSvgFile(item: BatchItem | null, savedFiles: SavedOutputFile[]) {
+  return Boolean(
+    savedFiles.some((file) => file.type.toLowerCase() === 'svg') ||
+      item?.files?.svg?.exists
+  );
+}
+
+function mergeSavedFile(files: SavedOutputFile[], nextFile: SavedOutputFile) {
+  const nextType = nextFile.type.toLowerCase();
+  const withoutType = files.filter((file) => file.type.toLowerCase() !== nextType);
+  return [...withoutType, nextFile];
+}
 
 export default function ReviewPage() {
   const router = useRouter();
@@ -302,6 +348,7 @@ export default function ReviewPage() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [savedFiles, setSavedFiles] = useState<SavedOutputFile[]>([]);
   const [savedOutputFolderPath, setSavedOutputFolderPath] = useState<string | null>(null);
+  const [editableVectorPath, setEditableVectorPath] = useState<string | null>(null);
   const [localEditorMessage, setLocalEditorMessage] = useState<string | null>(null);
   const [svgZoom, setSvgZoom] = useState(1);
   const [previewViewMode, setPreviewViewMode] = useState<PreviewViewMode>('processed');
@@ -439,6 +486,7 @@ export default function ReviewPage() {
     );
     setSavedFiles(existingFiles);
     setSavedOutputFolderPath(item.outputFolderPath || null);
+    setEditableVectorPath(existingFiles.find((file) => file.type.toLowerCase() === 'svg')?.path || null);
     setLocalEditorMessage(null);
     setSvgZoom(1);
     setPreviewViewMode('processed');
@@ -487,6 +535,10 @@ export default function ReviewPage() {
       ? ['High path count may produce a complex package and slower downstream editing.']
       : []),
   ];
+  const canOpenOriginalRaster = tuneItem ? isRasterUpload(tuneItem) : false;
+  const canOpenEditableVector = Boolean(tuneItem && (tunePreview || hasSavedSvgFile(tuneItem, savedFiles)));
+  const canCopyEditableVectorPath = canOpenEditableVector;
+  const canReloadEditedVector = Boolean(tuneItem && hasSavedSvgFile(tuneItem, savedFiles));
 
   const zoomPreview = (direction: 'in' | 'out') => {
     setSvgZoom((prev) => {
@@ -606,7 +658,11 @@ export default function ReviewPage() {
 
       setTunePreview(data.preview);
       setPreviewStatus('success');
-      setPreviewStatusMessage('Preview generated successfully');
+      setPreviewStatusMessage(
+        editableVectorPath
+          ? 'Preview regenerated from raster. The tracked editable SVG was not overwritten.'
+          : 'Preview generated successfully'
+      );
     } catch {
       const message = 'Failed to generate preview';
       setPreviewError(message);
@@ -629,7 +685,13 @@ export default function ReviewPage() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tuneSettings),
+          body: JSON.stringify({
+            ...tuneSettings,
+            approvedSvgBase64:
+              editableVectorPath && tunePreview.debugSvgPath === editableVectorPath
+                ? tunePreview.svgBase64
+                : undefined,
+          }),
         }
       );
       const data = await res.json();
@@ -649,6 +711,11 @@ export default function ReviewPage() {
       setSaveMessage(`Saved SVG, PNG, and JPG.${warningText}`);
       setSavedFiles(Array.isArray(data.files) ? data.files : []);
       setSavedOutputFolderPath(data.outputFolderPath || null);
+      setEditableVectorPath(
+        Array.isArray(data.files)
+          ? data.files.find((file: SavedOutputFile) => file.type.toLowerCase() === 'svg')?.path || null
+          : null
+      );
       setLocalEditorMessage(null);
       setItems((prev) =>
         prev.map((item) =>
@@ -835,6 +902,177 @@ export default function ReviewPage() {
       setLocalEditorMessage('Opened local target.');
     } catch {
       setLocalEditorMessage('Failed to open local editor');
+    }
+  };
+
+  const openOriginalRaster = async () => {
+    if (!tuneItem) return;
+
+    setLocalEditorMessage('Opening original raster...');
+
+    try {
+      const res = await fetch('/api/local-editor/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'original-raster',
+          batchId,
+          itemId: tuneItem.id,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setLocalEditorMessage(data.error || 'Failed to open original raster');
+        return;
+      }
+
+      setLocalEditorMessage('Opened original raster. Save it in the editor, then Generate Preview again.');
+    } catch {
+      setLocalEditorMessage('Failed to open original raster');
+    }
+  };
+
+  const openEditableVector = async () => {
+    if (!tuneItem) return;
+
+    setLocalEditorMessage('Opening editable vector...');
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${tuneItem.id}/editable-vector`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'open',
+            previewSvgBase64: tunePreview?.svgBase64,
+          }),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setLocalEditorMessage(data.error || 'Failed to open editable vector');
+        return;
+      }
+
+      if (data.outputFolderPath) {
+        setSavedOutputFolderPath(data.outputFolderPath);
+      }
+      if (data.file) {
+        setSavedFiles((files) => mergeSavedFile(files, data.file));
+        setEditableVectorPath(data.file.path);
+      }
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === tuneItem.id
+            ? {
+                ...item,
+                outputFolderPath: data.outputFolderPath || item.outputFolderPath,
+                files: {
+                  ...(item.files || {}),
+                  svg: {
+                    exists: true,
+                    path: data.file?.path || item.files?.svg?.path || null,
+                  },
+                } as BatchItem['files'],
+              }
+            : item
+        )
+      );
+      setLocalEditorMessage('Opened editable vector. Save it, then Reload Edited Vector.');
+    } catch {
+      setLocalEditorMessage('Failed to open editable vector');
+    }
+  };
+
+  const copyEditableVectorPath = async () => {
+    if (!tuneItem) return;
+
+    setLocalEditorMessage('Preparing editable vector path...');
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${tuneItem.id}/editable-vector`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'prepare',
+            previewSvgBase64: tunePreview?.svgBase64,
+          }),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success || !data.file?.path) {
+        setLocalEditorMessage(data.error || 'Generate preview first, then copy the editable vector path.');
+        return;
+      }
+
+      if (data.outputFolderPath) {
+        setSavedOutputFolderPath(data.outputFolderPath);
+      }
+      setSavedFiles((files) => mergeSavedFile(files, data.file));
+      setEditableVectorPath(data.file.path);
+
+      try {
+        await navigator.clipboard.writeText(data.file.path);
+        setLocalEditorMessage('Copied editable vector path to clipboard.');
+      } catch {
+        setLocalEditorMessage(`Editable vector path: ${data.file.path}`);
+      }
+    } catch {
+      setLocalEditorMessage('Failed to prepare editable vector path');
+    }
+  };
+
+  const reloadEditedVector = async () => {
+    if (!tuneItem) return;
+
+    setLocalEditorMessage('Reloading edited vector...');
+
+    try {
+      const res = await fetch(
+        `/api/batches/${batchId}/items/${tuneItem.id}/editable-vector`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reload' }),
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setLocalEditorMessage(data.error || 'Failed to reload edited vector');
+        return;
+      }
+
+      const fallbackWidth = tuneItem.originalWidth || 1200;
+      const fallbackHeight = tuneItem.originalHeight || 1200;
+      setTunePreview((preview) => ({
+        svgBase64: data.svgBase64,
+        svgSize: data.svgSize,
+        debugSvgPath: data.svgPath,
+        diagnostics: data.diagnostics,
+        originalWidth: preview?.originalWidth ?? fallbackWidth,
+        originalHeight: preview?.originalHeight ?? fallbackHeight,
+        traceWidth: preview?.traceWidth ?? fallbackWidth,
+        traceHeight: preview?.traceHeight ?? fallbackHeight,
+        upscaleApplied: preview?.upscaleApplied ?? false,
+        upscaleFactor: preview?.upscaleFactor ?? tuneItem.upscaleFactor,
+        processingTimeMs: 0,
+      }));
+      if (data.file) {
+        setSavedFiles((files) => mergeSavedFile(files, data.file));
+        setEditableVectorPath(data.file.path);
+      }
+      setPreviewStatus('success');
+      setPreviewStatusMessage('Reloaded edited vector from disk');
+      setLocalEditorMessage('Reloaded edited vector from disk.');
+    } catch {
+      setLocalEditorMessage('Failed to reload edited vector');
     }
   };
 
@@ -1466,7 +1704,7 @@ export default function ReviewPage() {
 
                 <aside
                   data-floating-panel="true"
-                  className="absolute right-3 top-3 z-10 w-[min(360px,calc(100%-1.5rem))] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
+                  className="absolute right-3 top-16 z-10 w-[min(360px,calc(100%-1.5rem))] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
                   style={{
                     transform: `translate(${tunePanelPosition.x}px, ${tunePanelPosition.y}px)`,
                   }}
@@ -1560,6 +1798,42 @@ export default function ReviewPage() {
                           className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                         >
                           Open Editable Files
+                        </button>
+                      )}
+                      {canOpenOriginalRaster && (
+                        <button
+                          type="button"
+                          onClick={openOriginalRaster}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Open Original Raster
+                        </button>
+                      )}
+                      {canOpenEditableVector && (
+                        <button
+                          type="button"
+                          onClick={openEditableVector}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Open Editable Vector
+                        </button>
+                      )}
+                      {canCopyEditableVectorPath && (
+                        <button
+                          type="button"
+                          onClick={copyEditableVectorPath}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Copy Editable Vector Path
+                        </button>
+                      )}
+                      {canReloadEditedVector && (
+                        <button
+                          type="button"
+                          onClick={reloadEditedVector}
+                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Reload Edited Vector
                         </button>
                       )}
                       {tuneItem.status === 'NEEDS_MANUAL_EDIT' && (

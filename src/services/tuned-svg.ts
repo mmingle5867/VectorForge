@@ -11,6 +11,7 @@ export const previewTuneSchema = z.object({
   preUpscaleBlur: z.number().min(0).max(5).default(0),
   blur: z.number().min(0).max(20),
   blurPasses: z.number().int().min(1).max(3).default(1),
+  svgCanvasPaddingPx: z.number().int().min(0).max(100).default(20),
   pathPrecision: z.number().int().min(0).max(8),
   cornerThreshold: z.number().min(0).max(180),
   filterSpeckle: z.number().int().min(0).max(20),
@@ -27,6 +28,7 @@ export const FIELD_RANGES: Record<string, string> = {
   colorMode: 'color or binary',
   blur: '0-20',
   blurPasses: '1-3',
+  svgCanvasPaddingPx: '0-100',
   pathPrecision: '0-8',
   cornerThreshold: '0-180',
   filterSpeckle: '0-20',
@@ -184,14 +186,16 @@ export async function generateTunedSvg(input: TunedSvgInput) {
     ],
   });
 
-  const svg = normalizeSvgRoot(optimized.data, traceWidth, traceHeight);
+  const svg = normalizeSvgRoot(optimized.data, traceWidth, traceHeight, {
+    canvasPaddingPx: input.settings.svgCanvasPaddingPx,
+  });
 
   return {
     svg,
     originalWidth: input.originalWidth,
     originalHeight: input.originalHeight,
-    traceWidth,
-    traceHeight,
+    traceWidth: traceWidth + input.settings.svgCanvasPaddingPx * 2,
+    traceHeight: traceHeight + input.settings.svgCanvasPaddingPx * 2,
     upscaleApplied,
     upscaleFactor: upscaleApplied ? input.upscaleFactor : 1,
     svgSize: Buffer.byteLength(svg, 'utf-8'),

@@ -40,6 +40,9 @@ interface UserSettings extends TuningExportSettings {
   manualEditorAllowMultipleFiles: boolean;
   manualEditorFileTypes: string[];
   manualEditorDefaultAction: string;
+  vectorEditorPath: string;
+  vectorEditorAllowMultipleFiles: boolean;
+  vectorEditorFileTypes: string[];
 }
 
 interface PathTestResult {
@@ -67,11 +70,15 @@ const DEFAULT_SETTINGS: UserSettings = {
   manualEditorAllowMultipleFiles: false,
   manualEditorFileTypes: ['PNG'],
   manualEditorDefaultAction: 'Open Preferred File Type',
+  vectorEditorPath: '',
+  vectorEditorAllowMultipleFiles: false,
+  vectorEditorFileTypes: ['SVG'],
   ...FACTORY_TUNING_EXPORT_DEFAULTS,
 };
 
 const MANUAL_EDITOR_FILE_TYPES = ['PNG', 'JPG', 'SVG'];
 const MANUAL_EDITOR_ACTIONS = ['Open Preferred File Type', 'Open All Selected File Types'];
+const VECTOR_EDITOR_FILE_TYPES = ['SVG', 'DXF', 'EPS', 'PDF'];
 const BUILT_IN_TEMPLATE_VARIABLES = [
   'ARTWORK_ID',
   'PROFILE_ID',
@@ -179,6 +186,7 @@ const PREPROCESSING_CONTROLS: Array<{ key: TuningExportSettingKey; label: string
   { key: 'preprocessingBlur', label: 'Preprocessing Blur' },
   { key: 'blurPasses', label: 'Blur Passes' },
   { key: 'edgePaddingPx', label: 'Edge Padding' },
+  { key: 'svgCanvasPaddingPx', label: 'SVG Canvas Padding' },
 ];
 
 const VTRACER_CONTROLS: Array<{ key: TuningExportSettingKey; label: string }> = [
@@ -404,10 +412,17 @@ export default function SettingsPage() {
               : ['PNG'],
             manualEditorDefaultAction:
               data.settings.manualEditorDefaultAction ?? 'Open Preferred File Type',
+            vectorEditorPath: data.settings.vectorEditorPath ?? '',
+            vectorEditorAllowMultipleFiles: data.settings.vectorEditorAllowMultipleFiles ?? false,
+            vectorEditorFileTypes: Array.isArray(data.settings.vectorEditorFileTypes)
+              ? data.settings.vectorEditorFileTypes
+              : ['SVG'],
             preUpscaleBlur: data.settings.preUpscaleBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
             preprocessingBlur: data.settings.preprocessingBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
             blurPasses: data.settings.blurPasses ?? FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
             edgePaddingPx: data.settings.edgePaddingPx ?? FACTORY_TUNING_EXPORT_DEFAULTS.edgePaddingPx,
+            svgCanvasPaddingPx:
+              data.settings.svgCanvasPaddingPx ?? FACTORY_TUNING_EXPORT_DEFAULTS.svgCanvasPaddingPx,
             pathPrecision: data.settings.pathPrecision ?? FACTORY_TUNING_EXPORT_DEFAULTS.pathPrecision,
             cornerThreshold: data.settings.cornerThreshold ?? FACTORY_TUNING_EXPORT_DEFAULTS.cornerThreshold,
             filterSpeckle: data.settings.filterSpeckle ?? FACTORY_TUNING_EXPORT_DEFAULTS.filterSpeckle,
@@ -504,6 +519,16 @@ export default function SettingsPage() {
         : [...s.manualEditorFileTypes, fileType];
 
       return { ...s, manualEditorFileTypes: fileTypes };
+    });
+  };
+
+  const toggleVectorEditorFileType = (fileType: string) => {
+    setSettings((s) => {
+      const fileTypes = s.vectorEditorFileTypes.includes(fileType)
+        ? s.vectorEditorFileTypes.filter((item) => item !== fileType)
+        : [...s.vectorEditorFileTypes, fileType];
+
+      return { ...s, vectorEditorFileTypes: fileTypes };
     });
   };
 
@@ -995,7 +1020,7 @@ export default function SettingsPage() {
           <div>
             <div className="mb-1.5 flex items-center gap-2">
               <label htmlFor="manual-editor-path" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Editor Path
+                Raster / Manual Editor Path
               </label>
               <Tooltip content="Full path to your local editor executable, for example C:\Program Files\paint.net\paintdotnet.exe">
                 <InfoIcon />
@@ -1073,6 +1098,70 @@ export default function SettingsPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="border-t border-gray-200 pt-5 dark:border-gray-700">
+            <div className="mb-1.5 flex items-center gap-2">
+              <label htmlFor="vector-editor-path" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Vector Editor Path
+              </label>
+              <Tooltip content="Full path to your vector editor executable, for example VCarve, Inkscape, Illustrator, or another SVG-capable editor.">
+                <InfoIcon />
+              </Tooltip>
+            </div>
+            <input
+              id="vector-editor-path"
+              type="text"
+              value={settings.vectorEditorPath}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, vectorEditorPath: e.target.value }))
+              }
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              placeholder={'C:\\Program Files\\Vector Editor\\editor.exe'}
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Used by Preview/Tune to open the tracked editable vector file.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Vector Editor Multiple Files
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Reserved for future workflows that open several vector files at once.
+              </p>
+            </div>
+            <ToggleSwitch
+              enabled={settings.vectorEditorAllowMultipleFiles}
+              onChange={(v) =>
+                setSettings((s) => ({ ...s, vectorEditorAllowMultipleFiles: v }))
+              }
+              label="Vector Editor Multiple Files"
+            />
+          </div>
+
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              Vector File Types
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {VECTOR_EDITOR_FILE_TYPES.map((fileType) => (
+                <label
+                  key={fileType}
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-300"
+                >
+                  <input
+                    type="checkbox"
+                    checked={settings.vectorEditorFileTypes.includes(fileType)}
+                    onChange={() => toggleVectorEditorFileType(fileType)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  {fileType}
+                </label>
+              ))}
+            </div>
           </div>
         </div>
       </div>

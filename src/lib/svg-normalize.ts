@@ -23,13 +23,21 @@ function ensureVisiblePathPaint(svg: string): string {
   });
 }
 
-export function normalizeSvgRoot(svg: string, width: number, height: number): string {
+export function normalizeSvgRoot(
+  svg: string,
+  width: number,
+  height: number,
+  options: { canvasPaddingPx?: number } = {}
+): string {
   const safeWidth = Math.max(1, Math.round(width));
   const safeHeight = Math.max(1, Math.round(height));
+  const padding = Math.max(0, Math.round(options.canvasPaddingPx ?? 0));
+  const canvasWidth = safeWidth + padding * 2;
+  const canvasHeight = safeHeight + padding * 2;
 
   const normalizedSvg = svg.replace(/<svg\b[^>]*>/i, (svgTag) => {
     const existingXmlns = svgTag.match(/\sxmlns=(["']).*?\1/i)?.[0] || '';
-    return `<svg${existingXmlns || ' xmlns="http://www.w3.org/2000/svg"'} width="${safeWidth}" height="${safeHeight}" viewBox="0 0 ${safeWidth} ${safeHeight}" preserveAspectRatio="xMidYMid meet">`;
+    return `<svg${existingXmlns || ' xmlns="http://www.w3.org/2000/svg"'} width="${canvasWidth}" height="${canvasHeight}" viewBox="${-padding} ${-padding} ${canvasWidth} ${canvasHeight}" preserveAspectRatio="xMidYMid meet">`;
   });
 
   return ensureVisiblePathPaint(normalizedSvg);
@@ -170,7 +178,10 @@ export function isSvgMimeOrPath(mimeType: string | null | undefined, filePath: s
   return mimeType === 'image/svg+xml' || !!filePath?.toLowerCase().endsWith('.svg');
 }
 
-export function normalizeImportedSvg(svg: string) {
+export function normalizeImportedSvg(
+  svg: string,
+  options: { canvasPaddingPx?: number } = {}
+) {
   const rootSvgTag = svg.match(/<svg\b[^>]*>/i)?.[0];
   if (!rootSvgTag) {
     throw new Error('Input is not a valid SVG');
@@ -179,16 +190,27 @@ export function normalizeImportedSvg(svg: string) {
   const dimensions = getSvgDimensions(rootSvgTag);
   const safeWidth = Math.max(1, Math.round(dimensions.width));
   const safeHeight = Math.max(1, Math.round(dimensions.height));
+  const padding = Math.max(0, Math.round(options.canvasPaddingPx ?? 0));
+  const canvasWidth = safeWidth + padding * 2;
+  const canvasHeight = safeHeight + padding * 2;
+  const viewBoxParts = dimensions.viewBox
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
+  const paddedViewBox =
+    viewBoxParts.length === 4 && viewBoxParts.every(Number.isFinite)
+      ? `${viewBoxParts[0] - padding} ${viewBoxParts[1] - padding} ${viewBoxParts[2] + padding * 2} ${viewBoxParts[3] + padding * 2}`
+      : `${-padding} ${-padding} ${canvasWidth} ${canvasHeight}`;
   const paint = classifySvgPaint(svg);
   const normalizedSvg = svg.replace(/<svg\b[^>]*>/i, (svgTag) => {
     const existingXmlns = svgTag.match(/\sxmlns=(["']).*?\1/i)?.[0] || '';
-    return `<svg${existingXmlns || ' xmlns="http://www.w3.org/2000/svg"'} width="${safeWidth}" height="${safeHeight}" viewBox="${dimensions.viewBox}" preserveAspectRatio="xMidYMid meet">`;
+    return `<svg${existingXmlns || ' xmlns="http://www.w3.org/2000/svg"'} width="${canvasWidth}" height="${canvasHeight}" viewBox="${paddedViewBox}" preserveAspectRatio="xMidYMid meet">`;
   });
 
   return {
     svg: normalizedSvg,
-    width: safeWidth,
-    height: safeHeight,
+    width: canvasWidth,
+    height: canvasHeight,
     hasFilledColors: paint.hasFilledColors,
     isStrokeOnly: paint.isStrokeOnly,
   };

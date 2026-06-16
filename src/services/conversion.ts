@@ -122,7 +122,9 @@ export async function convertToSvg(
       ],
     });
 
-    const normalizedSvg = normalizeSvgRoot(optimized.data, traceWidth, traceHeight);
+    const normalizedSvg = normalizeSvgRoot(optimized.data, traceWidth, traceHeight, {
+      canvasPaddingPx: 20,
+    });
 
     await fs.writeFile(svgPath, normalizedSvg, 'utf-8');
 

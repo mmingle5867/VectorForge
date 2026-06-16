@@ -34,6 +34,7 @@ const EXTENDED_KEYS = [
   'preprocessingBlur',
   'blurPasses',
   'edgePaddingPx',
+  'svgCanvasPaddingPx',
   'pathPrecision',
   'cornerThreshold',
   'filterSpeckle',
@@ -49,6 +50,9 @@ const EXTENDED_KEYS = [
   'manualEditorAllowMultipleFiles',
   'manualEditorFileTypes',
   'manualEditorDefaultAction',
+  'vectorEditorPath',
+  'vectorEditorAllowMultipleFiles',
+  'vectorEditorFileTypes',
   'companyName',
   'contactName',
   'website',
@@ -64,6 +68,7 @@ const TUNING_EXPORT_KEYS = [
   'preprocessingBlur',
   'blurPasses',
   'edgePaddingPx',
+  'svgCanvasPaddingPx',
   'pathPrecision',
   'cornerThreshold',
   'filterSpeckle',
@@ -188,6 +193,7 @@ function getTuningExportSettings(extended: Record<string, unknown>) {
     preprocessingBlur: getNumberSetting(extended, 'preprocessingBlur'),
     blurPasses: getNumberSetting(extended, 'blurPasses'),
     edgePaddingPx: getNumberSetting(extended, 'edgePaddingPx'),
+    svgCanvasPaddingPx: getNumberSetting(extended, 'svgCanvasPaddingPx'),
     pathPrecision: getNumberSetting(extended, 'pathPrecision'),
     cornerThreshold: getNumberSetting(extended, 'cornerThreshold'),
     filterSpeckle: getNumberSetting(extended, 'filterSpeckle'),
@@ -218,7 +224,7 @@ function validateTuningExportSetting(key: TuningExportSettingKey, value: unknown
   }
 
   if (
-    ['blurPasses', 'edgePaddingPx', 'pathPrecision', 'filterSpeckle', 'colorPrecision', 'layerDifference', 'rasterExportWidth', 'rasterExportHeight', 'pngWhiteTransparencyThreshold'].includes(
+    ['blurPasses', 'edgePaddingPx', 'svgCanvasPaddingPx', 'pathPrecision', 'filterSpeckle', 'colorPrecision', 'layerDifference', 'rasterExportWidth', 'rasterExportHeight', 'pngWhiteTransparencyThreshold'].includes(
       key
     ) &&
     !Number.isInteger(numberValue)
@@ -231,6 +237,30 @@ function validateTuningExportSetting(key: TuningExportSettingKey, value: unknown
 
 function normalizeConfiguredPath(value: string) {
   return path.resolve(process.cwd(), value).toLowerCase();
+}
+
+function validateEditorPathSetting(label: string, value: unknown) {
+  if (value === undefined) return null;
+  if (typeof value !== 'string') {
+    return `${label} must be a text path`;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes('\0')) {
+    return `${label} cannot contain null characters`;
+  }
+
+  if (!path.isAbsolute(trimmed) && !path.win32.isAbsolute(trimmed)) {
+    return `${label} must be an absolute path`;
+  }
+
+  return null;
+}
+
+function normalizeEditorPathSetting(value: unknown) {
+  return typeof value === 'string' ? value.trim() : value;
 }
 
 export async function GET() {
@@ -274,6 +304,9 @@ export async function GET() {
           typeof extended.manualEditorDefaultAction === 'string'
             ? extended.manualEditorDefaultAction
             : 'Open Preferred File Type',
+        vectorEditorPath: typeof extended.vectorEditorPath === 'string' ? extended.vectorEditorPath : '',
+        vectorEditorAllowMultipleFiles: extended.vectorEditorAllowMultipleFiles ?? false,
+        vectorEditorFileTypes: getStringArraySetting(extended.vectorEditorFileTypes, ['SVG']),
         ...getTuningExportSettings(extended),
       },
       isFirstTime: false,
@@ -310,6 +343,9 @@ export async function PUT(req: NextRequest) {
       manualEditorAllowMultipleFiles,
       manualEditorFileTypes,
       manualEditorDefaultAction,
+      vectorEditorPath,
+      vectorEditorAllowMultipleFiles,
+      vectorEditorFileTypes,
       companyName,
       contactName,
       website,
@@ -322,6 +358,7 @@ export async function PUT(req: NextRequest) {
       preprocessingBlur,
       blurPasses,
       edgePaddingPx,
+      svgCanvasPaddingPx,
       pathPrecision,
       cornerThreshold,
       filterSpeckle,
@@ -340,6 +377,7 @@ export async function PUT(req: NextRequest) {
       preprocessingBlur,
       blurPasses,
       edgePaddingPx,
+      svgCanvasPaddingPx,
       pathPrecision,
       cornerThreshold,
       filterSpeckle,
@@ -412,6 +450,28 @@ export async function PUT(req: NextRequest) {
       );
     }
 
+    const manualEditorPathError = validateEditorPathSetting(
+      'Manual editor path',
+      manualEditorPath
+    );
+    if (manualEditorPathError) {
+      return NextResponse.json(
+        { success: false, error: manualEditorPathError },
+        { status: 400 }
+      );
+    }
+
+    const vectorEditorPathError = validateEditorPathSetting(
+      'Vector editor path',
+      vectorEditorPath
+    );
+    if (vectorEditorPathError) {
+      return NextResponse.json(
+        { success: false, error: vectorEditorPathError },
+        { status: 400 }
+      );
+    }
+
     const allowedEditorActions = ['Open Preferred File Type', 'Open All Selected File Types'];
     if (
       manualEditorDefaultAction !== undefined &&
@@ -419,6 +479,18 @@ export async function PUT(req: NextRequest) {
     ) {
       return NextResponse.json(
         { success: false, error: 'Manual editor default action is invalid' },
+        { status: 400 }
+      );
+    }
+
+    const allowedVectorEditorFileTypes = ['SVG', 'DXF', 'EPS', 'PDF'];
+    if (
+      vectorEditorFileTypes !== undefined &&
+      (!Array.isArray(vectorEditorFileTypes) ||
+        vectorEditorFileTypes.some((fileType) => !allowedVectorEditorFileTypes.includes(fileType)))
+    ) {
+      return NextResponse.json(
+        { success: false, error: 'Vector editor file types must be SVG, DXF, EPS, or PDF' },
         { status: 400 }
       );
     }
@@ -454,7 +526,9 @@ export async function PUT(req: NextRequest) {
       mergedSubstitutions.copyBaseAssetsToOutput = Boolean(copyBaseAssetsToOutput);
     }
     if (cncMode !== undefined) mergedSubstitutions.cncMode = cncMode;
-    if (manualEditorPath !== undefined) mergedSubstitutions.manualEditorPath = String(manualEditorPath);
+    if (manualEditorPath !== undefined) {
+      mergedSubstitutions.manualEditorPath = String(normalizeEditorPathSetting(manualEditorPath));
+    }
     if (manualEditorAllowMultipleFiles !== undefined) {
       mergedSubstitutions.manualEditorAllowMultipleFiles = Boolean(manualEditorAllowMultipleFiles);
     }
@@ -462,6 +536,13 @@ export async function PUT(req: NextRequest) {
     if (manualEditorDefaultAction !== undefined) {
       mergedSubstitutions.manualEditorDefaultAction = String(manualEditorDefaultAction);
     }
+    if (vectorEditorPath !== undefined) {
+      mergedSubstitutions.vectorEditorPath = String(normalizeEditorPathSetting(vectorEditorPath));
+    }
+    if (vectorEditorAllowMultipleFiles !== undefined) {
+      mergedSubstitutions.vectorEditorAllowMultipleFiles = Boolean(vectorEditorAllowMultipleFiles);
+    }
+    if (vectorEditorFileTypes !== undefined) mergedSubstitutions.vectorEditorFileTypes = vectorEditorFileTypes;
     if (templateVariables !== undefined) {
       Object.assign(mergedSubstitutions, normalizeTemplateVariables(templateVariables));
     }

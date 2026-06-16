@@ -3,6 +3,7 @@ export interface TuningExportSettings {
   preprocessingBlur: number;
   blurPasses: number;
   edgePaddingPx: number;
+  svgCanvasPaddingPx: number;
   pathPrecision: number;
   cornerThreshold: number;
   filterSpeckle: number;
@@ -29,6 +30,7 @@ export const FACTORY_TUNING_EXPORT_DEFAULTS: TuningExportSettings = {
   preprocessingBlur: 1,
   blurPasses: 1,
   edgePaddingPx: 2,
+  svgCanvasPaddingPx: 20,
   pathPrecision: 3,
   cornerThreshold: 70,
   filterSpeckle: 6,
@@ -48,6 +50,7 @@ export const RECOMMENDED_SMOOTH_TUNING_EXPORT_DEFAULTS: TuningExportSettings = {
   preprocessingBlur: 1,
   blurPasses: 1,
   edgePaddingPx: 2,
+  svgCanvasPaddingPx: 20,
   pathPrecision: 3,
   cornerThreshold: 70,
   filterSpeckle: 6,
@@ -58,6 +61,7 @@ export const TUNING_EXPORT_RANGES: Record<TuningExportSettingKey, TuningExportRa
   preprocessingBlur: { min: 0, max: 20, step: 0.1 },
   blurPasses: { min: 1, max: 3, step: 1 },
   edgePaddingPx: { min: 0, max: 20, step: 1 },
+  svgCanvasPaddingPx: { min: 0, max: 100, step: 1 },
   pathPrecision: { min: 0, max: 8, step: 1 },
   cornerThreshold: { min: 0, max: 180, step: 5 },
   filterSpeckle: { min: 0, max: 20, step: 1 },
@@ -76,6 +80,7 @@ export const TUNING_EXPORT_HELP: Record<TuningExportSettingKey, string> = {
   preprocessingBlur: 'Preview/Tune: smooths raster edges after upscaling and before tracing. Recommended 0.75-2.0.',
   blurPasses: 'Preview/Tune: repeats the post-upscale blur before edge padding. Use 1 normally.',
   edgePaddingPx: 'Preview/Tune default: white padding added before tracing so artwork does not touch image edges.',
+  svgCanvasPaddingPx: 'Final SVG viewport padding added after tracing. Expands the canvas/viewBox without moving or changing paths.',
   pathPrecision: 'Preview/Tune: decimal precision for SVG path coordinates. VTracer accepts 0-8.',
   cornerThreshold: 'Preview/Tune: higher values preserve more hard corners; lower values smooth and round more corners.',
   filterSpeckle: 'Preview/Tune: removes small noisy shapes. Higher is cleaner but may remove details.',

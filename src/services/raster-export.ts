@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { logger } from '@/lib/logger';
 
 const SVG_BASE_DENSITY = 72;
 const SVG_RENDER_PIXEL_LIMIT = 200_000_000;
@@ -9,14 +10,22 @@ export interface RasterExportOptions {
   format: 'jpg' | 'jpeg' | 'png';
   quality?: number;
   artworkColor?: string;
+  canvasPaddingPx?: number;
 }
 
 export interface SvgRasterExportOptions extends RasterExportOptions {
   preserveColors: boolean;
+  forceOpaqueVisiblePixels?: boolean;
 }
 
 function safeDimension(value: number): number {
   return Number.isFinite(value) && value > 0 ? Math.round(value) : 2000;
+}
+
+function safeCanvasPadding(value: number | undefined, targetWidth: number, targetHeight: number) {
+  if (!Number.isFinite(value) || !value || value < 0) return 0;
+  const maxPadding = Math.max(0, Math.floor((Math.min(targetWidth, targetHeight) - 1) / 2));
+  return Math.min(Math.round(value), maxPadding);
 }
 
 function getSafeSvgDensity(
@@ -114,6 +123,63 @@ async function recolorVisiblePixels(input: Buffer, color: string): Promise<Buffe
     .toBuffer();
 }
 
+async function recolorVisiblePixelsOpaque(input: Buffer, color: string): Promise<Buffer> {
+  const artworkColor = parseHexColor(color);
+  const { data, info } = await sharp(input)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  for (let index = 0; index < data.length; index += info.channels) {
+    const alpha = data[index + 3];
+    if (alpha === 0) continue;
+
+    data[index] = artworkColor.r;
+    data[index + 1] = artworkColor.g;
+    data[index + 2] = artworkColor.b;
+    data[index + 3] = 255;
+  }
+
+  return sharp(data, {
+    raw: {
+      width: info.width,
+      height: info.height,
+      channels: info.channels,
+    },
+  })
+    .png()
+    .toBuffer();
+}
+
+async function getAlphaDiagnostics(input: Buffer) {
+  const { data, info } = await sharp(input)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let alphaPixels = 0;
+  let minAlpha = 255;
+  let maxAlpha = 0;
+
+  for (let index = 0; index < data.length; index += info.channels) {
+    const alpha = data[index + 3];
+    minAlpha = Math.min(minAlpha, alpha);
+    maxAlpha = Math.max(maxAlpha, alpha);
+    if (alpha > 0) {
+      alphaPixels += 1;
+    }
+  }
+
+  return {
+    width: info.width,
+    height: info.height,
+    alphaPixels,
+    minAlpha,
+    maxAlpha,
+    allTransparent: alphaPixels === 0,
+  };
+}
+
 async function renderSvgInsideCanvas(input: Buffer, targetWidth: number, targetHeight: number) {
   const sourceMetadata = await sharp(input).metadata();
   const density = getSafeSvgDensity(
@@ -145,13 +211,16 @@ export async function createFixedCanvasRaster(
 ): Promise<void> {
   const targetWidth = safeDimension(options.width);
   const targetHeight = safeDimension(options.height);
+  const canvasPadding = safeCanvasPadding(options.canvasPaddingPx, targetWidth, targetHeight);
+  const innerWidth = Math.max(1, targetWidth - canvasPadding * 2);
+  const innerHeight = Math.max(1, targetHeight - canvasPadding * 2);
   const isPng = options.format === 'png';
   const background = isPng
     ? { r: 255, g: 255, b: 255, alpha: 0 }
     : { r: 255, g: 255, b: 255, alpha: 1 };
 
   const resized = await sharp(input)
-    .resize(targetWidth, targetHeight, {
+    .resize(innerWidth, innerHeight, {
       fit: 'inside',
       withoutEnlargement: false,
     })
@@ -162,8 +231,8 @@ export async function createFixedCanvasRaster(
     : resized;
 
   const resizedMeta = await sharp(artwork).metadata();
-  const left = Math.round((targetWidth - (resizedMeta.width || targetWidth)) / 2);
-  const top = Math.round((targetHeight - (resizedMeta.height || targetHeight)) / 2);
+  const left = canvasPadding + Math.round((innerWidth - (resizedMeta.width || innerWidth)) / 2);
+  const top = canvasPadding + Math.round((innerHeight - (resizedMeta.height || innerHeight)) / 2);
 
   const canvas = sharp({
     create: {
@@ -192,14 +261,21 @@ export async function createFixedCanvasSvgRaster(
 ): Promise<void> {
   const targetWidth = safeDimension(options.width);
   const targetHeight = safeDimension(options.height);
+  const canvasPadding = safeCanvasPadding(options.canvasPaddingPx, targetWidth, targetHeight);
+  const innerWidth = Math.max(1, targetWidth - canvasPadding * 2);
+  const innerHeight = Math.max(1, targetHeight - canvasPadding * 2);
   const isPng = options.format === 'png';
   const background = isPng
     ? { r: 255, g: 255, b: 255, alpha: 0 }
     : { r: 255, g: 255, b: 255, alpha: 1 };
-  const { rendered, left, top } = await renderSvgInsideCanvas(input, targetWidth, targetHeight);
-  const artwork = options.preserveColors
-    ? rendered
-    : await recolorVisiblePixels(rendered, isPng ? options.artworkColor || '#000000' : '#000000');
+  const { rendered, left, top } = await renderSvgInsideCanvas(input, innerWidth, innerHeight);
+  const artwork = isPng
+    ? options.forceOpaqueVisiblePixels
+      ? await recolorVisiblePixelsOpaque(rendered, options.artworkColor || '#000000')
+      : rendered
+    : options.preserveColors
+      ? rendered
+      : await recolorVisiblePixels(rendered, '#000000');
 
   const canvas = sharp({
     create: {
@@ -208,10 +284,18 @@ export async function createFixedCanvasSvgRaster(
       channels: 4,
       background,
     },
-  }).composite([{ input: artwork, left, top }]);
+  }).composite([{ input: artwork, left: canvasPadding + left, top: canvasPadding + top }]);
 
   if (isPng) {
-    await canvas.png().toFile(outputPath);
+    const pngBuffer = await canvas.png().toBuffer();
+    const alphaDiagnostics = await getAlphaDiagnostics(pngBuffer);
+    if (alphaDiagnostics.allTransparent) {
+      logger.warn('SVG-derived PNG export is fully transparent', {
+        outputPath,
+        ...alphaDiagnostics,
+      });
+    }
+    await sharp(pngBuffer).toFile(outputPath);
     return;
   }
 

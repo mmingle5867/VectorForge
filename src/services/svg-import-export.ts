@@ -8,6 +8,7 @@ import { createZipFromFolder } from '@/services/zip-generator';
 
 interface SvgImportExportOptions {
   pngExportArtworkColor: string;
+  svgCanvasPaddingPx?: number;
   createZip?: boolean;
   fileBaseName?: string;
 }
@@ -27,7 +28,9 @@ export async function exportImportedSvgPackage(
   outputDir: string,
   options: SvgImportExportOptions
 ) {
-  const normalized = normalizeImportedSvg(originalSvg);
+  const normalized = normalizeImportedSvg(originalSvg, {
+    canvasPaddingPx: options.svgCanvasPaddingPx ?? 20,
+  });
   const svgPath = getSvgPath(outputDir, options.fileBaseName);
   const pngPath = getPngPath(outputDir, options.fileBaseName);
   const jpgPath = getJpgPath(outputDir, options.fileBaseName);
@@ -46,12 +49,13 @@ export async function exportImportedSvgPackage(
       })
     : normalized.svg;
 
-  await writeFile(svgPath, originalSvg, 'utf-8');
+  await writeFile(svgPath, normalized.svg, 'utf-8');
   await createFixedCanvasSvgRaster(Buffer.from(pngSvg, 'utf-8'), pngPath, {
     width: config.processing.rasterExportWidth,
     height: config.processing.rasterExportHeight,
     format: 'png',
     artworkColor: options.pngExportArtworkColor,
+    canvasPaddingPx: options.svgCanvasPaddingPx ?? 20,
     preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
   });
   await createFixedCanvasSvgRaster(Buffer.from(jpgSvg, 'utf-8'), jpgPath, {
@@ -59,6 +63,7 @@ export async function exportImportedSvgPackage(
     height: config.processing.rasterExportHeight,
     format: 'jpg',
     quality: 90,
+    canvasPaddingPx: options.svgCanvasPaddingPx ?? 20,
     preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
   });
 

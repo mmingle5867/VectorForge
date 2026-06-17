@@ -3,7 +3,9 @@ export interface TuningExportSettings {
   preprocessingBlur: number;
   blurPasses: number;
   edgePaddingPx: number;
+  rasterSourcePaddingPx: number;
   svgCanvasPaddingPx: number;
+  exportCanvasPaddingPx: number;
   pathPrecision: number;
   cornerThreshold: number;
   filterSpeckle: number;
@@ -30,7 +32,9 @@ export const FACTORY_TUNING_EXPORT_DEFAULTS: TuningExportSettings = {
   preprocessingBlur: 1,
   blurPasses: 1,
   edgePaddingPx: 2,
+  rasterSourcePaddingPx: 20,
   svgCanvasPaddingPx: 20,
+  exportCanvasPaddingPx: 0,
   pathPrecision: 3,
   cornerThreshold: 70,
   filterSpeckle: 6,
@@ -50,7 +54,9 @@ export const RECOMMENDED_SMOOTH_TUNING_EXPORT_DEFAULTS: TuningExportSettings = {
   preprocessingBlur: 1,
   blurPasses: 1,
   edgePaddingPx: 2,
+  rasterSourcePaddingPx: 20,
   svgCanvasPaddingPx: 20,
+  exportCanvasPaddingPx: 0,
   pathPrecision: 3,
   cornerThreshold: 70,
   filterSpeckle: 6,
@@ -61,7 +67,9 @@ export const TUNING_EXPORT_RANGES: Record<TuningExportSettingKey, TuningExportRa
   preprocessingBlur: { min: 0, max: 20, step: 0.1 },
   blurPasses: { min: 1, max: 3, step: 1 },
   edgePaddingPx: { min: 0, max: 20, step: 1 },
+  rasterSourcePaddingPx: { min: 0, max: 200, step: 1 },
   svgCanvasPaddingPx: { min: 0, max: 100, step: 1 },
+  exportCanvasPaddingPx: { min: 0, max: 300, step: 1 },
   pathPrecision: { min: 0, max: 8, step: 1 },
   cornerThreshold: { min: 0, max: 180, step: 5 },
   filterSpeckle: { min: 0, max: 20, step: 1 },
@@ -80,7 +88,9 @@ export const TUNING_EXPORT_HELP: Record<TuningExportSettingKey, string> = {
   preprocessingBlur: 'Preview/Tune: smooths raster edges after upscaling and before tracing. Recommended 0.75-2.0.',
   blurPasses: 'Preview/Tune: repeats the post-upscale blur before edge padding. Use 1 normally.',
   edgePaddingPx: 'Preview/Tune default: white padding added before tracing so artwork does not touch image edges.',
-  svgCanvasPaddingPx: 'Final SVG viewport padding after tracing; V1 also uses this as raster source padding before smart upscaling/export sizing.',
+  rasterSourcePaddingPx: 'Adds padding to raster artwork before tracing/upscaling. Useful when artwork touches the image edge.',
+  svgCanvasPaddingPx: 'Expands the SVG viewBox/canvas after tracing so vector paths are not clipped.',
+  exportCanvasPaddingPx: 'Adds margin inside the final PNG/JPG export canvas. Useful for presentation spacing.',
   pathPrecision: 'Preview/Tune: decimal precision for SVG path coordinates. VTracer accepts 0-8.',
   cornerThreshold: 'Preview/Tune: higher values preserve more hard corners; lower values smooth and round more corners.',
   filterSpeckle: 'Preview/Tune: removes small noisy shapes. Higher is cleaner but may remove details.',

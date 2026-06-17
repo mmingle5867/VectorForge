@@ -8,19 +8,31 @@ import { normalizeSvgRoot } from '@/lib/svg-normalize';
 const TRACE_BORDER_PX = 2;
 const PNG_ALPHA_TRACE_THRESHOLD = 32;
 
+const numberWithDefault = (schema: z.ZodDefault<z.ZodNumber>) =>
+  z.preprocess((value) => {
+    if (value === null || value === '') return undefined;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : value;
+    }
+    return value;
+  }, schema);
+
 export const previewTuneSchema = z.object({
   colorMode: z.enum(['color', 'binary']).default('binary'),
-  preUpscaleBlur: z.number().min(0).max(5).default(0),
-  blur: z.number().min(0).max(20),
-  blurPasses: z.number().int().min(1).max(3).default(1),
-  svgCanvasPaddingPx: z.number().int().min(0).max(100).default(20),
-  pathPrecision: z.number().int().min(0).max(8),
-  cornerThreshold: z.number().min(0).max(180),
-  filterSpeckle: z.number().int().min(0).max(20),
-  lengthThreshold: z.number().min(3.5).max(10),
-  spliceThreshold: z.number().min(0).max(180),
-  colorPrecision: z.number().int().min(1).max(8),
-  layerDifference: z.number().int().min(0).max(255),
+  preUpscaleBlur: numberWithDefault(z.number().min(0).max(5).default(0)),
+  blur: numberWithDefault(z.number().min(0).max(20).default(0)),
+  blurPasses: numberWithDefault(z.number().int().min(1).max(3).default(1)),
+  rasterSourcePaddingPx: numberWithDefault(z.number().int().min(0).max(200).default(20)),
+  svgCanvasPaddingPx: numberWithDefault(z.number().int().min(0).max(100).default(20)),
+  exportCanvasPaddingPx: numberWithDefault(z.number().int().min(0).max(300).default(0)),
+  pathPrecision: numberWithDefault(z.number().int().min(0).max(8).default(3)),
+  cornerThreshold: numberWithDefault(z.number().min(0).max(180).default(70)),
+  filterSpeckle: numberWithDefault(z.number().int().min(0).max(20).default(6)),
+  lengthThreshold: numberWithDefault(z.number().min(3.5).max(10).default(4)),
+  spliceThreshold: numberWithDefault(z.number().min(0).max(180).default(45)),
+  colorPrecision: numberWithDefault(z.number().int().min(1).max(8).default(6)),
+  layerDifference: numberWithDefault(z.number().int().min(0).max(255).default(16)),
 });
 
 export type PreviewTuneSettings = z.infer<typeof previewTuneSchema>;
@@ -30,7 +42,9 @@ export const FIELD_RANGES: Record<string, string> = {
   colorMode: 'color or binary',
   blur: '0-20',
   blurPasses: '1-3',
+  rasterSourcePaddingPx: '0-200',
   svgCanvasPaddingPx: '0-100',
+  exportCanvasPaddingPx: '0-300',
   pathPrecision: '0-8',
   cornerThreshold: '0-180',
   filterSpeckle: '0-20',
@@ -275,20 +289,36 @@ async function prepareTraceRgbaData(
 
 export async function generateTunedSvg(input: TunedSvgInput) {
   const sourceMetadata = await sharp(input.imageBuffer).metadata();
+  const rasterSourcePaddingPx = input.settings.rasterSourcePaddingPx ?? input.settings.svgCanvasPaddingPx ?? 20;
+  const paddedWidth = input.originalWidth + rasterSourcePaddingPx * 2;
+  const paddedHeight = input.originalHeight + rasterSourcePaddingPx * 2;
   const upscaleApplied =
     input.upscaleFactor > 1 &&
-    (input.originalWidth < input.smartUpscaleThreshold ||
-      input.originalHeight < input.smartUpscaleThreshold);
+    (paddedWidth < input.smartUpscaleThreshold ||
+      paddedHeight < input.smartUpscaleThreshold);
   const resizedWidth = upscaleApplied
-    ? input.originalWidth * input.upscaleFactor
-    : input.originalWidth;
+    ? paddedWidth * input.upscaleFactor
+    : paddedWidth;
   const resizedHeight = upscaleApplied
-    ? input.originalHeight * input.upscaleFactor
-    : input.originalHeight;
+    ? paddedHeight * input.upscaleFactor
+    : paddedHeight;
   const traceWidth = resizedWidth + TRACE_BORDER_PX * 2;
   const traceHeight = resizedHeight + TRACE_BORDER_PX * 2;
 
-  let sharpImage = sharp(input.imageBuffer).ensureAlpha();
+  const sourcePaddedBuffer = await sharp(input.imageBuffer)
+    .ensureAlpha()
+    .extend({
+      top: rasterSourcePaddingPx,
+      bottom: rasterSourcePaddingPx,
+      left: rasterSourcePaddingPx,
+      right: rasterSourcePaddingPx,
+      background: sourceMetadata.hasAlpha
+        ? { r: 255, g: 255, b: 255, alpha: 0 }
+        : { r: 255, g: 255, b: 255, alpha: 1 },
+    })
+    .png()
+    .toBuffer();
+  let sharpImage = sharp(sourcePaddedBuffer).ensureAlpha();
   if (input.settings.preUpscaleBlur > 0) {
     sharpImage = sharpImage.blur(input.settings.preUpscaleBlur);
   }

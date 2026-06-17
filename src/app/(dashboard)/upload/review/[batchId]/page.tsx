@@ -45,7 +45,9 @@ interface TuneSettings {
   preUpscaleBlur: number;
   blur: number;
   blurPasses: number;
+  rasterSourcePaddingPx: number;
   svgCanvasPaddingPx: number;
+  exportCanvasPaddingPx: number;
   pathPrecision: number;
   cornerThreshold: number;
   filterSpeckle: number;
@@ -133,7 +135,9 @@ const DEFAULT_TUNE_SETTINGS: TuneSettings = {
   preUpscaleBlur: FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
   blur: FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
   blurPasses: FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
+  rasterSourcePaddingPx: FACTORY_TUNING_EXPORT_DEFAULTS.rasterSourcePaddingPx,
   svgCanvasPaddingPx: FACTORY_TUNING_EXPORT_DEFAULTS.svgCanvasPaddingPx,
+  exportCanvasPaddingPx: FACTORY_TUNING_EXPORT_DEFAULTS.exportCanvasPaddingPx,
   pathPrecision: FACTORY_TUNING_EXPORT_DEFAULTS.pathPrecision,
   cornerThreshold: FACTORY_TUNING_EXPORT_DEFAULTS.cornerThreshold,
   filterSpeckle: FACTORY_TUNING_EXPORT_DEFAULTS.filterSpeckle,
@@ -151,7 +155,12 @@ function getTuneSettingsFromSiteSettings(
     preUpscaleBlur: settings?.preUpscaleBlur ?? DEFAULT_TUNE_SETTINGS.preUpscaleBlur,
     blur: settings?.preprocessingBlur ?? DEFAULT_TUNE_SETTINGS.blur,
     blurPasses: settings?.blurPasses ?? DEFAULT_TUNE_SETTINGS.blurPasses,
+    rasterSourcePaddingPx:
+      settings?.rasterSourcePaddingPx ??
+      settings?.svgCanvasPaddingPx ??
+      DEFAULT_TUNE_SETTINGS.rasterSourcePaddingPx,
     svgCanvasPaddingPx: settings?.svgCanvasPaddingPx ?? DEFAULT_TUNE_SETTINGS.svgCanvasPaddingPx,
+    exportCanvasPaddingPx: settings?.exportCanvasPaddingPx ?? DEFAULT_TUNE_SETTINGS.exportCanvasPaddingPx,
     pathPrecision: settings?.pathPrecision ?? DEFAULT_TUNE_SETTINGS.pathPrecision,
     cornerThreshold: settings?.cornerThreshold ?? DEFAULT_TUNE_SETTINGS.cornerThreshold,
     filterSpeckle: settings?.filterSpeckle ?? DEFAULT_TUNE_SETTINGS.filterSpeckle,
@@ -195,12 +204,28 @@ const TUNE_CONTROLS: Array<{
     help: 'Repeats the same blur before border padding. Use 1 normally; 2-3 for difficult stair-stepping.',
   },
   {
+    key: 'rasterSourcePaddingPx',
+    label: 'Raster Source Padding',
+    min: 0,
+    max: 200,
+    step: 1,
+    help: 'Adds padding to raster artwork before tracing/upscaling. Useful when artwork touches the image edge.',
+  },
+  {
     key: 'svgCanvasPaddingPx',
     label: 'SVG Canvas Padding',
     min: 0,
     max: 100,
     step: 1,
-    help: 'Adds final SVG viewport padding after tracing. This does not move, scale, or repair paths.',
+    help: 'Expands the SVG viewBox/canvas after tracing so vector paths are not clipped.',
+  },
+  {
+    key: 'exportCanvasPaddingPx',
+    label: 'Export Canvas Padding',
+    min: 0,
+    max: 300,
+    step: 1,
+    help: 'Adds margin inside the final PNG/JPG export canvas. Useful for presentation spacing.',
   },
   {
     key: 'pathPrecision',
@@ -280,8 +305,12 @@ const TUNE_CONTROL_GROUPS: Array<{
     keys: ['preUpscaleBlur', 'blur', 'blurPasses', 'filterSpeckle'],
   },
   {
+    title: 'Output / Padding',
+    keys: ['rasterSourcePaddingPx', 'svgCanvasPaddingPx', 'exportCanvasPaddingPx'],
+  },
+  {
     title: 'Export',
-    keys: ['svgCanvasPaddingPx', 'colorPrecision', 'layerDifference'],
+    keys: ['colorPrecision', 'layerDifference'],
   },
 ];
 

@@ -186,6 +186,7 @@ const PREPROCESSING_CONTROLS: Array<{ key: TuningExportSettingKey; label: string
   { key: 'preprocessingBlur', label: 'Preprocessing Blur' },
   { key: 'blurPasses', label: 'Blur Passes' },
   { key: 'edgePaddingPx', label: 'Edge Padding' },
+  { key: 'rasterSourcePaddingPx', label: 'Raster Source Padding' },
   { key: 'svgCanvasPaddingPx', label: 'SVG Canvas Padding' },
 ];
 
@@ -202,6 +203,7 @@ const VTRACER_CONTROLS: Array<{ key: TuningExportSettingKey; label: string }> = 
 const EXPORT_CONTROLS: Array<{ key: TuningExportSettingKey; label: string }> = [
   { key: 'rasterExportWidth', label: 'Raster Export Width' },
   { key: 'rasterExportHeight', label: 'Raster Export Height' },
+  { key: 'exportCanvasPaddingPx', label: 'Export Canvas Padding' },
   { key: 'pngWhiteTransparencyThreshold', label: 'PNG White Transparency Threshold' },
 ];
 
@@ -421,8 +423,15 @@ export default function SettingsPage() {
             preprocessingBlur: data.settings.preprocessingBlur ?? FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
             blurPasses: data.settings.blurPasses ?? FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
             edgePaddingPx: data.settings.edgePaddingPx ?? FACTORY_TUNING_EXPORT_DEFAULTS.edgePaddingPx,
+            rasterSourcePaddingPx:
+              data.settings.rasterSourcePaddingPx ??
+              data.settings.svgCanvasPaddingPx ??
+              FACTORY_TUNING_EXPORT_DEFAULTS.rasterSourcePaddingPx,
             svgCanvasPaddingPx:
               data.settings.svgCanvasPaddingPx ?? FACTORY_TUNING_EXPORT_DEFAULTS.svgCanvasPaddingPx,
+            exportCanvasPaddingPx:
+              data.settings.exportCanvasPaddingPx ??
+              FACTORY_TUNING_EXPORT_DEFAULTS.exportCanvasPaddingPx,
             pathPrecision: data.settings.pathPrecision ?? FACTORY_TUNING_EXPORT_DEFAULTS.pathPrecision,
             cornerThreshold: data.settings.cornerThreshold ?? FACTORY_TUNING_EXPORT_DEFAULTS.cornerThreshold,
             filterSpeckle: data.settings.filterSpeckle ?? FACTORY_TUNING_EXPORT_DEFAULTS.filterSpeckle,

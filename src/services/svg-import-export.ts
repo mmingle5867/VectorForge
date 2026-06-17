@@ -9,6 +9,7 @@ import { createZipFromFolder } from '@/services/zip-generator';
 interface SvgImportExportOptions {
   pngExportArtworkColor: string;
   svgCanvasPaddingPx?: number;
+  exportCanvasPaddingPx?: number;
   createZip?: boolean;
   fileBaseName?: string;
 }
@@ -55,7 +56,7 @@ export async function exportImportedSvgPackage(
     height: config.processing.rasterExportHeight,
     format: 'png',
     artworkColor: options.pngExportArtworkColor,
-    canvasPaddingPx: options.svgCanvasPaddingPx ?? 20,
+    canvasPaddingPx: options.exportCanvasPaddingPx ?? 0,
     preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
   });
   await createFixedCanvasSvgRaster(Buffer.from(jpgSvg, 'utf-8'), jpgPath, {
@@ -63,7 +64,7 @@ export async function exportImportedSvgPackage(
     height: config.processing.rasterExportHeight,
     format: 'jpg',
     quality: 90,
-    canvasPaddingPx: options.svgCanvasPaddingPx ?? 20,
+    canvasPaddingPx: options.exportCanvasPaddingPx ?? 0,
     preserveColors: normalized.hasFilledColors || normalized.isStrokeOnly,
   });
 

@@ -34,7 +34,9 @@ const EXTENDED_KEYS = [
   'preprocessingBlur',
   'blurPasses',
   'edgePaddingPx',
+  'rasterSourcePaddingPx',
   'svgCanvasPaddingPx',
+  'exportCanvasPaddingPx',
   'pathPrecision',
   'cornerThreshold',
   'filterSpeckle',
@@ -68,7 +70,9 @@ const TUNING_EXPORT_KEYS = [
   'preprocessingBlur',
   'blurPasses',
   'edgePaddingPx',
+  'rasterSourcePaddingPx',
   'svgCanvasPaddingPx',
+  'exportCanvasPaddingPx',
   'pathPrecision',
   'cornerThreshold',
   'filterSpeckle',
@@ -178,6 +182,17 @@ function getNumberSetting(
   extended: Record<string, unknown>,
   key: TuningExportSettingKey
 ) {
+  if (key === 'rasterSourcePaddingPx' && extended.rasterSourcePaddingPx === undefined) {
+    const legacySvgCanvasPadding = extended.svgCanvasPaddingPx;
+    if (typeof legacySvgCanvasPadding === 'number' && Number.isFinite(legacySvgCanvasPadding)) {
+      return legacySvgCanvasPadding;
+    }
+    if (typeof legacySvgCanvasPadding === 'string' && legacySvgCanvasPadding.trim() !== '') {
+      const parsed = Number(legacySvgCanvasPadding);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+
   const value = extended[key];
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -193,7 +208,9 @@ function getTuningExportSettings(extended: Record<string, unknown>) {
     preprocessingBlur: getNumberSetting(extended, 'preprocessingBlur'),
     blurPasses: getNumberSetting(extended, 'blurPasses'),
     edgePaddingPx: getNumberSetting(extended, 'edgePaddingPx'),
+    rasterSourcePaddingPx: getNumberSetting(extended, 'rasterSourcePaddingPx'),
     svgCanvasPaddingPx: getNumberSetting(extended, 'svgCanvasPaddingPx'),
+    exportCanvasPaddingPx: getNumberSetting(extended, 'exportCanvasPaddingPx'),
     pathPrecision: getNumberSetting(extended, 'pathPrecision'),
     cornerThreshold: getNumberSetting(extended, 'cornerThreshold'),
     filterSpeckle: getNumberSetting(extended, 'filterSpeckle'),
@@ -224,7 +241,7 @@ function validateTuningExportSetting(key: TuningExportSettingKey, value: unknown
   }
 
   if (
-    ['blurPasses', 'edgePaddingPx', 'svgCanvasPaddingPx', 'pathPrecision', 'filterSpeckle', 'colorPrecision', 'layerDifference', 'rasterExportWidth', 'rasterExportHeight', 'pngWhiteTransparencyThreshold'].includes(
+    ['blurPasses', 'edgePaddingPx', 'rasterSourcePaddingPx', 'svgCanvasPaddingPx', 'exportCanvasPaddingPx', 'pathPrecision', 'filterSpeckle', 'colorPrecision', 'layerDifference', 'rasterExportWidth', 'rasterExportHeight', 'pngWhiteTransparencyThreshold'].includes(
       key
     ) &&
     !Number.isInteger(numberValue)
@@ -358,7 +375,9 @@ export async function PUT(req: NextRequest) {
       preprocessingBlur,
       blurPasses,
       edgePaddingPx,
+      rasterSourcePaddingPx,
       svgCanvasPaddingPx,
+      exportCanvasPaddingPx,
       pathPrecision,
       cornerThreshold,
       filterSpeckle,
@@ -377,7 +396,9 @@ export async function PUT(req: NextRequest) {
       preprocessingBlur,
       blurPasses,
       edgePaddingPx,
+      rasterSourcePaddingPx,
       svgCanvasPaddingPx,
+      exportCanvasPaddingPx,
       pathPrecision,
       cornerThreshold,
       filterSpeckle,

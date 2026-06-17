@@ -17,9 +17,14 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ batchId: string; itemId: string }> }
 ) {
+  let routeBatchId: string | undefined;
+  let routeItemId: string | undefined;
+
   try {
     const user = await requireAuth();
     const { batchId, itemId } = await params;
+    routeBatchId = batchId;
+    routeItemId = itemId;
     const parsed = previewTuneSchema.safeParse(await req.json());
 
     if (!parsed.success) {
@@ -59,7 +64,9 @@ export async function POST(
     const imageBuffer = await readFile(item.uploadPath);
 
     if (isSvgMimeOrPath(item.mimeType, item.uploadPath)) {
-      const normalized = normalizeImportedSvg(imageBuffer.toString('utf-8'));
+      const normalized = normalizeImportedSvg(imageBuffer.toString('utf-8'), {
+        canvasPaddingPx: parsed.data.svgCanvasPaddingPx,
+      });
       const debugDir = path.join(process.cwd(), 'logs');
       const debugSvgPath = path.join(debugDir, `debug-preview-${item.id}.svg`);
       await mkdir(debugDir, { recursive: true });
@@ -138,6 +145,9 @@ export async function POST(
 
     logger.error('Preview tune error', {
       error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      batchId: routeBatchId,
+      itemId: routeItemId,
     });
 
     return NextResponse.json(

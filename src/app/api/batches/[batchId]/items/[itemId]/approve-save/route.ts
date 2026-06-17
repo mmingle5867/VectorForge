@@ -175,6 +175,7 @@ export async function POST(
       const svgExport = await exportImportedSvgPackage(originalSvg, outputDir, {
         pngExportArtworkColor,
         svgCanvasPaddingPx: parsed.data.svgCanvasPaddingPx,
+        exportCanvasPaddingPx: parsed.data.exportCanvasPaddingPx,
         createZip: false,
         fileBaseName: item.baseName,
       });
@@ -232,9 +233,7 @@ export async function POST(
 
       await writeFile(svgPath, result.svg, 'utf-8');
     }
-    // V1 reuses svgCanvasPaddingPx for raster source padding so raster outputs
-    // get source breathing room before smart upscaling and final export sizing.
-    const rasterSourcePaddingPx = parsed.data.svgCanvasPaddingPx;
+    const rasterSourcePaddingPx = parsed.data.rasterSourcePaddingPx;
     const pngRasterExportBuffer = await prepareRasterExportBuffer(
       imageBuffer,
       originalWidth,
@@ -259,6 +258,7 @@ export async function POST(
       height: config.processing.rasterExportHeight,
       format: 'png',
       artworkColor: pngExportArtworkColor,
+      canvasPaddingPx: parsed.data.exportCanvasPaddingPx,
     });
     await createFixedCanvasRaster(jpgRasterExportBuffer, jpgPath, {
       width: config.processing.rasterExportWidth,
@@ -267,6 +267,7 @@ export async function POST(
       quality: 90,
       artworkColor: '#000000',
       forceArtworkColor: true,
+      canvasPaddingPx: parsed.data.exportCanvasPaddingPx,
     });
 
     await prisma.batchItem.update({

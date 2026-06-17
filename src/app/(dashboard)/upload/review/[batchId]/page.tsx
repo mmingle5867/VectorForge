@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type MouseEvent, type WheelEvent } from 'react';
+import { useState, useEffect, useRef, type MouseEvent, type ReactNode, type WheelEvent } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { formatBytes } from '@/lib/utils';
 import SubstitutionTable, {
@@ -292,24 +292,59 @@ const PREVIEW_STATUS_STYLES: Record<PreviewStatus, string> = {
   error: 'border-red-200 bg-red-50 text-red-900',
 };
 
+function PanelIconButton({
+  title,
+  onClick,
+  disabled,
+  children,
+  primary = false,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+  primary?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border text-[13px] font-semibold shadow-sm transition-colors disabled:opacity-50 ${
+        primary
+          ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700'
+          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 const TUNE_CONTROL_GROUPS: Array<{
   title: string;
   keys: Array<Exclude<keyof TuneSettings, 'colorMode'>>;
 }> = [
   {
-    title: 'Vectorization',
+    title: 'Basic',
+    keys: ['preUpscaleBlur', 'blur'],
+  },
+  {
+    title: 'Padding',
+    keys: ['rasterSourcePaddingPx', 'svgCanvasPaddingPx', 'exportCanvasPaddingPx'],
+  },
+  {
+    title: 'Trace',
     keys: ['pathPrecision', 'cornerThreshold', 'lengthThreshold', 'spliceThreshold'],
   },
   {
     title: 'Cleanup',
-    keys: ['preUpscaleBlur', 'blur', 'blurPasses', 'filterSpeckle'],
+    keys: ['blurPasses', 'filterSpeckle'],
   },
   {
-    title: 'Output / Padding',
-    keys: ['rasterSourcePaddingPx', 'svgCanvasPaddingPx', 'exportCanvasPaddingPx'],
-  },
-  {
-    title: 'Export',
+    title: 'Color',
     keys: ['colorPrecision', 'layerDifference'],
   },
 ];
@@ -1529,23 +1564,32 @@ export default function ReviewPage() {
                       </button>
                     ))}
                     <button
+                      type="button"
+                      title="Zoom Out"
+                      aria-label="Zoom Out"
                       onClick={() => zoomPreview('out')}
                       disabled={!tunePreview && previewViewMode === 'processed'}
-                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      Zoom Out
+                      -
                     </button>
                     <span className="w-12 text-center text-xs font-medium text-gray-600">
                       {Math.round(svgZoom * 100)}%
                     </span>
                     <button
+                      type="button"
+                      title="Zoom In"
+                      aria-label="Zoom In"
                       onClick={() => zoomPreview('in')}
                       disabled={!tunePreview && previewViewMode === 'processed'}
-                      className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-300 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      Zoom In
+                      +
                     </button>
                     <button
+                      type="button"
+                      title="Reset Zoom"
+                      aria-label="Reset Zoom"
                       onClick={resetPreviewZoom}
                       disabled={!tunePreview && previewViewMode === 'processed'}
                       className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -1553,6 +1597,9 @@ export default function ReviewPage() {
                       Reset
                     </button>
                     <button
+                      type="button"
+                      title="Fit To Screen"
+                      aria-label="Fit To Screen"
                       onClick={fitPreviewToScreen}
                       disabled={!tunePreview && previewViewMode === 'processed'}
                       className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -1753,10 +1800,11 @@ export default function ReviewPage() {
 
                 <aside
                   data-floating-panel="true"
-                  className="absolute right-3 z-10 w-[min(360px,calc(100%-1.5rem))] overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
+                  className="absolute right-3 z-10 flex w-[min(360px,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
                   style={{
                     top: previewToolbarHeight + 16,
                     transform: `translate(${tunePanelPosition.x}px, ${tunePanelPosition.y}px)`,
+                    maxHeight: `calc(100vh - ${previewToolbarHeight + 48}px)`,
                   }}
                 >
                   <div
@@ -1805,7 +1853,7 @@ export default function ReviewPage() {
                   </div>
 
                   {!tunePanelCollapsed && (
-                    <div className="max-h-[calc(94vh-136px)] overflow-y-auto">
+                    <div className="flex min-h-0 flex-1 flex-col">
                       <div className={`border-b border-gray-200 ${compactTunePanel ? 'p-2' : 'p-3'}`}>
                         <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-2">
                           <div className="flex aspect-square items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
@@ -1827,108 +1875,84 @@ export default function ReviewPage() {
                         </div>
                       </div>
 
-                      <div className={`grid grid-cols-2 gap-1.5 border-b border-gray-200 ${compactTunePanel ? 'p-2' : 'p-3'}`}>
-                      <button
-                        onClick={generatePreview}
-                        disabled={previewLoading}
-                        className="rounded-md bg-blue-600 px-2 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {previewLoading ? 'Generating...' : 'Generate Preview'}
-                      </button>
-                      <button
-                        onClick={() => setTuneSettings(siteTuneDefaults)}
-                        className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        Restore Defaults
-                      </button>
-                      {savedFiles.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => openLocalEditor('editable')}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                          Open Editable Files
-                        </button>
-                      )}
-                      {canOpenOriginalRaster && (
-                        <button
-                          type="button"
-                          onClick={openOriginalRaster}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                          Open Original Raster
-                        </button>
-                      )}
-                      {canOpenEditableVector && (
-                        <button
-                          type="button"
-                          onClick={openEditableVector}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                          Open Editable Vector
-                        </button>
-                      )}
-                      {canCopyEditableVectorPath && (
-                        <button
-                          type="button"
-                          onClick={copyEditableVectorPath}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                          Copy Editable Vector Path
-                        </button>
-                      )}
-                      {canReloadEditedVector && (
-                        <button
-                          type="button"
-                          onClick={reloadEditedVector}
-                          className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                          Reload Edited Vector
-                        </button>
-                      )}
-                      {tuneItem.status === 'NEEDS_MANUAL_EDIT' && (
-                        <button
-                          type="button"
-                          onClick={() => setTuneTab('controls')}
-                          className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                        >
-                          Continue Editing
-                        </button>
-                      )}
-                      {savedFiles.length > 0 && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => updateManualEditStatus('ready_to_process')}
-                            className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-                          >
-                            Mark Ready To Process
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateManualEditStatus('needs_manual_edit')}
-                            className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                          >
-                            Mark Needs Manual Edit
-                          </button>
-                        </>
-                      )}
-                      {tuneItem.status === 'READY_TO_PROCESS' && (
-                        <button
-                          type="button"
-                          onClick={() => processReadyItem(tuneItem)}
-                          className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
-                        >
-                          Start Conversion
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setTuneItem(null)}
-                        className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        Back
-                      </button>
+                      <div className={`border-b border-gray-200 ${compactTunePanel ? 'p-2' : 'p-3'}`}>
+                        <div className="flex flex-wrap gap-1.5">
+                          <PanelIconButton title="Generate Preview" onClick={generatePreview} disabled={previewLoading} primary>
+                            {previewLoading ? '...' : '▶'}
+                          </PanelIconButton>
+                          <PanelIconButton title="Restore Defaults" onClick={() => setTuneSettings(siteTuneDefaults)}>
+                            ↺
+                          </PanelIconButton>
+                          {savedFiles.length > 0 && (
+                            <PanelIconButton title="Open Editable Files" onClick={() => openLocalEditor('editable')}>
+                              ▦
+                            </PanelIconButton>
+                          )}
+                          {canOpenOriginalRaster && (
+                            <PanelIconButton title="Open Original Raster" onClick={openOriginalRaster}>
+                              ◫
+                            </PanelIconButton>
+                          )}
+                          {canOpenEditableVector && (
+                            <PanelIconButton title="Open Editable Vector" onClick={openEditableVector}>
+                              ◇
+                            </PanelIconButton>
+                          )}
+                          {canCopyEditableVectorPath && (
+                            <PanelIconButton title="Copy Editable Vector Path" onClick={copyEditableVectorPath}>
+                              ⧉
+                            </PanelIconButton>
+                          )}
+                          {canReloadEditedVector && (
+                            <PanelIconButton title="Reload Edited Vector" onClick={reloadEditedVector}>
+                              ↻
+                            </PanelIconButton>
+                          )}
+                        </div>
+
+                        <div className="mt-2 grid grid-cols-1 gap-1.5">
+                          {tuneItem.status === 'NEEDS_MANUAL_EDIT' && (
+                            <button
+                              type="button"
+                              onClick={() => setTuneTab('controls')}
+                              className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                            >
+                              Continue Editing
+                            </button>
+                          )}
+                          {savedFiles.length > 0 && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => updateManualEditStatus('ready_to_process')}
+                                className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                              >
+                                Mark Ready To Process
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateManualEditStatus('needs_manual_edit')}
+                                className="rounded-md border border-amber-300 bg-white px-2 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                              >
+                                Mark Needs Manual Edit
+                              </button>
+                            </>
+                          )}
+                          {tuneItem.status === 'READY_TO_PROCESS' && (
+                            <button
+                              type="button"
+                              onClick={() => processReadyItem(tuneItem)}
+                              className="rounded-md bg-green-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                            >
+                              Start Conversion
+                            </button>
+                          )}
+                          <div className="flex justify-end">
+                            <PanelIconButton title="Back" onClick={() => setTuneItem(null)}>
+                              &lt;
+                            </PanelIconButton>
+                          </div>
+                        </div>
                       </div>
                       {localEditorMessage && (
                         <p className="border-b border-gray-200 px-3 py-2 text-xs text-gray-600">{localEditorMessage}</p>
@@ -1964,8 +1988,9 @@ export default function ReviewPage() {
                         )}
                       </div>
 
-                      {tuneTab === 'controls' && (
-                        <div className={compactTunePanel ? 'space-y-2 p-2' : 'space-y-3 p-3'}>
+                      <div className="min-h-0 flex-1 overflow-y-auto">
+                        {tuneTab === 'controls' && (
+                          <div className={compactTunePanel ? 'space-y-2 p-2' : 'space-y-3 p-3'}>
                           <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-2">
                             <label className="flex items-center gap-1.5 text-[11px] font-medium text-gray-700">
                               Color Mode
@@ -2040,10 +2065,10 @@ export default function ReviewPage() {
                             </details>
                           ))}
                         </div>
-                      )}
+                        )}
 
-                      {tuneTab === 'details' && (
-                        <div className="space-y-3 p-3 text-xs text-gray-700">
+                        {tuneTab === 'details' && (
+                          <div className="space-y-3 p-3 text-xs text-gray-700">
                           <div className="grid grid-cols-2 gap-2">
                             <div><span className="font-medium">Status:</span> {tuneItem.status}</div>
                             <div><span className="font-medium">File Size:</span> {tuneItem.originalSize ? formatBytes(tuneItem.originalSize) : 'unknown'}</div>
@@ -2076,17 +2101,18 @@ export default function ReviewPage() {
                             </details>
                           )}
                         </div>
-                      )}
+                        )}
 
-                      {tuneTab === 'warnings' && previewWarnings.length > 0 && (
-                        <div className="space-y-2 p-3">
+                        {tuneTab === 'warnings' && previewWarnings.length > 0 && (
+                          <div className="space-y-2 p-3">
                           {previewWarnings.map((warning, index) => (
                             <div key={`${warning}-${index}`} className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
                               {warning}
                             </div>
                           ))}
                         </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
                 </aside>

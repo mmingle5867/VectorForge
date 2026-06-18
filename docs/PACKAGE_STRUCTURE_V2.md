@@ -566,6 +566,16 @@ Phase 7: Add README and template substitution generation.
 
 Phase 8: Add marketplace and composite image generation.
 
+Path Management Phase 1C:
+
+- Use Working Path for temporary preview files.
+- Use Working Path for intermediate upscaled files.
+- Use Working Path for queue or worker temp files.
+- Use Working Path for composite render temp files if needed.
+- Keep Output Path for completed artwork packages.
+- Keep Bundle Output Path for future generated bundle packages.
+- Keep Archive Path for future archived package storage.
+
 ## Do Not Break Rules
 
 - Do not include `_internal` files in customer ZIPs.

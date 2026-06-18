@@ -4,6 +4,8 @@ export type ManagedPathType =
   | 'workingPath'
   | 'uploadPath'
   | 'outputPath'
+  | 'bundleOutputPath'
+  | 'archivePath'
   | 'baseAssetsPath'
   | 'templatePath';
 
@@ -11,6 +13,8 @@ export const DEFAULT_MANAGED_PATHS: Record<ManagedPathType, string> = {
   workingPath: './.vectorforge-work',
   uploadPath: './uploads',
   outputPath: './output',
+  bundleOutputPath: './output/bundles',
+  archivePath: './archive',
   baseAssetsPath: './base-assets',
   templatePath: './base-assets/templates',
 };

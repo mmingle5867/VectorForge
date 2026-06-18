@@ -20,6 +20,8 @@ const DEFAULT_DIRS = [
   DEFAULT_MANAGED_PATHS.workingPath,
   DEFAULT_MANAGED_PATHS.uploadPath,
   DEFAULT_MANAGED_PATHS.outputPath,
+  DEFAULT_MANAGED_PATHS.bundleOutputPath,
+  DEFAULT_MANAGED_PATHS.archivePath,
   DEFAULT_MANAGED_PATHS.baseAssetsPath,
   DEFAULT_MANAGED_PATHS.templatePath,
   './logs',

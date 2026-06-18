@@ -29,6 +29,8 @@ import {
 const EXTENDED_KEYS = [
   'workingPath',
   'uploadPath',
+  'bundleOutputPath',
+  'archivePath',
   'templatePath',
   'enableMarketplacePreview',
   'enableColorTint',
@@ -314,6 +316,11 @@ export async function GET() {
         outputPath: user.settings.outputPath,
         workingPath: getPathSetting(extended.workingPath, DEFAULT_MANAGED_PATHS.workingPath),
         uploadPath: getPathSetting(extended.uploadPath, config.paths.uploads),
+        bundleOutputPath: getPathSetting(
+          extended.bundleOutputPath,
+          DEFAULT_MANAGED_PATHS.bundleOutputPath
+        ),
+        archivePath: getPathSetting(extended.archivePath, DEFAULT_MANAGED_PATHS.archivePath),
         templatePath: getPathSetting(extended.templatePath, DEFAULT_MANAGED_PATHS.templatePath),
         defaultSubstitutions: mergedSubstitutionVariables,
         // Extended settings
@@ -357,6 +364,8 @@ export async function PUT(req: NextRequest) {
       smartUpscaleThreshold,
       workingPath,
       uploadPath,
+      bundleOutputPath,
+      archivePath,
       baseAssetsPath,
       outputPath,
       templatePath,
@@ -429,6 +438,8 @@ export async function PUT(req: NextRequest) {
     const pathInputs = {
       workingPath,
       uploadPath,
+      bundleOutputPath,
+      archivePath,
       baseAssetsPath,
       outputPath,
       templatePath,
@@ -558,6 +569,10 @@ export async function PUT(req: NextRequest) {
     // Store extended settings in the same JSON field
     if (workingPath !== undefined) mergedSubstitutions.workingPath = String(workingPath);
     if (uploadPath !== undefined) mergedSubstitutions.uploadPath = String(uploadPath);
+    if (bundleOutputPath !== undefined) {
+      mergedSubstitutions.bundleOutputPath = String(bundleOutputPath);
+    }
+    if (archivePath !== undefined) mergedSubstitutions.archivePath = String(archivePath);
     if (templatePath !== undefined) mergedSubstitutions.templatePath = String(templatePath);
     if (enableMarketplacePreview !== undefined) mergedSubstitutions.enableMarketplacePreview = enableMarketplacePreview;
     if (enableColorTint !== undefined) mergedSubstitutions.enableColorTint = enableColorTint;

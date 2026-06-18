@@ -26,6 +26,8 @@ interface UserSettings extends TuningExportSettings {
   uploadPath: string;
   baseAssetsPath: string;
   outputPath: string;
+  bundleOutputPath: string;
+  archivePath: string;
   templatePath: string;
   defaultSubstitutions: Record<string, string>;
   // Marketplace Preview
@@ -59,7 +61,14 @@ interface PathTestResult {
   type?: ManagedPathKey;
 }
 
-type ManagedPathKey = 'workingPath' | 'uploadPath' | 'outputPath' | 'baseAssetsPath' | 'templatePath';
+type ManagedPathKey =
+  | 'workingPath'
+  | 'uploadPath'
+  | 'outputPath'
+  | 'bundleOutputPath'
+  | 'archivePath'
+  | 'baseAssetsPath'
+  | 'templatePath';
 
 const DEFAULT_SETTINGS: UserSettings = {
   defaultUpscaleFactor: 2,
@@ -68,6 +77,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   uploadPath: './uploads',
   baseAssetsPath: './base-assets',
   outputPath: './output',
+  bundleOutputPath: './output/bundles',
+  archivePath: './archive',
   templatePath: './base-assets/templates',
   defaultSubstitutions: {},
   enableMarketplacePreview: true,
@@ -132,6 +143,20 @@ const MANAGED_PATHS: ManagedPathConfig[] = [
     label: 'Output Path',
     purpose: 'Completed VectorForge packages. Cloud storage is allowed.',
     defaultValue: './output',
+    cloudPolicy: 'allowed',
+  },
+  {
+    key: 'bundleOutputPath',
+    label: 'Bundle Output Path',
+    purpose: 'Future bundle package output location. Bundles should live separately from individual artwork packages.',
+    defaultValue: './output/bundles',
+    cloudPolicy: 'allowed',
+  },
+  {
+    key: 'archivePath',
+    label: 'Archive Path',
+    purpose: 'Future archived package storage. Not used by archive workflow yet.',
+    defaultValue: './archive',
     cloudPolicy: 'allowed',
   },
   {
@@ -470,6 +495,8 @@ export default function SettingsPage() {
             uploadPath: data.settings.uploadPath ?? './uploads',
             baseAssetsPath: data.settings.baseAssetsPath ?? './base-assets',
             outputPath: data.settings.outputPath ?? './output',
+            bundleOutputPath: data.settings.bundleOutputPath ?? './output/bundles',
+            archivePath: data.settings.archivePath ?? './archive',
             templatePath: data.settings.templatePath ?? './base-assets/templates',
             defaultSubstitutions: data.settings.defaultSubstitutions ?? {},
             enableMarketplacePreview: data.settings.enableMarketplacePreview ?? true,

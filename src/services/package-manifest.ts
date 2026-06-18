@@ -5,18 +5,17 @@ import {
   getPackageManifestPath,
   type PackageStructureVersion,
 } from '@/lib/output-naming';
-
-type ManifestFileEntry = {
-  role: string;
-  path: string;
-  format: string;
-  mimeType: string;
-  sizeBytes: number;
-};
+import type {
+  AssetProfileEntry,
+  PackageFileEntry,
+  PackageManifestV2,
+  ProductProfileEntry,
+} from '@/lib/package-manifest-schema';
 
 type ManifestInput = {
   outputDir: string;
   item: {
+    id?: string | null;
     originalFilename: string;
     baseName: string;
     mimeType: string | null;
@@ -35,6 +34,8 @@ type ManifestInput = {
   skuFilePath: string | null;
   readmePath?: string | null;
   licensePath?: string | null;
+  zipPath?: string | null;
+  licenseType?: string | null;
   structureVersion?: PackageStructureVersion;
 };
 
@@ -62,6 +63,28 @@ function mimeTypeFor(format: string) {
   return types[format] || 'application/octet-stream';
 }
 
+function safePackageIdSegment(value: string | null | undefined) {
+  return (value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function buildPackageId(input: ManifestInput, artworkId: string, profileId: string, createdAt: string) {
+  const safeArtworkId = safePackageIdSegment(artworkId);
+  const safeProfileId = safePackageIdSegment(profileId);
+
+  if (safeArtworkId && safeProfileId) {
+    return `PKG-${safeArtworkId}-${safeProfileId}`;
+  }
+
+  if (safeArtworkId || safeProfileId) {
+    return `PKG-${safeArtworkId || 'UNASSIGNED'}-${safeProfileId || 'UNASSIGNED'}`;
+  }
+
+  return `PKG-UNASSIGNED-${safePackageIdSegment(input.item.id) || createdAt.replace(/[^0-9]/g, '')}`;
+}
+
 function relativePackagePath(outputDir: string, filePath: string | null | undefined) {
   if (!filePath) return null;
 
@@ -77,8 +100,9 @@ async function fileEntry(
   outputDir: string,
   filePath: string | null | undefined,
   role: string,
-  fallbackMimeType?: string | null
-): Promise<ManifestFileEntry | null> {
+  fallbackMimeType?: string | null,
+  metadata?: Partial<PackageFileEntry>
+): Promise<PackageFileEntry | null> {
   const relativePath = relativePackagePath(outputDir, filePath);
   if (!relativePath || !filePath) return null;
 
@@ -93,19 +117,28 @@ async function fileEntry(
       format,
       mimeType: fallbackMimeType || mimeTypeFor(format),
       sizeBytes: stats.size,
+      sha256: '',
+      fingerprint: '',
+      width: null,
+      height: null,
+      assetProfile: 'digital',
+      marketplace: '',
+      templateId: '',
+      slot: null,
+      ...metadata,
     };
   } catch {
     return null;
   }
 }
 
-async function collectEntries(entries: Array<Promise<ManifestFileEntry | null>>) {
-  return (await Promise.all(entries)).filter((entry): entry is ManifestFileEntry => Boolean(entry));
+async function collectEntries(entries: Array<Promise<PackageFileEntry | null>>) {
+  return (await Promise.all(entries)).filter((entry): entry is PackageFileEntry => Boolean(entry));
 }
 
 async function writeManifestWithSelfEntry(
   manifestPath: string,
-  manifest: Record<string, unknown>,
+  manifest: PackageManifestV2,
   manifestRelativePath: string
 ) {
   let nextManifest = manifest;
@@ -114,19 +147,27 @@ async function writeManifestWithSelfEntry(
     await fs.mkdir(path.dirname(manifestPath), { recursive: true });
     await fs.writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, 'utf-8');
     const stats = await fs.stat(manifestPath);
-    const files = nextManifest.files as { package: ManifestFileEntry[] };
+    const files = nextManifest.files as { package: PackageFileEntry[] };
     const packageFiles = files.package.filter((entry) => entry.role !== 'manifest');
-    const manifestEntry: ManifestFileEntry = {
+    const manifestEntry: PackageFileEntry = {
       role: 'manifest',
       path: manifestRelativePath,
       format: 'json',
       mimeType: 'application/json',
       sizeBytes: stats.size,
+      sha256: '',
+      fingerprint: '',
+      width: null,
+      height: null,
+      assetProfile: '',
+      marketplace: '',
+      templateId: '',
+      slot: null,
     };
     const updatedManifest = {
       ...nextManifest,
       files: {
-        ...(nextManifest.files as Record<string, unknown>),
+        ...nextManifest.files,
         package: [...packageFiles, manifestEntry],
       },
     };
@@ -152,6 +193,7 @@ export async function generatePackageManifest(input: ManifestInput) {
   const artworkId = input.item.artworkNumber || input.item.artworkId || '';
   const profileId = input.item.profileNumber || input.item.assetProfileId || '';
   const primarySku = input.item.profileNumber || input.sku || '';
+  const packageId = buildPackageId(input, artworkId, profileId, createdAt);
   const metadataEntries = await collectEntries([
     fileEntry(input.outputDir, input.metadataPath, 'listing-info'),
     fileEntry(input.outputDir, input.skuFilePath, 'sku-file'),
@@ -161,7 +203,13 @@ export async function generatePackageManifest(input: ManifestInput) {
   const listingPreviewEntry = await fileEntry(
     input.outputDir,
     input.marketplacePreviewPath,
-    'marketplace-preview'
+    'marketplace-preview',
+    null,
+    {
+      marketplace: 'etsy',
+      templateId: 'marketplace-preview',
+      slot: 1,
+    }
   );
   const artworkEntries = await collectEntries([
     fileEntry(input.outputDir, input.svgPath, 'primary-svg'),
@@ -169,15 +217,55 @@ export async function generatePackageManifest(input: ManifestInput) {
     fileEntry(input.outputDir, input.jpgPath, 'primary-jpg'),
   ]);
   const sourceEntries = await collectEntries([
-    fileEntry(input.outputDir, input.item.uploadPath, 'original-upload', input.item.mimeType),
+    fileEntry(input.outputDir, input.item.uploadPath, 'original-upload', input.item.mimeType, {
+      assetProfile: '',
+    }),
   ]);
+  const downloadEntries = await collectEntries([
+    fileEntry(input.outputDir, input.zipPath, 'customer-zip'),
+  ]);
+  const assetProfile: AssetProfileEntry = {
+    profileType: 'digital',
+    profileId,
+    status: 'completed',
+    primarySku,
+    folder: '.',
+  };
+  const productProfile: ProductProfileEntry = {
+    ...assetProfile,
+    productProfileId: profileId,
+  };
+  const filesComplete = artworkEntries.length > 0 && metadataEntries.length > 0;
+  const imagesComplete = Boolean(listingPreviewEntry);
+  const downloadsComplete = downloadEntries.length > 0;
+  const readyForListingTool = filesComplete && downloadsComplete;
 
-  const manifest = {
-    schemaVersion: '1.0',
+  const manifest: PackageManifestV2 = {
+    schemaVersion: '2.0',
     sourceApp: 'VectorForge',
     appVersion: packageJson.version,
     createdAt,
     updatedAt: createdAt,
+
+    package: {
+      packageId,
+      packageType: 'digital-product-package',
+      packageStatus: 'generated',
+    },
+
+    owner: {
+      companyId: '',
+      brandId: '',
+      createdByUserId: '',
+    },
+
+    externalRefs: {
+      vectorForgeJobId: '',
+      listingToolProductId: '',
+      etsyListingId: '',
+      shopifyProductId: '',
+      bigCommerceProductId: '',
+    },
 
     artwork: {
       artworkId,
@@ -188,15 +276,9 @@ export async function generatePackageManifest(input: ManifestInput) {
       inputFormat: formatFromPath(input.item.originalFilename || ''),
     },
 
-    assetProfiles: [
-      {
-        profileType: 'digital',
-        profileId,
-        status: 'completed',
-        primarySku,
-        folder: '.',
-      },
-    ],
+    assetProfiles: [assetProfile],
+
+    productProfiles: [productProfile],
 
     productVariants: [
       {
@@ -212,7 +294,7 @@ export async function generatePackageManifest(input: ManifestInput) {
     files: {
       source: sourceEntries,
       artwork: artworkEntries,
-      downloads: [],
+      downloads: downloadEntries,
       listingImages: listingPreviewEntry ? [listingPreviewEntry] : [],
       compositeImages: [],
       metadata: metadataEntries,
@@ -232,12 +314,33 @@ export async function generatePackageManifest(input: ManifestInput) {
     marketplaces: {
       etsy: {
         ready: false,
+        profileId,
         maxImages: 20,
         maxVideos: 2,
+        requiredImages: 1,
+        requiredDigitalFiles: 1,
+        validationErrors: [],
         images: listingPreviewEntry ? [listingPreviewEntry.path] : [],
         videos: [],
-        digitalFiles: [],
+        digitalFiles: downloadEntries.map((entry) => entry.path),
       },
+    },
+
+    rights: {
+      ownership: '',
+      commercialUseAllowed: null,
+      resaleAllowed: null,
+      licenseType: input.licenseType || '',
+      sourceNotes: '',
+    },
+
+    readiness: {
+      artworkApproved: true,
+      filesComplete,
+      listingCopyComplete: false,
+      imagesComplete,
+      downloadsComplete,
+      readyForListingTool,
     },
 
     aiMetadata: {
@@ -257,6 +360,23 @@ export async function generatePackageManifest(input: ManifestInput) {
       keywords: [],
       suggestedCategories: [],
       notes: '',
+    },
+
+    processingHistory: [
+      {
+        step: 'package-finalized',
+        app: 'VectorForge',
+        appVersion: packageJson.version,
+        timestamp: createdAt,
+        settings: {},
+      },
+    ],
+
+    extensions: {
+      listingTool: {},
+      analytics: {},
+      accounting: {},
+      marketplaceSync: {},
     },
 
     generation: {

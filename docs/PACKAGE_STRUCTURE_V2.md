@@ -283,6 +283,8 @@ Current V1:
 
 - `manifest.json` exists in the root item output folder.
 - `manifest.json` is excluded from customer ZIP packages.
+- Current generated manifests use additive schema version `2.0`.
+- Root `manifest.json` remains supported while the package folder structure is still flat.
 
 Future V2:
 
@@ -298,6 +300,28 @@ File path rules:
 - Manifests use relative paths.
 - Distributable metadata must not contain absolute local paths.
 - Local debug paths may exist only in optional `localDebug` sections if needed.
+
+Manifest schema version `2.0` is intended to become the portable package interchange format for VectorForge, listing tools, marketplace upload tools, analytics, accounting, order systems, communication tools, and future APIs. It is additive: existing V1-compatible fields remain in place while new sections provide richer package identity, ownership, external references, rights, readiness, processing history, and extension data.
+
+V2 manifest additions include:
+
+- `package`: deterministic package identity, package type, and package status.
+- `owner`: optional company, brand, and user references.
+- `externalRefs`: optional IDs from VectorForge, listing tools, and marketplaces.
+- `rights`: ownership and license metadata.
+- `readiness`: package completeness flags for downstream automation.
+- `processingHistory`: append-only application steps and settings summaries.
+- `extensions`: tool-specific data for listing, analytics, accounting, and marketplace sync systems.
+- `productProfiles`: preferred future profile field.
+
+Compatibility rules:
+
+- `assetProfiles` remains in generated manifests for older tools.
+- `productProfiles` is preferred for new tools.
+- During transition, `assetProfiles` and `productProfiles` may contain equivalent profile data.
+- `packageId` is deterministic for now, such as `PKG-ART-000125-DIGI-000125`.
+- A separate package numbering sequence is not required until VectorForge needs multiple independently issued packages for the same artwork/profile.
+- File entry checksums and fingerprints are reserved for future additions and may be empty until checksum generation is implemented.
 
 ## Asset Profile Principle
 

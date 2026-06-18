@@ -159,6 +159,9 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     settings: input.documentSettings,
   });
 
+  const zipPath = getZipPath(outputDir, input.item.baseName);
+  await createZipFromFolder(outputDir, zipPath);
+
   const manifestPath = await generatePackageManifest({
     outputDir,
     item: input.item,
@@ -171,10 +174,12 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
     skuFilePath: skuFile.path,
     readmePath,
     licensePath,
+    zipPath,
+    licenseType:
+      input.documentSettings?.defaultLicenseType ||
+      input.documentSettings?.templateVariables?.LICENSE_TYPE ||
+      '',
   });
-
-  const zipPath = getZipPath(outputDir, input.item.baseName);
-  await createZipFromFolder(outputDir, zipPath);
 
   return {
     sku,

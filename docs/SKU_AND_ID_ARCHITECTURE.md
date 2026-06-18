@@ -278,6 +278,31 @@ The Etsy listing may contain all three variants.
 
 ---
 
+## 5A. Package Identity And Manifest V2
+
+VectorForge package manifests use a separate package identity so future tools can exchange package data without coupling directly to the VectorForge database.
+
+Current Manifest V2 package IDs are deterministic and derived from existing artwork/profile identity:
+
+```text
+PKG-ART-000125-DIGI-000125
+```
+
+This is not a new permanent numbering sequence yet. It is an interchange identifier for the generated package manifest.
+
+Rules:
+
+* `packageId` identifies a generated package record in `manifest.json`.
+* `packageId` does not replace Artwork IDs.
+* `packageId` does not replace Asset Profile IDs.
+* `packageId` does not replace Product Variant SKUs.
+* `packageId` does not replace marketplace listing IDs.
+* A dedicated package number sequence may be added later if multiple independent packages are issued for the same artwork/profile.
+
+Manifest V2 keeps `assetProfiles` for backward compatibility and introduces `productProfiles` as the preferred future field. During the transition, both fields may contain equivalent profile data.
+
+---
+
 ## 6. Numbering System
 
 VectorForge uses a database-backed numbering system.

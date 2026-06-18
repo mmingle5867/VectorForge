@@ -335,6 +335,87 @@ Examples:
 
 Shared source files stay in `artwork/`.
 
+## Bundle Packages
+
+A bundle package is a first-class package composed of multiple existing completed packages. Original package folders remain unchanged. The bundle package references those source packages, copies selected customer-facing files into its own bundle staging area, and creates its own customer bundle ZIP.
+
+Bundle packages use their own issued number sequence:
+
+```text
+BNDL-000001
+BNDL-000002
+BNDL-000003
+```
+
+The bundle package ID should match the issued bundle number:
+
+```text
+package.packageId: BNDL-000001
+package.packageType: bundle-package
+```
+
+Suggested bundle output location:
+
+```text
+output/
+  bundles/
+    BNDL-000001_FamilyBorderBundle/
+      _internal/
+        manifest.json
+      metadata/
+        README.txt
+        LICENSE.txt
+      members/
+        DadBorder/
+        MomBorder/
+        GrandpaBorder/
+      package/
+        BNDL-000001_FamilyBorderBundle.zip
+```
+
+The customer bundle ZIP should contain customer-facing files only:
+
+```text
+DadBorder/
+MomBorder/
+GrandpaBorder/
+README.txt
+LICENSE.txt
+```
+
+Bundle manifests are the source of truth for bundle membership. Source package manifests may later receive a lightweight `bundleMembership` marker, but that marker is informational only. A missing or stale marker must not invalidate a bundle if the bundle manifest is complete.
+
+Bundle member references should use IDs plus relative source paths:
+
+```json
+{
+  "sortOrder": 1,
+  "packageId": "PKG-ART-000125-DIGI-000125",
+  "artworkId": "ART-000125",
+  "profileId": "DIGI-000125",
+  "productTitle": "Dad Border",
+  "sourceManifestPath": "../../ART-000125_DadBorder/manifest.json",
+  "sourcePackagePath": "../../ART-000125_DadBorder",
+  "bundleFolder": "DadBorder",
+  "includedFiles": [
+    {
+      "role": "primary-svg",
+      "sourcePath": "../../ART-000125_DadBorder/dad-border.svg",
+      "bundlePath": "members/DadBorder/dad-border.svg",
+      "format": "svg"
+    }
+  ]
+}
+```
+
+Rules:
+
+- Bundle generation must fail if required member files are missing.
+- Bundle ZIPs should not include source package ZIPs unless explicitly selected later.
+- Bundle ZIPs should not include `_internal/`, source manifests, processing logs, or debug metadata.
+- Bundle folder names are user-facing organization only; `BNDL` numbers and manifests remain the source of truth.
+- Bundle membership does not rename or mutate original package folders.
+
 ## Future README And Substitution System
 
 README and license files will use substitutions such as:

@@ -303,6 +303,57 @@ Manifest V2 keeps `assetProfiles` for backward compatibility and introduces `pro
 
 ---
 
+## 5B. Bundle Package Identity
+
+Bundle packages are products made from multiple existing completed packages. A bundle does not replace the artwork, asset profile, or product variant identities of its member packages.
+
+Bundle packages use a separate permanent number sequence:
+
+```text
+BNDL-000001
+BNDL-000002
+BNDL-000003
+```
+
+Example:
+
+```text
+ART-000125_DadBorder
+ART-000126_MomBorder
+ART-000127_GrandpaBorder
+
+becomes:
+
+BNDL-000001_FamilyBorderBundle
+```
+
+Rules:
+
+* Bundle numbers are never reused.
+* Bundle package IDs should use the bundle number, such as `BNDL-000001`.
+* Bundle folders should live under the configured Bundle Output Path.
+* Original package folders remain unchanged.
+* The bundle manifest is the source of truth for membership.
+* Original package manifests may later contain an informational `bundleMembership` marker.
+* `bundleMembership` markers are not authoritative and must not replace the bundle manifest.
+* Missing required member files should fail bundle generation.
+
+Bundle member references should store package identity and relative source paths:
+
+```text
+packageId
+artworkId
+profileId
+sourceManifestPath
+sourcePackagePath
+bundleFolder
+includedFiles
+```
+
+This lets future listing tools, marketplace upload tools, analytics, and accounting systems understand a bundle without requiring direct database access.
+
+---
+
 ## 6. Numbering System
 
 VectorForge uses a database-backed numbering system.
@@ -342,6 +393,21 @@ This produces:
 
 ```text
 ART-000126
+```
+
+Bundle sequence example:
+
+```text
+sequenceKey: bundle
+prefix: BNDL
+paddingLength: 6
+nextNumber: 2
+```
+
+This produces:
+
+```text
+BNDL-000002
 ```
 
 ### IssuedNumber

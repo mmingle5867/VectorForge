@@ -42,6 +42,10 @@ export interface ReadinessInfo {
   imagesComplete: boolean;
   downloadsComplete: boolean;
   readyForListingTool: boolean;
+  allMembersPresent?: boolean;
+  allSourceManifestsReadable?: boolean;
+  allFilesResolved?: boolean;
+  bundleZipGenerated?: boolean;
 }
 
 export interface ProcessingHistoryEntry {
@@ -121,6 +125,47 @@ export interface MarketplaceManifestEntry {
   digitalFiles: string[];
 }
 
+export type BundleMissingFilePolicy = 'fail' | 'warn' | 'skip';
+export type BundleMembershipStatus = 'active' | 'removed' | 'retired';
+
+export interface BundleManifestSection {
+  bundleId: string;
+  title: string;
+  slug: string;
+  sku: string;
+  memberCount: number;
+  missingFilePolicy: BundleMissingFilePolicy | string;
+  zipPath: string;
+}
+
+export interface BundleIncludedFile {
+  role: string;
+  sourcePath: string;
+  bundlePath: string;
+  format: string;
+  sizeBytes?: number;
+}
+
+export interface BundleMember {
+  sortOrder: number;
+  packageId: string;
+  artworkId: string;
+  profileId: string;
+  productTitle: string;
+  sourceManifestPath: string;
+  sourcePackagePath: string;
+  bundleFolder: string;
+  includedFiles: BundleIncludedFile[];
+}
+
+export interface BundleMembershipMarker {
+  bundleId: string;
+  bundleTitle: string;
+  bundleManifestPath: string;
+  status: BundleMembershipStatus | string;
+  addedAt: string;
+}
+
 export interface Extensions {
   listingTool: Record<string, unknown>;
   analytics: Record<string, unknown>;
@@ -166,6 +211,9 @@ export interface PackageManifestV2 {
     isDigital: boolean;
   };
   marketplaces: Record<string, MarketplaceManifestEntry>;
+  bundle?: BundleManifestSection;
+  members?: BundleMember[];
+  bundleMembership?: BundleMembershipMarker[];
   rights: RightsInfo;
   readiness: ReadinessInfo;
   aiMetadata: AiMetadata;

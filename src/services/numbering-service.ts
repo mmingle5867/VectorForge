@@ -9,6 +9,7 @@ const DEFAULT_SEQUENCES = [
   { sequenceKey: 'cnc', label: 'CNC', prefix: 'CNC', paddingLength: 6, startingNumber: 1 },
   { sequenceKey: 'sewing', label: 'Sewing', prefix: 'SEW', paddingLength: 6, startingNumber: 1 },
   { sequenceKey: 'print', label: 'Print', prefix: 'PRNT', paddingLength: 6, startingNumber: 1 },
+  { sequenceKey: 'bundle', label: 'Bundle', prefix: 'BNDL', paddingLength: 6, startingNumber: 1 },
 ] as const;
 
 type TransactionClient = Prisma.TransactionClient;

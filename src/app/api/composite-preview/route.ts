@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { readFile, stat } from 'fs/promises';
 import path from 'path';
 import { requireAuth } from '@/lib/auth';
 import config from '@/lib/config';
@@ -13,6 +14,111 @@ function resolveConfiguredPath(configuredPath: string) {
 
 function getString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+async function pathExists(filePath: string) {
+  try {
+    const stats = await stat(filePath);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function mimeTypeFor(filePath: string) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  return 'application/octet-stream';
+}
+
+function issueMessages(issues: Array<{ message: string }>) {
+  return issues.map((issue) => issue.message);
+}
+
+async function getAuthorizedItem(batchId: string, itemId: string, userId: string) {
+  const item = await prisma.batchItem.findUnique({
+    where: { id: itemId },
+    include: { batch: true },
+  });
+
+  if (!item || item.batchId !== batchId || item.batch.userId !== userId) {
+    return null;
+  }
+
+  return item;
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await requireAuth();
+    const { searchParams } = new URL(req.url);
+    const mode = searchParams.get('mode') || 'templates';
+
+    if (mode === 'image') {
+      const batchId = getString(searchParams.get('batchId'));
+      const itemId = getString(searchParams.get('itemId'));
+      const relativePath = getString(searchParams.get('path'));
+
+      if (!batchId || !itemId || !relativePath) {
+        return NextResponse.json(
+          { success: false, error: 'batchId, itemId, and path are required' },
+          { status: 400 }
+        );
+      }
+
+      if (path.isAbsolute(relativePath) || relativePath.includes('..')) {
+        return NextResponse.json({ success: false, error: 'Invalid image path' }, { status: 400 });
+      }
+
+      const item = await getAuthorizedItem(batchId, itemId, user.id);
+      if (!item || !item.outputFolderPath) {
+        return NextResponse.json({ success: false, error: 'Item not found' }, { status: 404 });
+      }
+
+      const packageRoot = path.resolve(item.outputFolderPath);
+      const imagePath = path.resolve(packageRoot, relativePath);
+      if (!imagePath.startsWith(`${packageRoot}${path.sep}`) || !(await pathExists(imagePath))) {
+        return NextResponse.json({ success: false, error: 'Image not found' }, { status: 404 });
+      }
+
+      const imageBuffer = await readFile(imagePath);
+      return new Response(imageBuffer as unknown as BodyInit, {
+        headers: {
+          'Content-Type': mimeTypeFor(imagePath),
+          'Cache-Control': 'private, max-age=0, no-store',
+        },
+      });
+    }
+
+    const baseAssetsPath = resolveConfiguredPath(user.settings?.baseAssetsPath || config.paths.baseAssets);
+    const templateResult = await loadCompositeTemplates(baseAssetsPath);
+
+    return NextResponse.json({
+      success: true,
+      templates: templateResult.templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        description: template.description || '',
+        assetProfile: template.assetProfile,
+        marketplace: template.marketplace,
+        outputRole: template.outputRole,
+        slot: template.slot || null,
+      })),
+      warnings: issueMessages(templateResult.warnings),
+      errors: issueMessages(templateResult.errors),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to load composites' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -30,12 +136,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const item = await prisma.batchItem.findUnique({
-      where: { id: itemId },
-      include: { batch: true },
-    });
-
-    if (!item || item.batchId !== batchId || item.batch.userId !== user.id) {
+    const item = await getAuthorizedItem(batchId, itemId, user.id);
+    if (!item) {
       return NextResponse.json({ success: false, error: 'Item not found' }, { status: 404 });
     }
 
@@ -54,7 +156,7 @@ export async function POST(req: NextRequest) {
       '.png'
     );
 
-    if (!sourceArtworkPngPath) {
+    if (!sourceArtworkPngPath || !(await pathExists(sourceArtworkPngPath))) {
       return NextResponse.json(
         { success: false, error: 'Primary PNG artwork file was not found' },
         { status: 404 }
@@ -70,8 +172,8 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: `Composite template not found: ${templateId}`,
-          warnings: templateResult.warnings,
-          errors: templateResult.errors,
+          warnings: issueMessages(templateResult.warnings),
+          errors: issueMessages(templateResult.errors),
         },
         { status: 404 }
       );
@@ -94,7 +196,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       outputPath: result.outputPath,
-      warnings: [...templateResult.warnings, ...result.warnings],
+      warnings: [...issueMessages(templateResult.warnings), ...result.warnings],
       metadata: result.metadata,
     });
   } catch (error) {

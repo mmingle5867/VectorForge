@@ -91,11 +91,33 @@ interface SavedOutputFile {
   size: number;
 }
 
+interface CompositeTemplateOption {
+  id: string;
+  name: string;
+  description: string;
+  assetProfile: string;
+  marketplace: string;
+  outputRole: string;
+  slot: number | null;
+}
+
+interface CompositePreviewMetadata {
+  role: string;
+  path: string;
+  format: string;
+  width: number;
+  height: number;
+  assetProfile: string;
+  marketplace: string;
+  templateId: string;
+  slot: number | null;
+}
+
 type PreviewStatus = 'idle' | 'loading' | 'success' | 'error';
 type SaveStatus = 'idle' | 'saving' | 'success' | 'error';
 type ManualEditAction = 'needs_manual_edit' | 'ready_to_process';
 type PreviewViewMode = 'processed' | 'split' | 'original';
-type TuneTab = 'controls' | 'details' | 'warnings';
+type TuneTab = 'controls' | 'details' | 'composites' | 'warnings';
 type Point = { x: number; y: number };
 
 function getStatusMessage(
@@ -425,6 +447,15 @@ export default function ReviewPage() {
   const [canvasPan, setCanvasPan] = useState<Point>({ x: 0, y: 0 });
   const [canvasPanStart, setCanvasPanStart] = useState<{ pointer: Point; pan: Point } | null>(null);
   const [autoOpenedItemId, setAutoOpenedItemId] = useState<string | null>(null);
+  const [compositeTemplates, setCompositeTemplates] = useState<CompositeTemplateOption[]>([]);
+  const [selectedCompositeTemplateId, setSelectedCompositeTemplateId] = useState('');
+  const [compositeLoading, setCompositeLoading] = useState(false);
+  const [compositeMessage, setCompositeMessage] = useState<string | null>(null);
+  const [compositeError, setCompositeError] = useState<string | null>(null);
+  const [compositeWarnings, setCompositeWarnings] = useState<string[]>([]);
+  const [compositePreviewUrl, setCompositePreviewUrl] = useState<string | null>(null);
+  const [compositeOutputPath, setCompositeOutputPath] = useState<string | null>(null);
+  const [compositeMetadata, setCompositeMetadata] = useState<CompositePreviewMetadata | null>(null);
   const previewToolbarRef = useRef<HTMLDivElement | null>(null);
 
   const pendingItems = items.filter((item) => item.status === 'PENDING');
@@ -496,6 +527,39 @@ export default function ReviewPage() {
     fetchSiteSettings();
   }, [tuneItem]);
 
+  useEffect(() => {
+    if (!tuneItem) return;
+
+    async function fetchCompositeTemplates() {
+      try {
+        const res = await fetch('/api/composite-preview');
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          setCompositeError(data.error || 'Failed to load composite templates');
+          return;
+        }
+
+        const templates = Array.isArray(data.templates)
+          ? data.templates as CompositeTemplateOption[]
+          : [];
+        setCompositeTemplates(templates);
+        setSelectedCompositeTemplateId((current) => current || templates[0]?.id || '');
+        setCompositeWarnings(
+          Array.isArray(data.warnings)
+            ? data.warnings.map((warning: { message?: string } | string) =>
+                typeof warning === 'string' ? warning : warning.message || 'Template warning'
+              )
+            : []
+        );
+      } catch {
+        setCompositeError('Failed to load composite templates');
+      }
+    }
+
+    fetchCompositeTemplates();
+  }, [tuneItem]);
+
   // Update item base name
   const updateBaseName = (itemId: string, newName: string) => {
     setItems((prev) =>
@@ -560,6 +624,13 @@ export default function ReviewPage() {
     setTunePanelCollapsed(false);
     setTunePanelPosition({ x: 0, y: 0 });
     setCanvasPan({ x: 0, y: 0 });
+    setSelectedCompositeTemplateId('');
+    setCompositeMessage(null);
+    setCompositeError(null);
+    setCompositeWarnings([]);
+    setCompositePreviewUrl(null);
+    setCompositeOutputPath(null);
+    setCompositeMetadata(null);
   };
 
   useEffect(() => {
@@ -620,6 +691,58 @@ export default function ReviewPage() {
   const canOpenEditableVector = Boolean(tuneItem && (tunePreview || hasSavedSvgFile(tuneItem, savedFiles)));
   const canCopyEditableVectorPath = canOpenEditableVector;
   const canReloadEditedVector = Boolean(tuneItem && hasSavedSvgFile(tuneItem, savedFiles));
+
+  const generateCompositePreview = async () => {
+    if (!tuneItem || !selectedCompositeTemplateId) return;
+
+    setCompositeLoading(true);
+    setCompositeError(null);
+    setCompositeMessage('Generating composite preview...');
+
+    try {
+      const res = await fetch('/api/composite-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId,
+          itemId: tuneItem.id,
+          templateId: selectedCompositeTemplateId,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setCompositeError(data.error || 'Failed to generate composite');
+        setCompositeMessage(null);
+        return;
+      }
+
+      const metadata = data.metadata as CompositePreviewMetadata;
+      setCompositeMetadata(metadata);
+      setCompositeOutputPath(data.outputPath || null);
+      setCompositeWarnings(Array.isArray(data.warnings) ? data.warnings.map(String) : []);
+      setCompositePreviewUrl(
+        `/api/composite-preview?mode=image&batchId=${encodeURIComponent(batchId)}&itemId=${encodeURIComponent(tuneItem.id)}&path=${encodeURIComponent(metadata.path)}&t=${Date.now()}`
+      );
+      setCompositeMessage('Composite generated.');
+    } catch {
+      setCompositeError('Failed to generate composite');
+      setCompositeMessage(null);
+    } finally {
+      setCompositeLoading(false);
+    }
+  };
+
+  const copyCompositeOutputPath = async () => {
+    if (!compositeOutputPath) return;
+
+    try {
+      await navigator.clipboard.writeText(compositeOutputPath);
+      setCompositeMessage('Copied generated image path to clipboard.');
+    } catch {
+      setCompositeMessage(`Generated image path: ${compositeOutputPath}`);
+    }
+  };
 
   const zoomPreview = (direction: 'in' | 'out') => {
     setSvgZoom((prev) => {
@@ -1959,7 +2082,7 @@ export default function ReviewPage() {
                       )}
 
                       <div className="flex gap-1.5 border-b border-gray-200 px-2 py-2">
-                        {(['controls', 'details'] as TuneTab[]).map((tab) => (
+                        {(['controls', 'details', 'composites'] as TuneTab[]).map((tab) => (
                           <button
                             key={tab}
                             type="button"
@@ -1970,7 +2093,7 @@ export default function ReviewPage() {
                                 : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
                             }`}
                           >
-                            {tab === 'controls' ? 'Controls' : 'Details'}
+                            {tab === 'controls' ? 'Controls' : tab === 'details' ? 'Details' : 'Composites'}
                           </button>
                         ))}
                         {previewWarnings.length > 0 && (
@@ -2101,6 +2224,110 @@ export default function ReviewPage() {
                             </details>
                           )}
                         </div>
+                        )}
+
+                        {tuneTab === 'composites' && (
+                          <div className={compactTunePanel ? 'space-y-2 p-2' : 'space-y-3 p-3'}>
+                            <div className="space-y-1.5">
+                              <label className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                Template
+                              </label>
+                              <select
+                                value={selectedCompositeTemplateId}
+                                onChange={(event) => setSelectedCompositeTemplateId(event.target.value)}
+                                className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              >
+                                {compositeTemplates.length === 0 && (
+                                  <option value="">No templates found</option>
+                                )}
+                                {compositeTemplates.map((template) => (
+                                  <option key={template.id} value={template.id}>
+                                    {template.name} ({template.id})
+                                  </option>
+                                ))}
+                              </select>
+                              {selectedCompositeTemplateId && (
+                                <div className="rounded-md border border-gray-200 bg-gray-50 p-2 text-[11px] text-gray-600">
+                                  {(() => {
+                                    const template = compositeTemplates.find((candidate) => candidate.id === selectedCompositeTemplateId);
+                                    if (!template) return 'Template details unavailable.';
+                                    return `${template.assetProfile} / ${template.marketplace} / ${template.outputRole}${template.slot ? ` / slot ${template.slot}` : ''}`;
+                                  })()}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="button"
+                                onClick={generateCompositePreview}
+                                disabled={compositeLoading || !selectedCompositeTemplateId || !tuneItem?.outputFolderPath}
+                                className="rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                {compositeLoading ? 'Generating...' : 'Generate Composite'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={copyCompositeOutputPath}
+                                disabled={!compositeOutputPath}
+                                title="Copy Generated Image Path"
+                                className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                Copy Path
+                              </button>
+                            </div>
+
+                            {!tuneItem?.outputFolderPath && (
+                              <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                                Save base outputs first before generating a composite preview.
+                              </div>
+                            )}
+
+                            {compositeError && (
+                              <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+                                {compositeError}
+                              </div>
+                            )}
+                            {compositeMessage && (
+                              <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+                                {compositeMessage}
+                              </div>
+                            )}
+                            {compositeWarnings.length > 0 && (
+                              <div className="space-y-1.5">
+                                {compositeWarnings.map((warning, index) => (
+                                  <div key={`${warning}-${index}`} className="rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+                                    {warning}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {compositePreviewUrl ? (
+                              <div className="space-y-2">
+                                <div className="overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                                  <img
+                                    src={compositePreviewUrl}
+                                    alt="Generated composite preview"
+                                    className="max-h-72 w-full object-contain"
+                                  />
+                                </div>
+                                {compositeMetadata && (
+                                  <div className="grid grid-cols-2 gap-1.5 rounded-md border border-gray-200 bg-white p-2 text-[11px] text-gray-600">
+                                    <div><span className="font-medium">Role:</span> {compositeMetadata.role}</div>
+                                    <div><span className="font-medium">Format:</span> {compositeMetadata.format}</div>
+                                    <div><span className="font-medium">Size:</span> {compositeMetadata.width} x {compositeMetadata.height}</div>
+                                    <div><span className="font-medium">Template:</span> {compositeMetadata.templateId}</div>
+                                    <div className="col-span-2 break-all"><span className="font-medium">Path:</span> {compositeMetadata.path}</div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 p-3 text-center text-xs text-gray-500">
+                                Generated composite preview will appear here.
+                              </div>
+                            )}
+                          </div>
                         )}
 
                         {tuneTab === 'warnings' && previewWarnings.length > 0 && (

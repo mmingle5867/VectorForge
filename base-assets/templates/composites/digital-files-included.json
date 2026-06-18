@@ -15,7 +15,7 @@
   "layers": [
     {
       "type": "background",
-      "source": "base-assets/digital/backgrounds/neutral-paper.jpg",
+      "source": "backgrounds/digital/default-white.jpg",
       "required": true,
       "fit": "cover",
       "anchor": "center",

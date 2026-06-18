@@ -14,10 +14,19 @@ import prisma from '@/lib/prisma';
 import config from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { extractBaseName } from '@/lib/utils';
+import { resolveManagedPath } from '@/lib/path-management';
 
 function isSupportedUpload(file: File) {
   const supportedFormats = config.processing.supportedFormats as readonly string[];
   return supportedFormats.includes(file.type) || file.name.toLowerCase().endsWith('.svg');
+}
+
+function getExtendedPath(settingsJson: unknown, key: string, fallback: string) {
+  if (settingsJson && typeof settingsJson === 'object' && !Array.isArray(settingsJson)) {
+    const value = (settingsJson as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return fallback;
 }
 
 export async function POST(req: NextRequest) {
@@ -57,6 +66,9 @@ export async function POST(req: NextRequest) {
     const settings = user.settings;
     const upscaleFactor = settings?.defaultUpscaleFactor || config.processing.defaultUpscaleFactor;
     const threshold = settings?.smartUpscaleThreshold || config.processing.smartUpscaleThreshold;
+    const uploadRoot = resolveManagedPath(
+      getExtendedPath(settings?.defaultSubstitutions, 'uploadPath', config.paths.uploads)
+    );
 
     // Create batch record
     const batch = await prisma.batch.create({
@@ -71,7 +83,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Create upload directory for this batch
-    const batchUploadDir = path.join(config.paths.uploads, batch.id);
+    const batchUploadDir = path.join(uploadRoot, batch.id);
     await mkdir(batchUploadDir, { recursive: true });
 
     // Process each file

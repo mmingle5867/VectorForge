@@ -4,15 +4,24 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { access, mkdir, constants } from 'fs/promises';
-import path from 'path';
+import { access, constants } from 'fs/promises';
 import { requireAuth } from '@/lib/auth';
+import {
+  hasCloudStorageSegment,
+  resolveManagedPath,
+  validateManagedPathValue,
+  type ManagedPathType,
+} from '@/lib/path-management';
 
 interface PathTestResult {
   path: string;
   exists: boolean;
+  readable: boolean;
   writable: boolean;
+  cloudStorage: boolean;
+  warning?: string;
   error?: string;
+  type?: ManagedPathType;
 }
 
 export async function POST(req: NextRequest) {
@@ -26,26 +35,71 @@ export async function POST(req: NextRequest) {
 
     const results: PathTestResult[] = [];
 
-    for (const p of paths) {
-      // Security: only allow relative paths starting with ./
-      if (!p.startsWith('./') || p.includes('..')) {
-        results.push({ path: p, exists: false, writable: false, error: 'Invalid path' });
+    for (const entry of paths) {
+      const p = typeof entry === 'string' ? entry : String(entry?.path || '');
+      const type = typeof entry === 'object' && entry?.type ? String(entry.type) as ManagedPathType : undefined;
+      const validationError = validateManagedPathValue(p);
+      const cloudStorage = hasCloudStorageSegment(p);
+      const warning =
+        type === 'workingPath' && cloudStorage
+          ? 'Cloud-synced working folders may reduce performance.'
+          : undefined;
+
+      if (validationError) {
+        results.push({
+          path: p,
+          type,
+          exists: false,
+          readable: false,
+          writable: false,
+          cloudStorage,
+          warning,
+          error: validationError,
+        });
         continue;
       }
 
-      const resolvedPath = path.resolve(process.cwd(), p);
+      const resolvedPath = resolveManagedPath(p);
 
       try {
         await access(resolvedPath, constants.F_OK);
-        // Exists, check writable
+        let readable = false;
+        let writable = false;
+
+        try {
+          await access(resolvedPath, constants.R_OK);
+          readable = true;
+        } catch {
+          // handled below
+        }
         try {
           await access(resolvedPath, constants.W_OK);
-          results.push({ path: p, exists: true, writable: true });
+          writable = true;
         } catch {
-          results.push({ path: p, exists: true, writable: false, error: 'Not writable' });
+          // handled below
         }
+
+        results.push({
+          path: p,
+          type,
+          exists: true,
+          readable,
+          writable,
+          cloudStorage,
+          warning,
+          error: readable && writable ? undefined : readable ? 'Not writable' : 'Not readable',
+        });
       } catch {
-        results.push({ path: p, exists: false, writable: false, error: 'Does not exist' });
+        results.push({
+          path: p,
+          type,
+          exists: false,
+          readable: false,
+          writable: false,
+          cloudStorage,
+          warning,
+          error: 'Does not exist',
+        });
       }
     }
 

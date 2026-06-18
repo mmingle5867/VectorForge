@@ -13,6 +13,7 @@ export interface PackageDocumentSettings {
   supportUrl?: string | null;
   defaultLicenseType?: string | null;
   templateVariables?: Record<string, string> | null;
+  templatePath?: string | null;
 }
 
 export interface GeneratePackageDocumentsInput {
@@ -147,7 +148,7 @@ function setKnownUserValue(values: TemplateValues, key: string, value: string | 
 
 export async function generatePackageDocuments(input: GeneratePackageDocumentsInput) {
   const settings = input.settings || {};
-  const templatesDir = path.join(input.baseAssetsPath, 'templates');
+  const templatesDir = input.settings?.templatePath || path.join(input.baseAssetsPath, 'templates');
   const now = new Date();
   const currentYear = String(now.getFullYear());
   const currentDate = now.toISOString().slice(0, 10);

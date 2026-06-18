@@ -15,7 +15,7 @@
   "layers": [
     {
       "type": "background",
-      "source": "base-assets/digital/backgrounds/wood.jpg",
+      "source": "backgrounds/digital/default-light-wood.jpg",
       "required": true,
       "fit": "cover",
       "anchor": "center",
@@ -32,7 +32,7 @@
     },
     {
       "type": "watermark",
-      "source": "base-assets/shared/watermarks/default.png",
+      "source": "watermarks/default/vectorforge-sample.png",
       "required": false,
       "fit": "contain",
       "scale": 0.25,

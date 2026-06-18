@@ -367,6 +367,64 @@ Composite images will be generated from:
 
 Composite templates should be profile-specific and marketplace-aware. Marketplace profiles should define slot counts, preferred sizes, accepted formats, and required image or video rules.
 
+## Base Asset Library
+
+The `base-assets/` folder is the source library for reusable template assets. It is not copied wholesale into customer packages.
+
+Current foundation structure:
+
+```text
+base-assets/
+  templates/
+    composites/
+    readme/
+    license/
+  backgrounds/
+    digital/
+    laser/
+    cnc/
+    vinyl/
+    sewing/
+    print/
+  watermarks/
+    default/
+    digital/
+    laser/
+    cnc/
+    vinyl/
+    sewing/
+    print/
+  icons/
+  overlays/
+```
+
+Folders:
+
+- `templates/composites/`: JSON composite template definitions.
+- `templates/readme/`: future README template variants.
+- `templates/license/`: future license template variants.
+- `backgrounds/`: reusable marketplace or product mockup backgrounds.
+- `watermarks/`: reusable watermark images, including default and profile-specific marks.
+- `icons/`: reusable graphics for file type, usage, and listing information images.
+- `overlays/`: reusable frames, shadows, labels, and decorative layers.
+
+Template asset references should be relative to the `base-assets/` root:
+
+```json
+{
+  "source": "backgrounds/digital/default-light-wood.jpg"
+}
+```
+
+Do not require absolute local paths in template JSON. Do not reference package output folders from reusable template files except through symbolic sources such as `primary-png`.
+
+Current working sample assets:
+
+- `backgrounds/digital/default-light-wood.jpg`
+- `backgrounds/digital/default-white.jpg`
+- `backgrounds/laser/default-workbench.jpg`
+- `watermarks/default/vectorforge-sample.png`
+
 ## Marketplace Profiles
 
 Marketplace profiles describe channel rules without hard-coding one marketplace into processing logic.

@@ -84,6 +84,10 @@ export async function POST(req: NextRequest) {
     const settings = user.settings;
     const settingsJson = (settings?.defaultSubstitutions as Record<string, unknown>) || {};
     const baseAssetsPath = settings?.baseAssetsPath || config.paths.baseAssets;
+    const templatePath =
+      typeof settingsJson.templatePath === 'string' && settingsJson.templatePath.trim()
+        ? settingsJson.templatePath
+        : `${baseAssetsPath}/templates`;
     const finalizationOptions = {
       substitutionData: (batch.substitutionData as Record<string, string>) || {},
       baseAssetsPath,
@@ -103,6 +107,7 @@ export async function POST(req: NextRequest) {
         phone: (settingsJson.phone as string) ?? '',
         supportUrl: (settingsJson.supportUrl as string) ?? '',
         defaultLicenseType: (settingsJson.defaultLicenseType as string) ?? '',
+        templatePath,
         templateVariables: getTemplateVariables(settingsJson),
       },
     };

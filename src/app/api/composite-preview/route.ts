@@ -16,6 +16,14 @@ function getString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function getExtendedPath(settingsJson: unknown, key: string, fallback: string) {
+  if (settingsJson && typeof settingsJson === 'object' && !Array.isArray(settingsJson)) {
+    const value = (settingsJson as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return fallback;
+}
+
 async function pathExists(filePath: string) {
   try {
     const stats = await stat(filePath);
@@ -93,7 +101,10 @@ export async function GET(req: NextRequest) {
     }
 
     const baseAssetsPath = resolveConfiguredPath(user.settings?.baseAssetsPath || config.paths.baseAssets);
-    const templateResult = await loadCompositeTemplates(baseAssetsPath);
+    const templatePath = resolveConfiguredPath(
+      getExtendedPath(user.settings?.defaultSubstitutions, 'templatePath', `${user.settings?.baseAssetsPath || config.paths.baseAssets}/templates`)
+    );
+    const templateResult = await loadCompositeTemplates(baseAssetsPath, templatePath);
 
     return NextResponse.json({
       success: true,
@@ -164,7 +175,10 @@ export async function POST(req: NextRequest) {
     }
 
     const baseAssetsPath = resolveConfiguredPath(user.settings?.baseAssetsPath || config.paths.baseAssets);
-    const templateResult = await loadCompositeTemplates(baseAssetsPath);
+    const templatePath = resolveConfiguredPath(
+      getExtendedPath(user.settings?.defaultSubstitutions, 'templatePath', `${user.settings?.baseAssetsPath || config.paths.baseAssets}/templates`)
+    );
+    const templateResult = await loadCompositeTemplates(baseAssetsPath, templatePath);
     const template = templateResult.templates.find((candidate) => candidate.id === templateId);
 
     if (!template) {

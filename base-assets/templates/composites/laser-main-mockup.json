@@ -15,7 +15,7 @@
   "layers": [
     {
       "type": "background",
-      "source": "base-assets/laser/backgrounds/workbench.jpg",
+      "source": "backgrounds/laser/default-workbench.jpg",
       "required": true,
       "fit": "cover",
       "anchor": "center",

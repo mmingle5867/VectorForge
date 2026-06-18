@@ -14,6 +14,11 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import config from '@/lib/config';
 import {
+  DEFAULT_MANAGED_PATHS,
+  normalizeManagedPath,
+  validateManagedPathValue,
+} from '@/lib/path-management';
+import {
   FACTORY_TUNING_EXPORT_DEFAULTS,
   TUNING_EXPORT_RANGES,
   isHexColor,
@@ -22,6 +27,9 @@ import {
 
 // Reserved keys stored in defaultSubstitutions JSON for extended settings
 const EXTENDED_KEYS = [
+  'workingPath',
+  'uploadPath',
+  'templatePath',
   'enableMarketplacePreview',
   'enableColorTint',
   'tintColor',
@@ -160,6 +168,10 @@ function validateTemplateVariables(value: unknown) {
   return null;
 }
 
+function getPathSetting(value: unknown, fallback: string) {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
 /**
  * Extract extended settings from the defaultSubstitutions JSON blob.
  */
@@ -252,10 +264,6 @@ function validateTuningExportSetting(key: TuningExportSettingKey, value: unknown
   return null;
 }
 
-function normalizeConfiguredPath(value: string) {
-  return path.resolve(process.cwd(), value).toLowerCase();
-}
-
 function validateEditorPathSetting(label: string, value: unknown) {
   if (value === undefined) return null;
   if (typeof value !== 'string') {
@@ -304,6 +312,9 @@ export async function GET() {
         smartUpscaleThreshold: user.settings.smartUpscaleThreshold,
         baseAssetsPath: user.settings.baseAssetsPath,
         outputPath: user.settings.outputPath,
+        workingPath: getPathSetting(extended.workingPath, DEFAULT_MANAGED_PATHS.workingPath),
+        uploadPath: getPathSetting(extended.uploadPath, config.paths.uploads),
+        templatePath: getPathSetting(extended.templatePath, DEFAULT_MANAGED_PATHS.templatePath),
         defaultSubstitutions: mergedSubstitutionVariables,
         // Extended settings
         enableMarketplacePreview: extended.enableMarketplacePreview ?? true,
@@ -344,8 +355,11 @@ export async function PUT(req: NextRequest) {
     const {
       defaultUpscaleFactor,
       smartUpscaleThreshold,
+      workingPath,
+      uploadPath,
       baseAssetsPath,
       outputPath,
+      templatePath,
       defaultSubstitutions,
       // Extended settings
       enableMarketplacePreview,
@@ -412,23 +426,28 @@ export async function PUT(req: NextRequest) {
       pngWhiteTransparencyThreshold,
     };
 
-    // Validate paths (must start with ./, no ..)
-    if (baseAssetsPath && (!baseAssetsPath.startsWith('./') || baseAssetsPath.includes('..'))) {
-      return NextResponse.json(
-        { success: false, error: 'Base assets path must be relative (start with ./) and cannot contain ..' },
-        { status: 400 }
-      );
-    }
-    if (outputPath && (!outputPath.startsWith('./') || outputPath.includes('..'))) {
-      return NextResponse.json(
-        { success: false, error: 'Output path must be relative (start with ./) and cannot contain ..' },
-        { status: 400 }
-      );
+    const pathInputs = {
+      workingPath,
+      uploadPath,
+      baseAssetsPath,
+      outputPath,
+      templatePath,
+    };
+    for (const [label, value] of Object.entries(pathInputs)) {
+      if (value !== undefined) {
+        const error = validateManagedPathValue(String(value));
+        if (error) {
+          return NextResponse.json(
+            { success: false, error: `${label} is invalid: ${error}` },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     const nextBaseAssetsPath = baseAssetsPath ?? user.settings?.baseAssetsPath ?? './base-assets';
     const nextOutputPath = outputPath ?? user.settings?.outputPath ?? './output';
-    if (normalizeConfiguredPath(nextBaseAssetsPath) === normalizeConfiguredPath(nextOutputPath)) {
+    if (normalizeManagedPath(nextBaseAssetsPath) === normalizeManagedPath(nextOutputPath)) {
       return NextResponse.json(
         { success: false, error: 'Output path and base assets path must be different directories' },
         { status: 400 }
@@ -537,6 +556,9 @@ export async function PUT(req: NextRequest) {
     };
 
     // Store extended settings in the same JSON field
+    if (workingPath !== undefined) mergedSubstitutions.workingPath = String(workingPath);
+    if (uploadPath !== undefined) mergedSubstitutions.uploadPath = String(uploadPath);
+    if (templatePath !== undefined) mergedSubstitutions.templatePath = String(templatePath);
     if (enableMarketplacePreview !== undefined) mergedSubstitutions.enableMarketplacePreview = enableMarketplacePreview;
     if (enableColorTint !== undefined) mergedSubstitutions.enableColorTint = enableColorTint;
     if (tintColor !== undefined) mergedSubstitutions.tintColor = tintColor;

@@ -22,8 +22,11 @@ import {
 interface UserSettings extends TuningExportSettings {
   defaultUpscaleFactor: number;
   smartUpscaleThreshold: number;
+  workingPath: string;
+  uploadPath: string;
   baseAssetsPath: string;
   outputPath: string;
+  templatePath: string;
   defaultSubstitutions: Record<string, string>;
   // Marketplace Preview
   enableMarketplacePreview: boolean;
@@ -48,15 +51,24 @@ interface UserSettings extends TuningExportSettings {
 interface PathTestResult {
   path: string;
   exists: boolean;
+  readable: boolean;
   writable: boolean;
+  cloudStorage: boolean;
+  warning?: string;
   error?: string;
+  type?: ManagedPathKey;
 }
+
+type ManagedPathKey = 'workingPath' | 'uploadPath' | 'outputPath' | 'baseAssetsPath' | 'templatePath';
 
 const DEFAULT_SETTINGS: UserSettings = {
   defaultUpscaleFactor: 2,
   smartUpscaleThreshold: 2000,
+  workingPath: './.vectorforge-work',
+  uploadPath: './uploads',
   baseAssetsPath: './base-assets',
   outputPath: './output',
+  templatePath: './base-assets/templates',
   defaultSubstitutions: {},
   enableMarketplacePreview: true,
   enableColorTint: false,
@@ -90,6 +102,52 @@ const BUILT_IN_TEMPLATE_VARIABLES = [
   'CURRENT_YEAR',
   'CURRENT_DATE',
   'PURCHASE_DATE',
+];
+
+interface ManagedPathConfig {
+  key: ManagedPathKey;
+  label: string;
+  purpose: string;
+  defaultValue: string;
+  cloudPolicy: 'warn' | 'allowed';
+}
+
+const MANAGED_PATHS: ManagedPathConfig[] = [
+  {
+    key: 'workingPath',
+    label: 'Working Path',
+    purpose: 'Temporary processing files, previews, queues, and intermediate files. Local SSD recommended.',
+    defaultValue: './.vectorforge-work',
+    cloudPolicy: 'warn',
+  },
+  {
+    key: 'uploadPath',
+    label: 'Upload Path',
+    purpose: 'Original imported files.',
+    defaultValue: './uploads',
+    cloudPolicy: 'allowed',
+  },
+  {
+    key: 'outputPath',
+    label: 'Output Path',
+    purpose: 'Completed VectorForge packages. Cloud storage is allowed.',
+    defaultValue: './output',
+    cloudPolicy: 'allowed',
+  },
+  {
+    key: 'baseAssetsPath',
+    label: 'Base Assets Path',
+    purpose: 'Backgrounds, watermarks, overlays, icons, and template asset library.',
+    defaultValue: './base-assets',
+    cloudPolicy: 'allowed',
+  },
+  {
+    key: 'templatePath',
+    label: 'Template Path',
+    purpose: 'README, LICENSE, and composite templates. Defaults to base-assets/templates.',
+    defaultValue: './base-assets/templates',
+    cloudPolicy: 'allowed',
+  },
 ];
 
 // ============================================================================
@@ -132,10 +190,22 @@ function InfoIcon() {
 
 function validatePath(p: string): { valid: boolean; message: string } {
   if (!p || p.trim() === '') return { valid: false, message: 'Path cannot be empty' };
-  if (!p.startsWith('./')) return { valid: false, message: 'Must start with ./' };
-  if (p.includes('..')) return { valid: false, message: 'Cannot contain ..' };
-  if (/[<>:"|?*]/.test(p)) return { valid: false, message: 'Contains invalid characters' };
+  const trimmed = p.trim();
+  const isWindowsAbsolute = /^[a-zA-Z]:[\\/]/.test(trimmed);
+  const isPosixAbsolute = trimmed.startsWith('/');
+  if (!isWindowsAbsolute && !isPosixAbsolute && !trimmed.startsWith('./')) {
+    return { valid: false, message: 'Use an absolute path or start relative paths with ./' };
+  }
+  if (!isWindowsAbsolute && !isPosixAbsolute && trimmed.split(/[\\/]+/).includes('..')) {
+    return { valid: false, message: 'Cannot contain ..' };
+  }
+  if (/[<>:"|?*]/.test(trimmed.replace(/^[a-zA-Z]:/, ''))) return { valid: false, message: 'Contains invalid characters' };
   return { valid: true, message: 'Valid path' };
+}
+
+function isCloudPath(p: string) {
+  const normalized = p.toLowerCase().replace(/\\/g, '/');
+  return normalized.includes('onedrive') || normalized.includes('google drive') || normalized.includes('googledrive') || normalized.includes('dropbox');
 }
 
 function PathIndicator({ path }: { path: string }) {
@@ -396,8 +466,11 @@ export default function SettingsPage() {
           setSettings({
             defaultUpscaleFactor: data.settings.defaultUpscaleFactor ?? 2,
             smartUpscaleThreshold: data.settings.smartUpscaleThreshold ?? 2000,
+            workingPath: data.settings.workingPath ?? './.vectorforge-work',
+            uploadPath: data.settings.uploadPath ?? './uploads',
             baseAssetsPath: data.settings.baseAssetsPath ?? './base-assets',
             outputPath: data.settings.outputPath ?? './output',
+            templatePath: data.settings.templatePath ?? './base-assets/templates',
             defaultSubstitutions: data.settings.defaultSubstitutions ?? {},
             enableMarketplacePreview: data.settings.enableMarketplacePreview ?? true,
             enableColorTint: data.settings.enableColorTint ?? false,
@@ -470,10 +543,9 @@ export default function SettingsPage() {
 
   // Save settings
   const saveSettings = async () => {
-    const basePathValid = validatePath(settings.baseAssetsPath);
-    const outputPathValid = validatePath(settings.outputPath);
+    const pathValidations = MANAGED_PATHS.map((pathConfig) => validatePath(settings[pathConfig.key]));
 
-    if (!basePathValid.valid || !outputPathValid.valid) {
+    if (pathValidations.some((validation) => !validation.valid)) {
       setToast({ message: 'Please fix path errors before saving', type: 'error' });
       return;
     }
@@ -554,7 +626,10 @@ export default function SettingsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paths: [settings.baseAssetsPath, settings.outputPath, './uploads', './logs'],
+          paths: MANAGED_PATHS.map((pathConfig) => ({
+            type: pathConfig.key,
+            path: settings[pathConfig.key],
+          })),
         }),
       });
       const data = await res.json();
@@ -565,6 +640,71 @@ export default function SettingsPage() {
       setToast({ message: 'Failed to test paths', type: 'error' });
     } finally {
       setTestingPaths(false);
+    }
+  };
+
+  const testSinglePath = async (pathConfig: ManagedPathConfig) => {
+    try {
+      const res = await fetch('/api/settings/test-paths', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paths: [{ type: pathConfig.key, path: settings[pathConfig.key] }],
+        }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.results)) {
+        setPathResults((current) => [
+          ...current.filter((result) => result.type !== pathConfig.key),
+          ...data.results,
+        ]);
+      } else {
+        setToast({ message: data.error || 'Failed to validate path', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Failed to validate path', type: 'error' });
+    }
+  };
+
+  const createPathFolder = async (pathConfig: ManagedPathConfig) => {
+    try {
+      const res = await fetch('/api/settings/create-dirs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', path: settings[pathConfig.key] }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setToast({ message: `${pathConfig.label} folder created`, type: 'success' });
+        await testSinglePath(pathConfig);
+      } else {
+        setToast({ message: data.error || 'Failed to create folder', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Failed to create folder', type: 'error' });
+    }
+  };
+
+  const openPathFolder = async (pathConfig: ManagedPathConfig) => {
+    try {
+      const res = await fetch('/api/settings/create-dirs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'open', path: settings[pathConfig.key] }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setToast({ message: data.error || 'Failed to open folder', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Failed to open folder', type: 'error' });
+    }
+  };
+
+  const browsePathFolder = (pathConfig: ManagedPathConfig) => {
+    const nextPath = window.prompt(`Enter ${pathConfig.label}`, settings[pathConfig.key]);
+    if (nextPath !== null) {
+      setSettings((s) => ({ ...s, [pathConfig.key]: nextPath.trim() }));
     }
   };
 
@@ -1175,12 +1315,17 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Folder Paths Card */}
+      {/* Paths Card */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-            Folder Paths
-          </h2>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Paths
+            </h2>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Configure where VectorForge reads, writes, and stores reusable assets. Existing files are not moved.
+            </p>
+          </div>
           <button
             onClick={testPaths}
             disabled={testingPaths}
@@ -1190,50 +1335,106 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        <div className="space-y-5">
-          {/* Base Assets Path */}
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Base Assets Path
-              </label>
-              <Tooltip content="Directory containing fallback template files, preview backgrounds, and watermarks.">
-                <InfoIcon />
-              </Tooltip>
-              <PathIndicator path={settings.baseAssetsPath} />
-            </div>
-            <input
-              type="text"
-              value={settings.baseAssetsPath}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, baseAssetsPath: e.target.value }))
-              }
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="./base-assets"
-            />
-          </div>
+        <div className="space-y-4">
+          {MANAGED_PATHS.map((pathConfig) => {
+            const value = settings[pathConfig.key];
+            const result = pathResults.find((candidate) => candidate.type === pathConfig.key);
+            const cloudWarning =
+              pathConfig.cloudPolicy === 'warn' && isCloudPath(value)
+                ? 'Cloud-synced working folders may reduce performance.'
+                : null;
 
-          {/* Output Path */}
-          <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Output Path
-              </label>
-              <Tooltip content="Directory where processed vector bundles (folders + ZIPs) are saved. Each batch item gets its own subfolder.">
-                <InfoIcon />
-              </Tooltip>
-              <PathIndicator path={settings.outputPath} />
-            </div>
-            <input
-              type="text"
-              value={settings.outputPath}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, outputPath: e.target.value }))
-              }
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              placeholder="./output"
-            />
-          </div>
+            return (
+              <div key={pathConfig.key} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {pathConfig.label}
+                  </label>
+                  <Tooltip content={pathConfig.purpose}>
+                    <InfoIcon />
+                  </Tooltip>
+                  <PathIndicator path={value} />
+                </div>
+                <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                  {pathConfig.purpose}
+                </p>
+                <div className="flex flex-col gap-2 lg:flex-row">
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, [pathConfig.key]: e.target.value }))
+                    }
+                    className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-mono text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    placeholder={pathConfig.defaultValue}
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => browsePathFolder(pathConfig)}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      Browse Folder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openPathFolder(pathConfig)}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      Open Folder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => testSinglePath(pathConfig)}
+                      className="rounded-md border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                    >
+                      Validate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => createPathFolder(pathConfig)}
+                      className="rounded-md bg-blue-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      Create Folder
+                    </button>
+                  </div>
+                </div>
+                {(result || cloudWarning) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    {result && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium ${
+                          result.exists && result.readable && result.writable
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                            : result.exists
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                        }`}
+                      >
+                        {result.exists && result.readable && result.writable
+                          ? 'Valid'
+                          : result.exists
+                          ? 'Warning'
+                          : 'Error'}
+                      </span>
+                    )}
+                    {result && (
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {result.exists
+                          ? `Readable: ${result.readable ? 'yes' : 'no'} / Writable: ${result.writable ? 'yes' : 'no'}`
+                          : result.error || 'Does not exist'}
+                      </span>
+                    )}
+                    {(cloudWarning || result?.warning) && (
+                      <span className="text-amber-700 dark:text-amber-300">
+                        {cloudWarning || result?.warning}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Path Test Results */}

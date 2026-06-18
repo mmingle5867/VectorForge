@@ -10,6 +10,14 @@ function resolveConfiguredPath(configuredPath: string) {
   return path.resolve(process.cwd(), configuredPath);
 }
 
+function getExtendedPath(settingsJson: unknown, key: string, fallback: string) {
+  if (settingsJson && typeof settingsJson === 'object' && !Array.isArray(settingsJson)) {
+    const value = (settingsJson as Record<string, unknown>)[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return fallback;
+}
+
 function isInsideDirectory(targetPath: string, directoryPath: string) {
   const relative = path.relative(directoryPath, targetPath);
   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
@@ -57,7 +65,9 @@ export async function POST(
     const skippedPaths: { path: string; reason: string }[] = [];
 
     if (deleteFiles) {
-      const uploadRoot = resolveConfiguredPath(config.paths.uploads);
+      const uploadRoot = resolveConfiguredPath(
+        getExtendedPath(user.settings?.defaultSubstitutions, 'uploadPath', config.paths.uploads)
+      );
       const outputRoot = resolveConfiguredPath(user.settings?.outputPath || config.paths.output);
       const uploadFolder = path.join(uploadRoot, batch.id);
       const fileTargets = new Set<string>([uploadFolder]);

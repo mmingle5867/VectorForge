@@ -21,15 +21,22 @@ export function getCompositeTemplatesDir(baseAssetsPath: string) {
   return path.join(baseAssetsPath, 'templates', 'composites');
 }
 
+export function getCompositeTemplatesDirFromTemplatePath(templatePath: string) {
+  return path.join(templatePath, 'composites');
+}
+
 async function readTemplateFile(filePath: string) {
   const raw = await fs.readFile(filePath, 'utf-8');
   return JSON.parse(raw) as unknown;
 }
 
 export async function loadCompositeTemplates(
-  baseAssetsPath = './base-assets'
+  baseAssetsPath = './base-assets',
+  templatePath?: string
 ): Promise<CompositeTemplateLoadResult> {
-  const templatesDir = getCompositeTemplatesDir(baseAssetsPath);
+  const templatesDir = templatePath
+    ? getCompositeTemplatesDirFromTemplatePath(templatePath)
+    : getCompositeTemplatesDir(baseAssetsPath);
   const templates: CompositeTemplate[] = [];
   const warnings: CompositeTemplateLoadIssue[] = [];
   const errors: CompositeTemplateLoadIssue[] = [];

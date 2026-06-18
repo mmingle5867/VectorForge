@@ -234,7 +234,9 @@ async function renderSupportedLayer(
   const resolved = await resolveLayerSource(input, layer);
 
   if (!resolved.path || !(await pathExists(resolved.path))) {
-    const message = `Composite layer source not found: ${resolved.sourceLabel}`;
+    const message = `Composite layer source not found: ${resolved.sourceLabel}${
+      resolved.path ? ` (${resolved.path})` : ''
+    }`;
     if (layer.required) {
       throw new Error(message);
     }

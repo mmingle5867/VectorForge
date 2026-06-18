@@ -45,6 +45,22 @@ node_modules/.prisma/
 !/base-assets/templates/*.txt
 !/base-assets/templates/composites/
 !/base-assets/templates/composites/*.json
+!/base-assets/templates/readme/
+!/base-assets/templates/readme/.gitkeep
+!/base-assets/templates/license/
+!/base-assets/templates/license/.gitkeep
+!/base-assets/backgrounds/
+!/base-assets/backgrounds/*/
+!/base-assets/backgrounds/**/*.jpg
+!/base-assets/backgrounds/**/.gitkeep
+!/base-assets/watermarks/
+!/base-assets/watermarks/*/
+!/base-assets/watermarks/**/*.png
+!/base-assets/watermarks/**/.gitkeep
+!/base-assets/icons/
+!/base-assets/icons/.gitkeep
+!/base-assets/overlays/
+!/base-assets/overlays/.gitkeep
 /logs
 
 # Logs

@@ -91,6 +91,10 @@ function resolveOutputPath(input: CompositeRenderInput) {
   return path.join(outputDir, safeFilename || `${input.template.id}.${input.template.format}`);
 }
 
+export function resolveCompositeRenderOutputPath(input: CompositeRenderInput) {
+  return resolveOutputPath(input);
+}
+
 function getLayerSourceCandidates(input: CompositeRenderInput, layer: CompositeLayer): LayerSourceCandidates {
   const sourceLabel = layer.source || layer.type;
 

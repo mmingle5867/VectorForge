@@ -831,7 +831,37 @@ VNYL-000128-12X12-WHT
 
 ---
 
-## 15. Summary
+## 15. Supplemental Files
+
+Supplemental files are package-specific or bundle-specific extras. They are not reusable base-assets and should not be confused with member files inside bundle packages.
+
+Examples:
+
+* cutting guide PDF
+* assembly instructions
+* bonus image
+* size chart
+* material guide
+* extra license addendum
+* thank-you note
+* marketplace-only promo image
+* internal notes
+
+Planned folder structure:
+
+```text
+ART-000125_DadBorder/
+  supplemental/
+    customer/
+    marketplace/
+    internal/
+```
+
+Customer supplemental files may later be included in customer ZIPs. Marketplace supplemental files may later be used by listing tools. Internal supplemental files must stay out of customer ZIPs.
+
+---
+
+## 16. Summary
 
 Artwork ID identifies the design.
 

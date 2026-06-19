@@ -10,6 +10,7 @@ import type {
   PackageFileEntry,
   PackageManifestV2,
   ProductProfileEntry,
+  SupplementalFileEntry,
 } from '@/lib/package-manifest-schema';
 
 type ManifestInput = {
@@ -224,6 +225,7 @@ export async function generatePackageManifest(input: ManifestInput) {
   const downloadEntries = await collectEntries([
     fileEntry(input.outputDir, input.zipPath, 'customer-zip'),
   ]);
+  const supplementalFiles: SupplementalFileEntry[] = [];
   const assetProfile: AssetProfileEntry = {
     profileType: 'digital',
     profileId,
@@ -300,6 +302,7 @@ export async function generatePackageManifest(input: ManifestInput) {
       metadata: metadataEntries,
       package: [],
     },
+    supplementalFiles,
 
     listing: {
       title: input.item.baseName || '',

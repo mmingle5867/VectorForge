@@ -385,6 +385,29 @@ LICENSE.txt
 
 Bundle manifests are the source of truth for bundle membership. Source package manifests may later receive a lightweight `bundleMembership` marker, but that marker is informational only. A missing or stale marker must not invalidate a bundle if the bundle manifest is complete.
 
+Example original-manifest marker:
+
+```json
+{
+  "bundleMembership": [
+    {
+      "bundleId": "BNDL-000001",
+      "bundleTitle": "Family Border Bundle",
+      "bundleManifestPath": "../bundles/BNDL-000001_FamilyBorderBundle/_internal/manifest.json",
+      "status": "active",
+      "addedAt": "2026-06-18T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+Rules for the marker:
+
+- `bundleMembership` is informational only.
+- Duplicate `bundleId` entries should be updated in place, not appended twice.
+- If a relative `bundleManifestPath` cannot be written safely, the marker may fall back to the `bundleId` only.
+- The bundle manifest remains authoritative if there is any disagreement.
+
 Bundle member references should use IDs plus relative source paths:
 
 ```json
@@ -505,6 +528,53 @@ Current working sample assets:
 - `backgrounds/digital/default-white.jpg`
 - `backgrounds/laser/default-workbench.jpg`
 - `watermarks/default/vectorforge-sample.png`
+
+## Supplemental Files
+
+Supplemental files are package-specific or bundle-specific extras that are not reusable base-assets.
+
+Examples:
+
+- cutting guide PDF
+- assembly instructions
+- bonus image
+- size chart
+- material guide
+- extra license addendum
+- thank-you note
+- marketplace-only promo image
+- internal notes
+
+Future package structure:
+
+```text
+ART-000125_DadBorder/
+  supplemental/
+    customer/
+    marketplace/
+    internal/
+
+BNDL-000001_FamilyBundle/
+  supplemental/
+    customer/
+    marketplace/
+    internal/
+```
+
+Rules:
+
+- `supplemental/customer/` may later be included in customer ZIPs.
+- `supplemental/marketplace/` may later be used by listing or media tools.
+- `supplemental/internal/` must never be included in customer ZIPs.
+- Supplemental files belong to one package or bundle.
+- Base-assets remain the reusable source library and should not be treated as supplemental files.
+
+ZIP guidance:
+
+- Customer ZIPs may include `supplemental/customer/` files when explicitly selected later.
+- Customer ZIPs must not include `supplemental/internal/`, `_internal/`, `manifest.json`, or processing logs.
+- Marketplace exports may later include `supplemental/marketplace/` files.
+- Internal package exports may include all supplemental folders.
 
 ## Marketplace Profiles
 

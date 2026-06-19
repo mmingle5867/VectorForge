@@ -184,6 +184,22 @@ export function getMarketplaceDir(packageRoot: string, marketplaceKey: Marketpla
   return path.join(getV2PackageDirs(packageRoot).marketplaceDir, safeMarketplaceKey);
 }
 
+export function getSupplementalDir(packageRoot: string) {
+  return path.join(packageRoot, 'supplemental');
+}
+
+export function getSupplementalCustomerDir(packageRoot: string) {
+  return path.join(getSupplementalDir(packageRoot), 'customer');
+}
+
+export function getSupplementalMarketplaceDir(packageRoot: string) {
+  return path.join(getSupplementalDir(packageRoot), 'marketplace');
+}
+
+export function getSupplementalInternalDir(packageRoot: string) {
+  return path.join(getSupplementalDir(packageRoot), 'internal');
+}
+
 export function isInternalPackagePath(relativePath: string) {
   const normalized = normalizeRelativePath(relativePath).toLowerCase();
   const rootFileName = normalized.split('/')[0];

@@ -99,6 +99,40 @@ interface CompositeTemplateOption {
   marketplace: string;
   outputRole: string;
   slot: number | null;
+  priority?: number | null;
+  width?: number;
+  height?: number;
+  format?: string;
+  quality?: number | null;
+}
+
+interface ListingMediaGeneratedItem {
+  templateId: string;
+  templateName: string;
+  outputPath: string;
+  metadata: CompositePreviewMetadata;
+  warnings: string[];
+}
+
+interface ListingMediaSkippedItem {
+  templateId: string;
+  templateName: string;
+  outputPath: string;
+  reason: string;
+  metadata?: CompositePreviewMetadata | null;
+  warnings: string[];
+}
+
+interface ListingMediaGenerationResult {
+  success: boolean;
+  batchId: string;
+  itemId: string;
+  packageRoot: string | null;
+  selectedTemplates: string[];
+  generated: ListingMediaGeneratedItem[];
+  skipped: ListingMediaSkippedItem[];
+  warnings: string[];
+  errors: string[];
 }
 
 interface CompositePreviewMetadata {
@@ -456,6 +490,14 @@ export default function ReviewPage() {
   const [compositePreviewUrl, setCompositePreviewUrl] = useState<string | null>(null);
   const [compositeOutputPath, setCompositeOutputPath] = useState<string | null>(null);
   const [compositeMetadata, setCompositeMetadata] = useState<CompositePreviewMetadata | null>(null);
+  const [listingMediaMarketplaceFilter, setListingMediaMarketplaceFilter] = useState('');
+  const [listingMediaAssetProfileFilter, setListingMediaAssetProfileFilter] = useState('');
+  const [listingMediaOverwrite, setListingMediaOverwrite] = useState(false);
+  const [selectedListingTemplateIds, setSelectedListingTemplateIds] = useState<string[]>([]);
+  const [listingMediaLoading, setListingMediaLoading] = useState(false);
+  const [listingMediaMessage, setListingMediaMessage] = useState<string | null>(null);
+  const [listingMediaError, setListingMediaError] = useState<string | null>(null);
+  const [listingMediaResult, setListingMediaResult] = useState<ListingMediaGenerationResult | null>(null);
   const previewToolbarRef = useRef<HTMLDivElement | null>(null);
 
   const pendingItems = items.filter((item) => item.status === 'PENDING');
@@ -691,6 +733,42 @@ export default function ReviewPage() {
   const canOpenEditableVector = Boolean(tuneItem && (tunePreview || hasSavedSvgFile(tuneItem, savedFiles)));
   const canCopyEditableVectorPath = canOpenEditableVector;
   const canReloadEditedVector = Boolean(tuneItem && hasSavedSvgFile(tuneItem, savedFiles));
+  const listingMediaTemplates = compositeTemplates.filter((template) => {
+    if (listingMediaMarketplaceFilter && template.marketplace !== listingMediaMarketplaceFilter) {
+      return false;
+    }
+    if (listingMediaAssetProfileFilter && template.assetProfile !== listingMediaAssetProfileFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  const selectedListingMediaTemplates = selectedListingTemplateIds
+    .map((templateId) => compositeTemplates.find((template) => template.id === templateId))
+    .filter((template): template is CompositeTemplateOption => Boolean(template));
+
+  const listingMediaMarketplaceOptions = Array.from(
+    new Set(compositeTemplates.map((template) => template.marketplace).filter(Boolean))
+  ).sort();
+  const listingMediaAssetProfileOptions = Array.from(
+    new Set(compositeTemplates.map((template) => template.assetProfile).filter(Boolean))
+  ).sort();
+
+  const toggleListingTemplateSelection = (templateId: string) => {
+    setSelectedListingTemplateIds((current) =>
+      current.includes(templateId)
+        ? current.filter((entry) => entry !== templateId)
+        : [...current, templateId]
+    );
+  };
+
+  const selectVisibleListingTemplates = () => {
+    setSelectedListingTemplateIds(listingMediaTemplates.map((template) => template.id));
+  };
+
+  const clearListingTemplateSelection = () => {
+    setSelectedListingTemplateIds([]);
+  };
 
   const generateCompositePreview = async () => {
     if (!tuneItem || !selectedCompositeTemplateId) return;
@@ -741,6 +819,88 @@ export default function ReviewPage() {
       setCompositeMessage('Copied generated image path to clipboard.');
     } catch {
       setCompositeMessage(`Generated image path: ${compositeOutputPath}`);
+    }
+  };
+
+  const copyListingMediaPath = async (value: string | null | undefined) => {
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setListingMediaMessage('Copied image path to clipboard.');
+    } catch {
+      setListingMediaMessage(`Image path: ${value}`);
+    }
+  };
+
+  const generateListingMedia = async (
+    mode: 'selected' | 'marketplace'
+  ) => {
+    if (!tuneItem) return;
+
+    const templateIds =
+      mode === 'selected' ? selectedListingTemplateIds : [];
+    const marketplace =
+      mode === 'marketplace' ? listingMediaMarketplaceFilter : '';
+    const assetProfile =
+      mode === 'marketplace' ? listingMediaAssetProfileFilter : '';
+
+    if (mode === 'selected' && templateIds.length === 0) {
+      setListingMediaError('Select at least one template before generating listing media.');
+      return;
+    }
+
+    if (mode === 'marketplace' && !marketplace && !assetProfile) {
+      setListingMediaError('Choose a marketplace or asset profile filter before generating a set.');
+      return;
+    }
+
+    setListingMediaLoading(true);
+    setListingMediaError(null);
+    setListingMediaMessage('Generating listing media...');
+    setListingMediaResult(null);
+
+    try {
+      const res = await fetch('/api/listing-media/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId,
+          itemId: tuneItem.id,
+          templateIds,
+          marketplace: marketplace || undefined,
+          assetProfile: assetProfile || undefined,
+          overwrite: listingMediaOverwrite,
+        }),
+      });
+      const data = await res.json();
+
+      const result = data as ListingMediaGenerationResult;
+      setListingMediaResult(result);
+
+      if (!res.ok || !data.success) {
+        setListingMediaError(
+          data.error ||
+            (Array.isArray(data.errors) && data.errors.length > 0
+              ? data.errors.join(' ')
+              : 'Listing media generation failed')
+        );
+        setListingMediaMessage(null);
+        return;
+      }
+
+      const generatedCount = Array.isArray(result.generated) ? result.generated.length : 0;
+      const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+      setListingMediaMessage(
+        `Generated ${generatedCount} image${generatedCount === 1 ? '' : 's'}${
+          skippedCount ? `, skipped ${skippedCount}` : ''
+        }.`
+      );
+    } catch {
+      setListingMediaError('Listing media generation failed');
+      setListingMediaMessage(null);
+    } finally {
+      setListingMediaLoading(false);
     }
   };
 
@@ -2327,6 +2487,255 @@ export default function ReviewPage() {
                                 Generated composite preview will appear here.
                               </div>
                             )}
+
+                            <div className="space-y-3 rounded-md border border-gray-200 bg-white p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                    Listing Media
+                                  </h4>
+                                  <p className="text-[11px] text-gray-500">
+                                    Generate multiple listing images from selected templates.
+                                  </p>
+                                </div>
+                                <label className="flex items-center gap-2 text-[11px] text-gray-600">
+                                  <input
+                                    type="checkbox"
+                                    checked={listingMediaOverwrite}
+                                    onChange={(event) => setListingMediaOverwrite(event.target.checked)}
+                                  />
+                                  Overwrite existing
+                                </label>
+                              </div>
+
+                              <div className="grid gap-2 md:grid-cols-3">
+                                <label className="space-y-1 text-[11px] font-medium text-gray-700">
+                                  Marketplace
+                                  <select
+                                    value={listingMediaMarketplaceFilter}
+                                    onChange={(event) => setListingMediaMarketplaceFilter(event.target.value)}
+                                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  >
+                                    <option value="">All marketplaces</option>
+                                    {listingMediaMarketplaceOptions.map((marketplace) => (
+                                      <option key={marketplace} value={marketplace}>
+                                        {marketplace}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="space-y-1 text-[11px] font-medium text-gray-700">
+                                  Asset Profile
+                                  <select
+                                    value={listingMediaAssetProfileFilter}
+                                    onChange={(event) => setListingMediaAssetProfileFilter(event.target.value)}
+                                    className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  >
+                                    <option value="">All profiles</option>
+                                    {listingMediaAssetProfileOptions.map((profile) => (
+                                      <option key={profile} value={profile}>
+                                        {profile}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <div className="flex items-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={selectVisibleListingTemplates}
+                                    className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                  >
+                                    Select Visible
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={clearListingTemplateSelection}
+                                    className="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => generateListingMedia('selected')}
+                                  disabled={listingMediaLoading || selectedListingTemplateIds.length === 0}
+                                  className="rounded-md bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
+                                >
+                                  {listingMediaLoading ? 'Generating...' : 'Generate Selected'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => generateListingMedia('marketplace')}
+                                  disabled={listingMediaLoading || (!listingMediaMarketplaceFilter && !listingMediaAssetProfileFilter)}
+                                  className="rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                  Generate Marketplace Set
+                                </button>
+                              </div>
+
+                              <div className="max-h-64 overflow-auto rounded-md border border-gray-200">
+                                {listingMediaTemplates.length === 0 ? (
+                                  <div className="p-3 text-center text-xs text-gray-500">
+                                    No templates match the current filters.
+                                  </div>
+                                ) : (
+                                  <table className="w-full divide-y divide-gray-200 text-left text-[11px]">
+                                    <thead className="sticky top-0 bg-gray-50">
+                                      <tr>
+                                        <th className="px-2 py-1.5">Use</th>
+                                        <th className="px-2 py-1.5">Template</th>
+                                        <th className="px-2 py-1.5">Profile</th>
+                                        <th className="px-2 py-1.5">Market</th>
+                                        <th className="px-2 py-1.5">Slot</th>
+                                        <th className="px-2 py-1.5">Format</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                      {listingMediaTemplates.map((template) => {
+                                        const checked = selectedListingTemplateIds.includes(template.id);
+
+                                        return (
+                                          <tr key={template.id} className={checked ? 'bg-blue-50/70' : 'bg-white'}>
+                                            <td className="px-2 py-1.5 align-top">
+                                              <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => toggleListingTemplateSelection(template.id)}
+                                              />
+                                            </td>
+                                            <td className="px-2 py-1.5 align-top">
+                                              <div className="space-y-0.5">
+                                                <div className="font-semibold text-gray-900">{template.name}</div>
+                                                <div className="text-gray-500">{template.id}</div>
+                                                <div className="text-gray-400">
+                                                  {template.width && template.height
+                                                    ? `${template.width} x ${template.height}`
+                                                    : 'Size unavailable'}
+                                                </div>
+                                              </div>
+                                            </td>
+                                            <td className="px-2 py-1.5 align-top text-gray-700">{template.assetProfile}</td>
+                                            <td className="px-2 py-1.5 align-top text-gray-700">{template.marketplace}</td>
+                                            <td className="px-2 py-1.5 align-top text-gray-700">{template.slot ?? 'n/a'}</td>
+                                            <td className="px-2 py-1.5 align-top text-gray-700">
+                                              {template.format || 'n/a'}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+
+                              {listingMediaMessage && (
+                                <div className="rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+                                  {listingMediaMessage}
+                                </div>
+                              )}
+                              {listingMediaError && (
+                                <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+                                  {listingMediaError}
+                                </div>
+                              )}
+                              {listingMediaResult && (
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-700">
+                                    <div><span className="font-medium">Generated:</span> {listingMediaResult.generated.length}</div>
+                                    <div><span className="font-medium">Skipped:</span> {listingMediaResult.skipped.length}</div>
+                                    <div><span className="font-medium">Selected:</span> {listingMediaResult.selectedTemplates.length}</div>
+                                  </div>
+
+                                  {listingMediaResult.generated.length > 0 && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] font-semibold uppercase tracking-wide text-green-700">Generated</p>
+                                      {listingMediaResult.generated.map((item) => (
+                                        <div key={`${item.templateId}-${item.outputPath}`} className="space-y-1 rounded-md border border-green-200 bg-green-50 p-2 text-[11px] text-green-900">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="font-semibold">
+                                              {item.templateName} <span className="font-normal">({item.templateId})</span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => copyListingMediaPath(item.outputPath)}
+                                              className="rounded-md border border-green-300 bg-white px-2 py-1 text-[11px] font-medium text-green-800 hover:bg-green-100"
+                                            >
+                                              Copy Path
+                                            </button>
+                                          </div>
+                                          <div className="break-all text-green-800">{item.outputPath}</div>
+                                          <div className="grid grid-cols-2 gap-1 text-green-800">
+                                            <div><span className="font-medium">Role:</span> {item.metadata.role}</div>
+                                            <div><span className="font-medium">Market:</span> {item.metadata.marketplace}</div>
+                                            <div><span className="font-medium">Profile:</span> {item.metadata.assetProfile}</div>
+                                            <div><span className="font-medium">Slot:</span> {item.metadata.slot ?? 'n/a'}</div>
+                                          </div>
+                                          {item.warnings.length > 0 && (
+                                            <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2 text-amber-900">
+                                              {item.warnings.map((warning, index) => (
+                                                <div key={`${warning}-${index}`}>{warning}</div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {listingMediaResult.skipped.length > 0 && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Skipped</p>
+                                      {listingMediaResult.skipped.map((item) => (
+                                        <div key={`${item.templateId}-${item.outputPath}`} className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="font-semibold">
+                                              {item.templateName} <span className="font-normal">({item.templateId})</span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => copyListingMediaPath(item.outputPath)}
+                                              className="rounded-md border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+                                            >
+                                              Copy Path
+                                            </button>
+                                          </div>
+                                          <div className="break-all text-amber-800">{item.outputPath}</div>
+                                          <div>{item.reason}</div>
+                                          {item.warnings.length > 0 && (
+                                            <div className="space-y-1 rounded-md border border-amber-200 bg-white p-2 text-amber-900">
+                                              {item.warnings.map((warning, index) => (
+                                                <div key={`${warning}-${index}`}>{warning}</div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {listingMediaResult.warnings.length > 0 && (
+                                    <div className="space-y-1 rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+                                      <p className="font-semibold">Warnings</p>
+                                      {listingMediaResult.warnings.map((warning, index) => (
+                                        <div key={`${warning}-${index}`}>{warning}</div>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {listingMediaResult.errors.length > 0 && (
+                                    <div className="space-y-1 rounded-md border border-red-200 bg-red-50 p-2 text-[11px] text-red-900">
+                                      <p className="font-semibold">Errors</p>
+                                      {listingMediaResult.errors.map((error, index) => (
+                                        <div key={`${error}-${index}`}>{error}</div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
 

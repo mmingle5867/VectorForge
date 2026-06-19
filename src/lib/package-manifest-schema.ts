@@ -72,6 +72,27 @@ export interface PackageFileEntry {
   slot?: number | null;
 }
 
+export type SupplementalFileDestination = 'customer' | 'marketplace' | 'internal';
+
+export interface SupplementalFileEntry {
+  id?: string;
+  role: string;
+  label: string;
+  path: string;
+  format: string;
+  mimeType: string;
+  sizeBytes?: number;
+  destination: SupplementalFileDestination | string;
+  includeInCustomerZip: boolean;
+  includeInMarketplaceUpload: boolean;
+  includeInInternalPackage: boolean;
+  marketplace?: string;
+  assetProfile?: string;
+  bundleId?: string;
+  notes?: string;
+  addedAt?: string;
+}
+
 export interface AssetProfileEntry {
   profileType: string;
   profileId: string;
@@ -202,6 +223,7 @@ export interface PackageManifestV2 {
     metadata: PackageFileEntry[];
     package: PackageFileEntry[];
   };
+  supplementalFiles?: SupplementalFileEntry[];
   listing: {
     title: string;
     descriptionFile: string;

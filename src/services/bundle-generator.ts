@@ -16,6 +16,7 @@ import type {
 import type { PackageDocumentSettings } from '@/services/template-renderer';
 import { generatePackageDocuments } from '@/services/template-renderer';
 import type { BundlePlan } from '@/services/bundle-planner';
+import { updateBundleMembershipMarkers } from '@/services/bundle-membership';
 
 const BUNDLE_README_FALLBACK = `Thank you for your purchase.
 
@@ -662,6 +663,17 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
     };
 
     await writeBundleManifest(manifestPath, manifest);
+
+    const membershipUpdate = await updateBundleMembershipMarkers({
+      bundleId: input.plan.bundleId,
+      bundleTitle: input.plan.title,
+      bundleManifestPath: manifestPath,
+      members: input.plan.members.map((member) => ({
+        sourceManifestPath: member.sourceManifestPath,
+        sourcePackagePath: member.sourcePackagePath,
+      })),
+    });
+    warnings.push(...membershipUpdate.warnings);
 
     return {
       success: true,

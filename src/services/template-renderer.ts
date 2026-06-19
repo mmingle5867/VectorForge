@@ -26,7 +26,19 @@ export interface GeneratePackageDocumentsInput {
   fileTypes: string[];
   profileType?: string | null;
   artworkTitle?: string | null;
+  bundleId?: string | null;
+  bundleTitle?: string | null;
+  bundleSku?: string | null;
+  bundleMemberCount?: number | null;
+  bundleMemberList?: string[] | null;
+  bundleMemberTable?: string | null;
+  bundleIncludedFileTypes?: string[] | null;
+  bundleCreatedAt?: string | null;
   settings?: PackageDocumentSettings;
+  templateFallbacks?: {
+    readme: string;
+    license: string;
+  };
 }
 
 export const DEFAULT_README_TEMPLATE = `Thank you for your purchase.
@@ -176,17 +188,25 @@ export async function generatePackageDocuments(input: GeneratePackageDocumentsIn
     PURCHASE_DATE: currentDate,
     ARTWORK_TITLE: clean(input.artworkTitle) || productName,
     PROFILE_TYPE: clean(input.profileType),
+    BUNDLE_ID: clean(input.bundleId),
+    BUNDLE_TITLE: clean(input.bundleTitle) || clean(input.productName),
+    BUNDLE_SKU: clean(input.bundleSku) || clean(input.bundleId),
+    BUNDLE_MEMBER_COUNT: input.bundleMemberCount == null ? '' : String(input.bundleMemberCount),
+    BUNDLE_MEMBER_LIST: (input.bundleMemberList || []).filter(Boolean).join('\n'),
+    BUNDLE_MEMBER_TABLE: clean(input.bundleMemberTable),
+    BUNDLE_INCLUDED_FILE_TYPES: formatFileTypes(input.bundleIncludedFileTypes || input.fileTypes),
+    BUNDLE_CREATED_DATE: clean(input.bundleCreatedAt) || currentDate,
   };
 
   const readmePath = await writeRenderedTemplate(
     path.join(templatesDir, 'README-template.txt'),
-    DEFAULT_README_TEMPLATE,
+    input.templateFallbacks?.readme || DEFAULT_README_TEMPLATE,
     getReadmePath(input.outputDir),
     values
   );
   const licensePath = await writeRenderedTemplate(
     path.join(templatesDir, 'LICENSE-template.txt'),
-    DEFAULT_LICENSE_TEMPLATE,
+    input.templateFallbacks?.license || DEFAULT_LICENSE_TEMPLATE,
     getLicensePath(input.outputDir),
     values
   );

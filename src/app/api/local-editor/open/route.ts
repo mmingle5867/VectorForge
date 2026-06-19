@@ -175,10 +175,15 @@ export async function POST(req: NextRequest) {
     }
 
     const configuredOutputPath = user.settings?.outputPath || config.paths.output;
-    const outputRoot = resolveConfiguredPath(configuredOutputPath);
+    const bundleOutputPath =
+      getExtendedPath(extended, 'bundleOutputPath', './output/bundles');
+    const outputRoots = [
+      resolveConfiguredPath(configuredOutputPath),
+      resolveConfiguredPath(bundleOutputPath),
+    ];
     const resolvedOutputFolder = path.resolve(outputFolderPath);
 
-    if (!isInsideDirectory(resolvedOutputFolder, outputRoot)) {
+    if (!outputRoots.some((outputRoot) => isInsideDirectory(resolvedOutputFolder, outputRoot))) {
       return NextResponse.json(
         { success: false, error: 'Output folder is outside the configured output directory' },
         { status: 400 }
@@ -222,7 +227,7 @@ export async function POST(req: NextRequest) {
     }
 
     for (const filePath of requestedPaths) {
-      if (!isInsideDirectory(filePath, outputRoot)) {
+      if (!outputRoots.some((outputRoot) => isInsideDirectory(filePath, outputRoot))) {
         return NextResponse.json(
           { success: false, error: 'Selected file is outside the configured output directory' },
           { status: 400 }

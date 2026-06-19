@@ -133,6 +133,8 @@ interface ListingMediaGenerationResult {
   skipped: ListingMediaSkippedItem[];
   warnings: string[];
   errors: string[];
+  manifestUpdated?: boolean;
+  manifestPath?: string | null;
 }
 
 interface CompositePreviewMetadata {
@@ -2647,6 +2649,17 @@ export default function ReviewPage() {
                                     <div><span className="font-medium">Generated:</span> {listingMediaResult.generated.length}</div>
                                     <div><span className="font-medium">Skipped:</span> {listingMediaResult.skipped.length}</div>
                                     <div><span className="font-medium">Selected:</span> {listingMediaResult.selectedTemplates.length}</div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 rounded-md border border-gray-200 bg-gray-50 p-2 text-[11px] text-gray-700">
+                                    <div>
+                                      <span className="font-medium">Manifest updated:</span>{' '}
+                                      {listingMediaResult.manifestUpdated ? 'yes' : 'no'}
+                                    </div>
+                                    <div className="break-all">
+                                      <span className="font-medium">Manifest path:</span>{' '}
+                                      {listingMediaResult.manifestPath || 'n/a'}
+                                    </div>
                                   </div>
 
                                   {listingMediaResult.generated.length > 0 && (

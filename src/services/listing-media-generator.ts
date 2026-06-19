@@ -264,10 +264,30 @@ async function renderTemplateIfNeeded(
   });
 
   if ((await pathExists(outputPath)) && !overwrite) {
+    const existingMetadata = await inspectExistingRenderedFile(context.packageRoot, outputPath);
     return {
       skipped: true,
       outputPath,
-      metadata: await inspectExistingRenderedFile(context.packageRoot, outputPath),
+      metadata: existingMetadata
+        ? {
+            ...existingMetadata,
+            role: template.outputRole || existingMetadata.role,
+            assetProfile: template.assetProfile,
+            marketplace: template.marketplace,
+            templateId: template.id,
+            slot: template.slot ?? null,
+          }
+        : {
+            role: template.outputRole,
+            path: normalizeRelativePath(path.relative(context.packageRoot, outputPath)),
+            format: template.format,
+            width: template.width,
+            height: template.height,
+            assetProfile: template.assetProfile,
+            marketplace: template.marketplace,
+            templateId: template.id,
+            slot: template.slot ?? null,
+          },
     };
   }
 

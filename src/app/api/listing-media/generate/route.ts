@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { generateListingMedia } from '@/services/listing-media-generator';
+import { updateListingMediaManifest } from '@/services/listing-media-manifest';
 
 function getString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -41,10 +42,41 @@ export async function POST(req: NextRequest) {
       userId: user.id,
     });
 
+    let manifestUpdated = false;
+    let manifestPath: string | null = null;
+    const manifestWarnings: string[] = [];
+    const manifestErrors: string[] = [];
+
+    if (result.success && result.packageRoot) {
+      const manifestResult = await updateListingMediaManifest({
+        packageRoot: result.packageRoot,
+        batchId,
+        itemId,
+        generated: result.generated,
+        skipped: result.skipped,
+        templateIds,
+        marketplace: marketplace || undefined,
+        assetProfile: assetProfile || undefined,
+        overwrite,
+      });
+
+      manifestUpdated = manifestResult.manifestUpdated;
+      manifestPath = manifestResult.manifestPath;
+      manifestWarnings.push(...manifestResult.warnings);
+      manifestErrors.push(...manifestResult.errors);
+    }
+
+    const mergedWarnings = [...result.warnings, ...manifestWarnings];
+    const mergedErrors = [...result.errors, ...manifestErrors];
+
     if (!result.success && result.generated.length === 0 && result.skipped.length === 0) {
       return NextResponse.json(
         {
           ...result,
+          warnings: mergedWarnings,
+          errors: mergedErrors,
+          manifestUpdated,
+          manifestPath,
           success: false,
         },
         { status: 400 }
@@ -53,6 +85,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ...result,
+      warnings: mergedWarnings,
+      errors: mergedErrors,
+      manifestUpdated,
+      manifestPath,
       success: true,
     });
   } catch (error) {

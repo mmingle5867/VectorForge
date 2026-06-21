@@ -763,6 +763,14 @@ export default function DashboardPage() {
                                     Retry Item
                                   </button>
                                 )}
+                                {['READY_TO_PROCESS', 'NEEDS_MANUAL_EDIT', 'COMPLETED'].includes(item.status) && (
+                                  <Link
+                                    href={`/upload/review/${batch.id}?itemId=${item.id}`}
+                                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-400 transition-colors"
+                                  >
+                                    Reopen Preview/Tune
+                                  </Link>
+                                )}
                                 {item.status === 'FAILED' && (
                                   <Link
                                     href={`/upload/review/${batch.id}?itemId=${item.id}`}

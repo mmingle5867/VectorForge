@@ -10,6 +10,7 @@ import type {
   BundleMember,
   PackageFileEntry,
   PackageManifestV2,
+  ListingMetadata,
   ProductProfileEntry,
   ProductVariantEntry,
 } from '@/lib/package-manifest-schema';
@@ -316,6 +317,27 @@ function buildBundleReadiness(plan: BundlePlan, zipGenerated: boolean) {
   };
 }
 
+function createEmptyListingMetadata(): ListingMetadata {
+  return {
+    title: '',
+    shortTitle: '',
+    description: '',
+    shortDescription: '',
+    bulletPoints: [],
+    tags: [],
+    keywords: [],
+    category: '',
+    subcategory: '',
+    style: [],
+    occasion: [],
+    holiday: [],
+    audience: [],
+    suggestedPrice: null,
+    currency: 'USD',
+    notes: '',
+  };
+}
+
 function buildProcessingHistory(bundleId: string, plan: BundlePlan, bundleRoot: string, zipGenerated: boolean) {
   const now = new Date().toISOString();
   const settings = {
@@ -602,14 +624,7 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
         metadata: [readmeEntry, licenseEntry].filter((entry): entry is PackageFileEntry => Boolean(entry)),
         package: [],
       },
-      listing: {
-        title: input.plan.title,
-        descriptionFile: readmeEntry?.path || 'metadata/README.txt',
-        tags: [],
-        materials: [],
-        category: '',
-        isDigital: true,
-      },
+      listing: createEmptyListingMetadata(),
       marketplaces: {},
       bundle: {
         bundleId: input.plan.bundleId,

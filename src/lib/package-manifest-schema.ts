@@ -114,6 +114,25 @@ export interface ProductVariantEntry {
   quantity: number | null;
 }
 
+export interface ListingMetadata {
+  title: string;
+  shortTitle: string;
+  description: string;
+  shortDescription: string;
+  bulletPoints: string[];
+  tags: string[];
+  keywords: string[];
+  category: string;
+  subcategory: string;
+  style: string[];
+  occasion: string[];
+  holiday: string[];
+  audience: string[];
+  suggestedPrice: number | null;
+  currency: string;
+  notes: string;
+}
+
 export interface AiMetadata {
   status: string;
   generatedAt: string | null;
@@ -224,14 +243,7 @@ export interface PackageManifestV2 {
     package: PackageFileEntry[];
   };
   supplementalFiles?: SupplementalFileEntry[];
-  listing: {
-    title: string;
-    descriptionFile: string;
-    tags: string[];
-    materials: string[];
-    category: string;
-    isDigital: boolean;
-  };
+  listing: ListingMetadata;
   marketplaces: Record<string, MarketplaceManifestEntry>;
   bundle?: BundleManifestSection;
   members?: BundleMember[];

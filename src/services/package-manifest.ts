@@ -9,6 +9,7 @@ import type {
   AssetProfileEntry,
   PackageFileEntry,
   PackageManifestV2,
+  ListingMetadata,
   ProductProfileEntry,
   SupplementalFileEntry,
 } from '@/lib/package-manifest-schema';
@@ -62,6 +63,27 @@ function mimeTypeFor(format: string) {
     zip: 'application/zip',
   };
   return types[format] || 'application/octet-stream';
+}
+
+function createEmptyListingMetadata(): ListingMetadata {
+  return {
+    title: '',
+    shortTitle: '',
+    description: '',
+    shortDescription: '',
+    bulletPoints: [],
+    tags: [],
+    keywords: [],
+    category: '',
+    subcategory: '',
+    style: [],
+    occasion: [],
+    holiday: [],
+    audience: [],
+    suggestedPrice: null,
+    currency: 'USD',
+    notes: '',
+  };
 }
 
 function safePackageIdSegment(value: string | null | undefined) {
@@ -304,15 +326,7 @@ export async function generatePackageManifest(input: ManifestInput) {
     },
     supplementalFiles,
 
-    listing: {
-      title: input.item.baseName || '',
-      descriptionFile:
-        metadataEntries.find((entry) => entry.role === 'listing-info')?.path || '',
-      tags: [],
-      materials: [],
-      category: '',
-      isDigital: true,
-    },
+    listing: createEmptyListingMetadata(),
 
     marketplaces: {
       etsy: {

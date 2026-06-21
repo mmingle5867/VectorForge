@@ -323,6 +323,45 @@ Compatibility rules:
 - A separate package numbering sequence is not required until VectorForge needs multiple independently issued packages for the same artwork/profile.
 - File entry checksums and fingerprints are reserved for future additions and may be empty until checksum generation is implemented.
 
+## Listing Metadata
+
+The manifest also includes a platform-neutral `listing` section for reusable product marketing data.
+
+Purpose:
+
+- Store listing copy and product metadata once, in a way future listing software can consume.
+- Keep the data platform-neutral so it can be mapped to Etsy, Shopify, eBay, or future systems later.
+- Avoid hard-coding marketplace-specific fields into the package schema.
+- Allow VectorForge and future Listing Software to edit the same generic metadata without changing the package identity model.
+
+Current V2 listing metadata fields:
+
+- `title`
+- `shortTitle`
+- `description`
+- `shortDescription`
+- `bulletPoints`
+- `tags`
+- `keywords`
+- `category`
+- `subcategory`
+- `style`
+- `occasion`
+- `holiday`
+- `audience`
+- `suggestedPrice`
+- `currency`
+- `notes`
+
+Rules:
+
+- New manifests should emit the `listing` section even when all values are empty.
+- Existing manifests without `listing` should still be loadable by downstream tools.
+- Future listing software may enrich or map these fields to marketplace-specific payloads, but the manifest itself stays platform-neutral.
+- The manifest remains the source of truth for generic listing metadata.
+- Marketplace-specific metadata should live in downstream Listing Software, not in the package manifest.
+- VectorForge may edit these fields now, and Listing Software may edit the same fields later.
+
 ## Asset Profile Principle
 
 Each asset profile folder should be self-contained enough that it can be copied or exported by itself.

@@ -264,10 +264,10 @@ const TUNE_CONTROLS: Array<{
   {
     key: 'rasterSourcePaddingPx',
     label: 'Raster Source Padding',
-    min: 0,
+    min: -100,
     max: 200,
     step: 1,
-    help: 'Adds padding to raster artwork before tracing/upscaling. Useful when artwork touches the image edge.',
+    help: 'Positive values add margin around the raster before tracing/export. Negative values crop inward.',
   },
   {
     key: 'svgCanvasPaddingPx',
@@ -652,12 +652,8 @@ export default function ReviewPage() {
     setPreviewError(null);
     setPreviewStatus('idle');
     setPreviewStatusMessage(null);
-    setSaveStatus(existingFiles.length > 0 ? 'success' : 'idle');
-    setSaveMessage(
-      existingFiles.length > 0
-        ? 'Existing saved outputs loaded. Continue editing, open files, or mark Ready To Process.'
-        : null
-    );
+    setSaveStatus('idle');
+    setSaveMessage(null);
     setSavedFiles(existingFiles);
     setSavedOutputFolderPath(item.outputFolderPath || null);
     setEditableVectorPath(existingFiles.find((file) => file.type.toLowerCase() === 'svg')?.path || null);
@@ -2085,11 +2081,11 @@ export default function ReviewPage() {
 
                 <aside
                   data-floating-panel="true"
-                  className="absolute right-3 z-10 flex w-[min(360px,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
+                  className="absolute right-3 z-10 flex w-[min(360px,calc(100%-1.5rem))] min-h-0 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white/95 shadow-2xl backdrop-blur"
                   style={{
                     top: previewToolbarHeight + 16,
+                    bottom: 12,
                     transform: `translate(${tunePanelPosition.x}px, ${tunePanelPosition.y}px)`,
-                    maxHeight: `calc(100vh - ${previewToolbarHeight + 48}px)`,
                   }}
                 >
                   <div
@@ -2273,7 +2269,7 @@ export default function ReviewPage() {
                         )}
                       </div>
 
-                      <div className="min-h-0 flex-1 overflow-y-auto">
+                      <div className="min-h-0 flex-1 overflow-y-auto pb-4">
                         {tuneTab === 'controls' && (
                           <div className={compactTunePanel ? 'space-y-2 p-2' : 'space-y-3 p-3'}>
                           <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-2">

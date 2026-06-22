@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { logger } from '@/lib/logger';
 import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
 import { normalizeSvgRoot } from '@/lib/svg-normalize';
+import { applyRasterSourcePadding } from '@/lib/raster-source-padding';
 
 const TRACE_BORDER_PX = 2;
 const PNG_ALPHA_TRACE_THRESHOLD = 32;
@@ -23,7 +24,7 @@ export const previewTuneSchema = z.object({
   preUpscaleBlur: numberWithDefault(z.number().min(0).max(5).default(0)),
   blur: numberWithDefault(z.number().min(0).max(20).default(0)),
   blurPasses: numberWithDefault(z.number().int().min(1).max(3).default(1)),
-  rasterSourcePaddingPx: numberWithDefault(z.number().int().min(0).max(200).default(20)),
+  rasterSourcePaddingPx: numberWithDefault(z.number().int().min(-100).max(200).default(20)),
   svgCanvasPaddingPx: numberWithDefault(z.number().int().min(0).max(100).default(20)),
   exportCanvasPaddingPx: numberWithDefault(z.number().int().min(0).max(300).default(0)),
   pathPrecision: numberWithDefault(z.number().int().min(0).max(8).default(3)),
@@ -42,7 +43,7 @@ export const FIELD_RANGES: Record<string, string> = {
   colorMode: 'color or binary',
   blur: '0-20',
   blurPasses: '1-3',
-  rasterSourcePaddingPx: '0-200',
+  rasterSourcePaddingPx: '-100-200',
   svgCanvasPaddingPx: '0-100',
   exportCanvasPaddingPx: '0-300',
   pathPrecision: '0-8',
@@ -290,8 +291,16 @@ async function prepareTraceRgbaData(
 export async function generateTunedSvg(input: TunedSvgInput) {
   const sourceMetadata = await sharp(input.imageBuffer).metadata();
   const rasterSourcePaddingPx = input.settings.rasterSourcePaddingPx ?? input.settings.svgCanvasPaddingPx ?? 20;
-  const paddedWidth = input.originalWidth + rasterSourcePaddingPx * 2;
-  const paddedHeight = input.originalHeight + rasterSourcePaddingPx * 2;
+  const sourcePaddingBackground = input.sourceMimeType?.toLowerCase().includes('png')
+    ? { r: 255, g: 255, b: 255, alpha: 0 }
+    : { r: 255, g: 255, b: 255, alpha: 1 };
+  const paddedSource = await applyRasterSourcePadding(
+    input.imageBuffer,
+    rasterSourcePaddingPx,
+    sourcePaddingBackground
+  );
+  const paddedWidth = paddedSource.width;
+  const paddedHeight = paddedSource.height;
   const upscaleApplied =
     input.upscaleFactor > 1 &&
     (paddedWidth < input.smartUpscaleThreshold ||
@@ -305,20 +314,7 @@ export async function generateTunedSvg(input: TunedSvgInput) {
   const traceWidth = resizedWidth + TRACE_BORDER_PX * 2;
   const traceHeight = resizedHeight + TRACE_BORDER_PX * 2;
 
-  const sourcePaddedBuffer = await sharp(input.imageBuffer)
-    .ensureAlpha()
-    .extend({
-      top: rasterSourcePaddingPx,
-      bottom: rasterSourcePaddingPx,
-      left: rasterSourcePaddingPx,
-      right: rasterSourcePaddingPx,
-      background: sourceMetadata.hasAlpha
-        ? { r: 255, g: 255, b: 255, alpha: 0 }
-        : { r: 255, g: 255, b: 255, alpha: 1 },
-    })
-    .png()
-    .toBuffer();
-  let sharpImage = sharp(sourcePaddedBuffer).ensureAlpha();
+  let sharpImage = sharp(paddedSource.buffer).ensureAlpha();
   if (input.settings.preUpscaleBlur > 0) {
     sharpImage = sharpImage.blur(input.settings.preUpscaleBlur);
   }

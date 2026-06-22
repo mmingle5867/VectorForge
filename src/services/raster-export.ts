@@ -3,6 +3,7 @@ import { logger } from '@/lib/logger';
 
 const SVG_BASE_DENSITY = 72;
 const SVG_RENDER_PIXEL_LIMIT = 200_000_000;
+const RASTER_EDGE_FRINGE_ALPHA_THRESHOLD = 128;
 
 export interface RasterExportOptions {
   width: number;
@@ -12,6 +13,7 @@ export interface RasterExportOptions {
   artworkColor?: string;
   canvasPaddingPx?: number;
   forceArtworkColor?: boolean;
+  preserveRasterPixels?: boolean;
 }
 
 export interface SvgRasterExportOptions extends RasterExportOptions {
@@ -152,6 +154,63 @@ async function recolorVisiblePixelsOpaque(input: Buffer, color: string): Promise
     .toBuffer();
 }
 
+async function removeLowAlphaEdgeFringe(input: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(input)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const rowOpaque = new Array(info.height).fill(false);
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const index = (y * info.width + x) * info.channels;
+      const alpha = data[index + 3];
+      if (alpha >= RASTER_EDGE_FRINGE_ALPHA_THRESHOLD) {
+        rowOpaque[y] = true;
+        break;
+      }
+    }
+  }
+
+  const firstOpaqueRow = rowOpaque.findIndex(Boolean);
+  const lastOpaqueRow = rowOpaque.length - 1 - [...rowOpaque].reverse().findIndex(Boolean);
+
+  if (firstOpaqueRow < 0 || lastOpaqueRow < 0) {
+    return sharp(data, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: info.channels,
+      },
+    })
+      .png()
+      .toBuffer();
+  }
+
+  for (let index = 0; index < data.length; index += info.channels) {
+    const pixelIndex = index / info.channels;
+    const row = Math.floor(pixelIndex / info.width);
+    const alpha = data[index + 3];
+    const isPaddingBand = row < firstOpaqueRow || row > lastOpaqueRow;
+    if (!isPaddingBand || alpha >= RASTER_EDGE_FRINGE_ALPHA_THRESHOLD) continue;
+
+    data[index] = 255;
+    data[index + 1] = 255;
+    data[index + 2] = 255;
+    data[index + 3] = 0;
+  }
+
+  return sharp(data, {
+    raw: {
+      width: info.width,
+      height: info.height,
+      channels: info.channels,
+    },
+  })
+    .png()
+    .toBuffer();
+}
+
 async function getAlphaDiagnostics(input: Buffer) {
   const { data, info } = await sharp(input)
     .ensureAlpha()
@@ -222,12 +281,16 @@ export async function createFixedCanvasRaster(
 
   const resized = await sharp(input)
     .resize(innerWidth, innerHeight, {
-      fit: 'inside',
+      fit: 'contain',
+      position: 'centre',
       withoutEnlargement: false,
+      background,
     })
     .png()
     .toBuffer();
-  const artwork = isPng || options.forceArtworkColor
+  const artwork = options.preserveRasterPixels
+    ? await removeLowAlphaEdgeFringe(resized)
+    : isPng || options.forceArtworkColor
     ? await preparePngArtwork(resized, options.artworkColor || '#000000')
     : resized;
 

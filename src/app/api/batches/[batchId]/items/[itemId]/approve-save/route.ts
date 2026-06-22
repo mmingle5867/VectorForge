@@ -9,6 +9,7 @@ import { getIncrementalFolderName } from '@/lib/server-utils';
 import { logger } from '@/lib/logger';
 import { getJpgPath, getPngPath, getSvgPath } from '@/lib/output-naming';
 import { getArtworkPackageFolderName } from '@/lib/package-structure';
+import { applyRasterSourcePadding } from '@/lib/raster-source-padding';
 import { createFixedCanvasRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
@@ -38,6 +39,94 @@ async function fileSize(filePath: string) {
   return stats.size;
 }
 
+async function logRasterDiagnostics(filePath: string, format: 'png' | 'jpg', label: string) {
+  const metadata = await sharp(filePath).metadata();
+  const sizeBytes = await fileSize(filePath);
+  const { data, info } = await sharp(filePath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let alphaZeroPixels = 0;
+  let alphaPositivePixels = 0;
+  let nonWhitePixels = 0;
+  let minAlpha = 255;
+  let maxAlpha = 0;
+  let sampleArtworkColor: { r: number; g: number; b: number; a: number } | null = null;
+  let sampleBackgroundAlpha: number | null = null;
+
+  for (let index = 0; index < data.length; index += info.channels) {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    const a = data[index + 3];
+
+    minAlpha = Math.min(minAlpha, a);
+    maxAlpha = Math.max(maxAlpha, a);
+
+    if (a === 0) {
+      alphaZeroPixels += 1;
+    } else {
+      alphaPositivePixels += 1;
+      if (!sampleArtworkColor && (r < 250 || g < 250 || b < 250)) {
+        sampleArtworkColor = { r, g, b, a };
+      }
+    }
+
+    if (sampleBackgroundAlpha === null && index === 0) {
+      sampleBackgroundAlpha = a;
+    }
+
+    if ((r + g + b) / 3 < 250) {
+      nonWhitePixels += 1;
+    }
+  }
+
+  const diagnostics =
+    format === 'png'
+      ? {
+          width: metadata.width,
+          height: metadata.height,
+          sizeBytes,
+          alphaZeroPixels,
+          alphaPositivePixels,
+          minAlpha,
+          maxAlpha,
+          sampleBackgroundAlpha,
+          sampleArtworkColor,
+          visuallyEmpty: alphaPositivePixels === 0,
+        }
+      : {
+          width: metadata.width,
+          height: metadata.height,
+          sizeBytes,
+          nonWhitePixels,
+          visuallyEmpty: nonWhitePixels === 0,
+        };
+
+  logger.info(`Approve-save raster output diagnostics: ${label}`, {
+    filePath,
+    format,
+    ...diagnostics,
+  });
+
+  if (format === 'png' && alphaPositivePixels === 0) {
+    logger.warn(`Approve-save raster PNG appears blank: ${label}`, {
+      filePath,
+      format,
+      ...diagnostics,
+    });
+  }
+
+  if (format === 'jpg' && nonWhitePixels === 0) {
+    logger.warn(`Approve-save raster JPG appears blank: ${label}`, {
+      filePath,
+      format,
+      ...diagnostics,
+    });
+  }
+}
+
 function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value);
 }
@@ -61,36 +150,27 @@ async function prepareRasterExportBuffer(
   const shouldUpscale =
     upscaleFactor > 1 &&
     (originalWidth < smartUpscaleThreshold || originalHeight < smartUpscaleThreshold);
-  const safePadding = Number.isFinite(sourcePaddingPx) && sourcePaddingPx > 0
-    ? Math.round(sourcePaddingPx)
-    : 0;
-  const paddedWidth = originalWidth + safePadding * 2;
-  const paddedHeight = originalHeight + safePadding * 2;
-
-  let raster = sharp(imageBuffer).ensureAlpha();
-
-  if (safePadding > 0) {
-    raster = raster.extend({
-      top: safePadding,
-      bottom: safePadding,
-      left: safePadding,
-      right: safePadding,
-      background: format === 'png'
-        ? { r: 255, g: 255, b: 255, alpha: 0 }
-        : { r: 255, g: 255, b: 255, alpha: 1 },
-    });
-  }
+  const sourcePadding = Number.isFinite(sourcePaddingPx) ? Math.round(sourcePaddingPx) : 0;
+  const padded = await applyRasterSourcePadding(
+    imageBuffer,
+    sourcePadding,
+    format === 'png'
+      ? { r: 255, g: 255, b: 255, alpha: 0 }
+      : { r: 255, g: 255, b: 255, alpha: 1 }
+  );
 
   if (shouldUpscale) {
-    raster = raster.resize(paddedWidth * upscaleFactor, paddedHeight * upscaleFactor, {
+    const resizeWidth = padded.width * upscaleFactor;
+    const resizeHeight = padded.height * upscaleFactor;
+    const raster = sharp(padded.buffer).resize(resizeWidth, resizeHeight, {
       kernel: sharp.kernel.lanczos3,
       withoutEnlargement: false,
     });
+
+    return raster.png().toBuffer();
   }
 
-  return raster
-    .png()
-    .toBuffer();
+  return sharp(padded.buffer).png().toBuffer();
 }
 
 export async function POST(
@@ -259,6 +339,7 @@ export async function POST(
       format: 'png',
       artworkColor: pngExportArtworkColor,
       canvasPaddingPx: parsed.data.exportCanvasPaddingPx,
+      preserveRasterPixels: false,
     });
     await createFixedCanvasRaster(jpgRasterExportBuffer, jpgPath, {
       width: config.processing.rasterExportWidth,
@@ -266,9 +347,11 @@ export async function POST(
       format: 'jpg',
       quality: 90,
       artworkColor: '#000000',
-      forceArtworkColor: true,
       canvasPaddingPx: parsed.data.exportCanvasPaddingPx,
+      preserveRasterPixels: true,
     });
+    await logRasterDiagnostics(pngPath, 'png', 'approve-save PNG');
+    await logRasterDiagnostics(jpgPath, 'jpg', 'approve-save JPG');
 
     await prisma.batchItem.update({
       where: { id: item.id },

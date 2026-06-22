@@ -12,8 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
-    "worker": "tsx src/workers/processing-worker.ts",
-    "worker:dev": "tsx watch src/workers/processing-worker.ts"
+    "worker": "tsx src/workers/processing-worker-bootstrap.ts",
+    "worker:dev": "tsx watch src/workers/processing-worker-bootstrap.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.9.15",
@@ -65,3 +65,4 @@
     "typescript": "^5.3.3"
   }
 }
+

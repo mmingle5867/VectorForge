@@ -11,6 +11,7 @@ import { Worker, Job } from 'bullmq';
 import { mkdir, readFile } from 'fs/promises';
 import path from 'path';
 import { redisConnection, type ProcessingJobData, enqueueZipJob } from '../lib/queue';
+import { serializeError } from '../lib/error-utils';
 import prisma from '../lib/prisma';
 import { logger } from '../lib/logger';
 import { getZipPath } from '../lib/output-naming';
@@ -458,11 +459,11 @@ processingWorker.on('completed', (job) => {
 });
 
 processingWorker.on('failed', (job, err) => {
-  logger.error(`Worker: Job ${job?.id} failed`, { error: err.message });
+  logger.error(`Worker: Job ${job?.id} failed`, serializeError(err));
 });
 
 processingWorker.on('error', (err) => {
-  logger.error('Worker: Error', { error: err.message });
+  logger.error('Worker: Error', serializeError(err));
 });
 
 // Graceful shutdown
@@ -478,4 +479,5 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-logger.info('Worker: Processing worker started, waiting for jobs...');
+logger.info('Worker: Processing worker started, waiting for jobs...', { redis: 'connected' });
+

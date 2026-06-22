@@ -1,18 +1,24 @@
-﻿import { Queue, Job, QueueEvents, type ConnectionOptions } from 'bullmq';
+import { Queue, Job, QueueEvents, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 import { logger } from './logger';
+import { serializeError } from './error-utils';
 
 // =============================================================================
 // Redis Connection
 // =============================================================================
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_LOG_THROTTLE_MS = 60_000;
+const isProduction = process.env.NODE_ENV === 'production';
 
 /**
  * Shared Redis connection for BullMQ.
  * Used by both the queue (producer) and worker (consumer).
  */
 let redisClient: IORedis | null = null;
+let redisReadyLogged = false;
+let redisOfflineLogged = false;
+let lastRedisErrorLogAt = 0;
 
 /**
  * Cast to ConnectionOptions to handle ioredis version mismatch between
@@ -29,16 +35,77 @@ export function getRedisConnection(): ConnectionOptions {
       },
     });
 
-    redisClient.on('connect', () => {
-      logger.info('Redis connected successfully');
+    redisClient.on('ready', () => {
+      if (!redisReadyLogged) {
+        redisReadyLogged = true;
+        logger.info('Redis connected', {
+          mode: isProduction ? 'production' : 'development',
+        });
+      }
     });
 
     redisClient.on('error', (err) => {
-      logger.error('Redis connection error', { error: err.message });
+      const details = serializeError(err);
+      const now = Date.now();
+
+      if (!isProduction) {
+        if (!redisOfflineLogged) {
+          redisOfflineLogged = true;
+          logger.warn('Redis unavailable, worker disabled in local development', details);
+        }
+        return;
+      }
+
+      if (now - lastRedisErrorLogAt >= REDIS_LOG_THROTTLE_MS) {
+        lastRedisErrorLogAt = now;
+        logger.error('Redis connection error', details);
+      }
+    });
+
+    redisClient.on('close', () => {
+      if (!isProduction && !redisOfflineLogged) {
+        logger.warn('Redis connection closed');
+      }
     });
   }
 
   return redisClient as unknown as ConnectionOptions;
+}
+
+export async function probeRedisConnection(timeoutMs = 3000): Promise<{ ok: boolean; error?: unknown }> {
+  const probe = new IORedis(REDIS_URL, {
+    maxRetriesPerRequest: 1,
+    enableReadyCheck: false,
+    lazyConnect: true,
+    retryStrategy() {
+      return null;
+    },
+  });
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error(`Redis connection timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    );
+  });
+
+  try {
+    await Promise.race([probe.connect(), timeout]);
+    await probe.ping();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+    try {
+      probe.disconnect();
+    } catch {
+      // Ignore probe shutdown errors.
+    }
+  }
 }
 
 export const redisConnection = new Proxy({} as ConnectionOptions, {
@@ -260,4 +327,3 @@ export async function getQueueStatus() {
 }
 
 export default processingQueue;
-

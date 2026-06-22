@@ -44,6 +44,7 @@ type BundleResult = {
   warnings?: string[];
   errors?: string[];
   plan?: {
+    bundleId?: string;
     memberCount: number;
     members: Array<{
       packageId: string;
@@ -148,6 +149,67 @@ export default function BundlesPage() {
     [packageMap, selectedPaths]
   );
 
+  const selectionValidation = useMemo(() => {
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    const validSelectedSources = selectedSources.filter(({ manifestPath, source }) => {
+      if (!manifestPath) {
+        errors.push('A selected package is missing a manifest path.');
+        return false;
+      }
+
+      if (!source) {
+        errors.push(`Selected manifest was not found: ${manifestPath}`);
+        return false;
+      }
+
+      if (source.packageType === 'bundle-package') {
+        errors.push(`Bundle packages cannot be used as bundle members: ${source.packageId || manifestPath}`);
+        return false;
+      }
+
+      if (!source.manifestPath) {
+        errors.push(`Selected package is missing its resolved manifest path: ${source.title || manifestPath}`);
+        return false;
+      }
+
+      if (!source.outputFolderPath) {
+        errors.push(`Selected package is missing an output folder path: ${source.title || manifestPath}`);
+        return false;
+      }
+
+      if (source.errors.length > 0) {
+        errors.push(`${source.title || source.packageId || manifestPath} has blocking errors: ${source.errors.join(' · ')}`);
+        return false;
+      }
+
+      if (source.warnings.length > 0) {
+        warnings.push(`${source.title || source.packageId || manifestPath}: ${source.warnings.join(' · ')}`);
+      }
+
+      if (source.readiness === false) {
+        warnings.push(`${source.title || source.packageId || manifestPath} is not marked ready.`);
+      }
+
+      return true;
+    });
+
+    if (!bundleTitle.trim()) {
+      errors.push('Enter a bundle title.');
+    }
+
+    if (selectedSources.length > 0 && validSelectedSources.length < 2) {
+      errors.push('Select at least 2 completed packages.');
+    }
+
+    return {
+      validSelectedSources,
+      warnings,
+      errors,
+      canGenerate: bundleTitle.trim().length > 0 && validSelectedSources.length >= 2 && errors.length === 0,
+    };
+  }, [bundleTitle, selectedSources]);
+
   function toggleSelected(manifestPath: string) {
     if (!manifestPath) return;
     setSelectedPaths((current) =>
@@ -228,6 +290,8 @@ export default function BundlesPage() {
       setGenerating(false);
     }
   }
+
+  const displayedBundleId = result?.bundleId || result?.plan?.bundleId || 'n/a';
 
   if (loading) {
     return (
@@ -489,7 +553,7 @@ export default function BundlesPage() {
             <button
               type="button"
               onClick={generateBundle}
-              disabled={generating || !bundleTitle.trim() || selectedPaths.length === 0}
+              disabled={generating || !selectionValidation.canGenerate}
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -497,8 +561,47 @@ export default function BundlesPage() {
             </button>
 
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              At least two member packages is recommended. Missing manifest or missing source files will fail generation.
+              Select at least 2 completed packages with manifest paths. Missing manifest or missing source files will fail generation.
             </p>
+
+            <div className="rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-950/40 dark:text-gray-300">
+              <div className="flex flex-wrap gap-2">
+                <StatusPill tone="neutral">Selected: {selectedSources.length}</StatusPill>
+                <StatusPill tone="good">Valid: {selectionValidation.validSelectedSources.length}</StatusPill>
+                <StatusPill tone={selectionValidation.errors.length > 0 ? 'bad' : 'neutral'}>
+                  Blocking: {selectionValidation.errors.length}
+                </StatusPill>
+                <StatusPill tone={selectionValidation.warnings.length > 0 ? 'warn' : 'neutral'}>
+                  Warnings: {selectionValidation.warnings.length}
+                </StatusPill>
+              </div>
+
+              {selectionValidation.errors.length > 0 && (
+                <div className="mt-2 space-y-1 text-red-700 dark:text-red-300">
+                  <p className="font-semibold">Fix before generating</p>
+                  {selectionValidation.errors.map((error, index) => (
+                    <p key={`${error}-${index}`}>{error}</p>
+                  ))}
+                </div>
+              )}
+
+              {!bundleTitle.trim() && (
+                <p className="mt-2 text-amber-700 dark:text-amber-300">Enter a bundle title to enable generation.</p>
+              )}
+
+              {selectionValidation.errors.length === 0 && selectionValidation.validSelectedSources.length < 2 && (
+                <p className="mt-2 text-amber-700 dark:text-amber-300">Select at least 2 completed packages.</p>
+              )}
+
+              {selectionValidation.warnings.length > 0 && selectionValidation.errors.length === 0 && (
+                <div className="mt-2 space-y-1 text-amber-700 dark:text-amber-300">
+                  <p className="font-semibold">Warnings</p>
+                  {selectionValidation.warnings.map((warning, index) => (
+                    <p key={`${warning}-${index}`}>{warning}</p>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {resultError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-200">
@@ -517,7 +620,7 @@ export default function BundlesPage() {
               </div>
 
               <div className="space-y-1 text-gray-700 dark:text-gray-300">
-                <p>Bundle ID: {result.bundleId || 'n/a'}</p>
+                <p>Bundle ID: {displayedBundleId}</p>
                 <p className="truncate" title={result.bundleFolderPath || undefined}>
                   Bundle Folder: {result.bundleFolderPath || 'n/a'}
                 </p>

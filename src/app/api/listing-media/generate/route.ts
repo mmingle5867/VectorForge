@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const batchId = getString(body.batchId);
     const itemId = getString(body.itemId);
     const templateIds = getStringArray(body.templateIds);
-    const marketplace = getString(body.marketplace);
+    const purpose = getString(body.purpose);
     const assetProfile = getString(body.assetProfile);
     const overwrite = Boolean(body.overwrite);
 
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       batchId,
       itemId,
       templateIds,
-      marketplace: marketplace || undefined,
+      purpose: purpose || undefined,
       assetProfile: assetProfile || undefined,
       overwrite,
       userId: user.id,
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
         generated: result.generated,
         skipped: result.skipped,
         templateIds,
-        marketplace: marketplace || undefined,
+        purpose: purpose || undefined,
         assetProfile: assetProfile || undefined,
         overwrite,
       });

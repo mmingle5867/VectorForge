@@ -2,8 +2,8 @@
   "id": "digital-files-included",
   "name": "Digital Files Included",
   "description": "Graphic showing included digital file formats.",
+  "purpose": "files-included",
   "assetProfile": "digital",
-  "marketplace": "etsy",
   "outputRole": "files-included",
   "slot": 2,
   "priority": 20,
@@ -11,7 +11,7 @@
   "height": 2000,
   "format": "jpg",
   "quality": 90,
-  "outputFilename": "{{PROFILE_ID}}-etsy-02-files-included.jpg",
+  "outputFilename": "{{PROFILE_ID}}-02-files-included.jpg",
   "layers": [
     {
       "type": "background",

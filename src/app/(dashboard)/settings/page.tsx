@@ -30,7 +30,7 @@ interface UserSettings extends TuningExportSettings {
   archivePath: string;
   templatePath: string;
   defaultSubstitutions: Record<string, string>;
-  // Marketplace Preview
+  // Listing Preview
   enableMarketplacePreview: boolean;
   enableColorTint: boolean;
   tintColor: string;
@@ -768,7 +768,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Configure default processing options, marketplace preview, and folder paths.
+            Configure default processing options, listing preview, and folder paths.
           </p>
         </div>
         <button
@@ -833,21 +833,21 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Marketplace Preview Card */}
+      {/* Listing Preview Card */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              🖼️ Marketplace Preview Image
+              🖼️ Listing Preview Image
             </h2>
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              Generate a composite preview for marketplace listings
+              Generate a composite preview for listing images
             </p>
           </div>
           <ToggleSwitch
             enabled={settings.enableMarketplacePreview}
             onChange={(v) => setSettings((s) => ({ ...s, enableMarketplacePreview: v }))}
-            label="Enable Marketplace Preview"
+            label="Enable Listing Preview"
           />
         </div>
 

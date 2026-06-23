@@ -145,7 +145,6 @@ async function fileEntry(
       width: null,
       height: null,
       assetProfile: 'digital',
-      marketplace: '',
       templateId: '',
       slot: null,
       ...metadata,
@@ -183,7 +182,6 @@ async function writeManifestWithSelfEntry(
       width: null,
       height: null,
       assetProfile: '',
-      marketplace: '',
       templateId: '',
       slot: null,
     };
@@ -226,11 +224,10 @@ export async function generatePackageManifest(input: ManifestInput) {
   const listingPreviewEntry = await fileEntry(
     input.outputDir,
     input.marketplacePreviewPath,
-    'marketplace-preview',
+    'listing-preview',
     null,
     {
-      marketplace: 'etsy',
-      templateId: 'marketplace-preview',
+      templateId: 'listing-preview',
       slot: 1,
     }
   );
@@ -327,21 +324,6 @@ export async function generatePackageManifest(input: ManifestInput) {
     supplementalFiles,
 
     listing: createEmptyListingMetadata(),
-
-    marketplaces: {
-      etsy: {
-        ready: false,
-        profileId,
-        maxImages: 20,
-        maxVideos: 2,
-        requiredImages: 1,
-        requiredDigitalFiles: 1,
-        validationErrors: [],
-        images: listingPreviewEntry ? [listingPreviewEntry.path] : [],
-        videos: [],
-        digitalFiles: downloadEntries.map((entry) => entry.path),
-      },
-    },
 
     rights: {
       ownership: '',

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { access, readFile } from 'fs/promises';
+import path from 'path';
 import { requireAuth } from '@/lib/auth';
-import { findManifestPath } from '@/lib/output-naming';
+import { findExistingNamedFilePath, findManifestPath, getPackageBaseName } from '@/lib/output-naming';
 import prisma from '@/lib/prisma';
 
 async function fileExists(filePath: string | null | undefined) {
@@ -22,6 +23,19 @@ function readObject(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+async function findThumbnailPath(outputFolderPath: string, baseNames: string[]) {
+  const preferredExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.svg'];
+
+  for (const extension of preferredExtensions) {
+    const match = await findExistingNamedFilePath(outputFolderPath, baseNames, extension);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
 }
 
 export async function GET() {
@@ -64,6 +78,10 @@ export async function GET() {
         const outputFolderPath = item.outputFolderPath!;
         const manifestPath = await findManifestPath(outputFolderPath);
         const manifestExists = await fileExists(manifestPath);
+        const packageBaseName = getPackageBaseName(outputFolderPath);
+        const candidateBaseNames = [packageBaseName, item.baseName];
+        const thumbnailPath = await findThumbnailPath(outputFolderPath, candidateBaseNames);
+        const thumbnailUrl = thumbnailPath ? `/api/packages/${item.id}/thumbnail` : null;
 
         if (!manifestPath || !manifestExists) {
           return {
@@ -82,6 +100,8 @@ export async function GET() {
             title: item.baseName,
             packageType: '',
             readiness: 'Missing manifest',
+            thumbnailPath: thumbnailPath ? path.relative(outputFolderPath, thumbnailPath).replace(/\\/g, '/') : null,
+            thumbnailUrl,
             warnings: ['Manifest file not found'],
             errors: ['Manifest file not found'],
           };
@@ -107,6 +127,8 @@ export async function GET() {
             title: item.baseName,
             packageType: '',
             readiness: 'Invalid manifest',
+            thumbnailPath: thumbnailPath ? path.relative(outputFolderPath, thumbnailPath).replace(/\\/g, '/') : null,
+            thumbnailUrl,
             warnings: [],
             errors: ['Manifest could not be parsed'],
           };
@@ -149,6 +171,8 @@ export async function GET() {
             typeof readinessSection.readyForListingTool === 'boolean'
               ? readinessSection.readyForListingTool
               : item.status,
+          thumbnailPath: thumbnailPath ? path.relative(outputFolderPath, thumbnailPath).replace(/\\/g, '/') : null,
+          thumbnailUrl,
           warnings,
           errors,
         };

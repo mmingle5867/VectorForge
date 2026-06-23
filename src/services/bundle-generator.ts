@@ -161,7 +161,6 @@ async function fileEntry(
     width: metadata?.width ?? null,
     height: metadata?.height ?? null,
     assetProfile: metadata?.assetProfile || '',
-    marketplace: metadata?.marketplace || '',
     templateId: metadata?.templateId || '',
     slot: metadata?.slot ?? null,
   };
@@ -212,7 +211,6 @@ function buildBundleFileMappings(manifestRoot: string, plan: BundlePlan, copiedF
       width: null,
       height: null,
       assetProfile: member.profileId,
-      marketplace: '',
       templateId: '',
       slot: null,
     });
@@ -228,7 +226,6 @@ function buildBundleFileMappings(manifestRoot: string, plan: BundlePlan, copiedF
       width: null,
       height: null,
       assetProfile: member.profileId,
-      marketplace: '',
       templateId: '',
       slot: null,
     });
@@ -255,7 +252,6 @@ function buildBundleFileMappings(manifestRoot: string, plan: BundlePlan, copiedF
         width: null,
         height: null,
         assetProfile: member.profileId,
-        marketplace: '',
         templateId: '',
         slot: null,
       });
@@ -625,7 +621,6 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
         package: [],
       },
       listing: createEmptyListingMetadata(),
-      marketplaces: {},
       bundle: {
         bundleId: input.plan.bundleId,
         title: input.plan.title,

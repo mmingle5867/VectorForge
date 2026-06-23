@@ -1,9 +1,5 @@
 import { ASSET_PROFILE_TYPES, type AssetProfileType } from '@/lib/package-structure';
-import {
-  MARKETPLACE_PROFILE_DEFINITIONS,
-  type MarketplaceImageFormat,
-  type MarketplaceProfileKey,
-} from '@/lib/marketplace-profiles';
+import { type MarketplaceImageFormat } from '@/lib/marketplace-profiles';
 
 export type CompositeLayerType =
   | 'background'
@@ -58,8 +54,8 @@ export interface CompositeTemplate extends CompositeTemplateOutput {
   id: string;
   name: string;
   description?: string;
+  purpose: string;
   assetProfile: AssetProfileType;
-  marketplace: MarketplaceProfileKey;
   outputRole: string;
   slot?: number;
   priority?: number;
@@ -150,8 +146,8 @@ export function validateCompositeTemplate(input: unknown): CompositeTemplateVali
     errors.push('assetProfile is unsupported');
   }
 
-  if (!MARKETPLACE_PROFILE_DEFINITIONS[input.marketplace as MarketplaceProfileKey]) {
-    errors.push('marketplace is unsupported');
+  if (!isNonEmptyString(input.purpose)) {
+    errors.push('purpose is required');
   }
 
   if (!isPositiveNumber(input.width)) {

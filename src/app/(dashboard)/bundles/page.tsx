@@ -29,6 +29,8 @@ type BundleSource = {
   title: string;
   packageType: string;
   readiness: boolean | string;
+  thumbnailPath: string | null;
+  thumbnailUrl: string | null;
   warnings: string[];
   errors: string[];
 };
@@ -74,6 +76,53 @@ function StatusPill({ children, tone }: { children: React.ReactNode; tone: 'good
   };
 
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>{children}</span>;
+}
+
+function hasTransparentThumbnail(imagePath: string | null) {
+  if (!imagePath) return false;
+  const extension = `.${imagePath.toLowerCase().split('.').pop() || ''}`;
+  return ['.png', '.svg', '.webp'].includes(extension);
+}
+
+function PackageThumbnail({
+  src,
+  path: imagePath,
+  alt,
+  selected,
+}: {
+  src: string | null;
+  path: string | null;
+  alt: string;
+  selected?: boolean;
+}) {
+  const transparent = hasTransparentThumbnail(imagePath);
+  const backgroundClass = transparent
+    ? 'bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.16)_1px,transparent_0)] bg-[size:10px_10px] bg-[#2b2b2b]'
+    : 'bg-gray-100 dark:bg-gray-900';
+
+  const content = src ? (
+    <img src={src} alt={alt} className="h-full w-full object-contain" />
+  ) : (
+    <div className="flex h-full items-center justify-center text-xs text-gray-500 dark:text-gray-400">No thumbnail</div>
+  );
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-lg border text-left transition ${
+        selected
+          ? 'border-blue-500 ring-2 ring-blue-500/30 dark:border-blue-400'
+          : 'border-gray-200 hover:border-blue-300 dark:border-gray-700'
+      } ${backgroundClass}`}
+      title={alt}
+    >
+      <div className="relative h-40 w-full">{content}</div>
+      {selected && (
+        <div className="absolute right-2 top-2 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
+          Selected
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function BundlesPage() {
@@ -324,7 +373,7 @@ export default function BundlesPage() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2fr)]">
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="space-y-3">
             <div>
@@ -473,11 +522,11 @@ export default function BundlesPage() {
 
         <aside className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Completed Packages</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Click a row to add it to the bundle in selection order.
+                  Click a thumbnail to select or deselect a package.
                 </p>
               </div>
               <input
@@ -488,64 +537,89 @@ export default function BundlesPage() {
               />
             </div>
 
-            <div className="max-h-[420px] overflow-auto rounded-lg border border-gray-200 dark:border-gray-700">
-              <table className="w-full divide-y divide-gray-200 text-left text-xs dark:divide-gray-700">
-                <thead className="sticky top-0 bg-gray-50 dark:bg-gray-900">
-                  <tr>
-                    <th className="px-3 py-2">Use</th>
-                    <th className="px-3 py-2">Package</th>
-                    <th className="px-3 py-2">IDs</th>
-                    <th className="px-3 py-2">Folder</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredSources.map((source) => {
-                  const checked = Boolean(source.manifestPath && selectedPaths.includes(source.manifestPath));
-                  return (
-                    <tr
-                        key={source.manifestPath || `${source.itemId}`}
-                        className={checked ? 'bg-blue-50/60 dark:bg-blue-950/20' : 'bg-white dark:bg-gray-800'}
-                      >
-                        <td className="px-3 py-2 align-top">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => source.manifestPath && toggleSelected(source.manifestPath)}
-                            disabled={!source.manifestPath || source.packageType === 'bundle-package'}
-                            title={source.packageType === 'bundle-package' ? 'Bundle packages cannot be used as members' : 'Select package'}
-                          />
-                        </td>
-                        <td className="px-3 py-2 align-top">
-                          <div className="space-y-1">
-                            <p className="font-medium text-gray-900 dark:text-white">{source.title || source.baseName}</p>
-                            <p className="text-gray-500 dark:text-gray-400">{source.batchName || source.batchId}</p>
-                            {source.packageType === 'bundle-package' && (
-                              <StatusPill tone="bad">Bundle</StatusPill>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 align-top text-gray-600 dark:text-gray-300">
-                          <div className="space-y-1">
-                            <p>Pkg: {source.packageId || 'n/a'}</p>
-                            <p>Art: {source.artworkId || 'n/a'}</p>
-                            <p>Prof: {source.profileId || 'n/a'}</p>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 align-top">
-                          <p className="truncate text-gray-600 dark:text-gray-300" title={source.outputFolderPath || undefined}>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredSources.map((source) => {
+                const checked = Boolean(source.manifestPath && selectedPaths.includes(source.manifestPath));
+                const selectedOrder = source.manifestPath ? selectedPaths.indexOf(source.manifestPath) + 1 : 0;
+                const statusTone = source.packageType === 'bundle-package'
+                  ? 'bad'
+                  : source.readiness === true
+                    ? 'good'
+                    : source.readiness === false
+                      ? 'warn'
+                      : 'neutral';
+
+                return (
+                  <button
+                    key={source.manifestPath || `${source.itemId}`}
+                    type="button"
+                    onClick={() => source.manifestPath && toggleSelected(source.manifestPath)}
+                    className={`group flex flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 dark:bg-gray-900 ${
+                      checked
+                        ? 'border-blue-500 ring-2 ring-blue-500/30 dark:border-blue-400'
+                        : 'border-gray-200 dark:border-gray-700'
+                    }`}
+                    aria-pressed={checked}
+                  >
+                    <div className="relative">
+                      <PackageThumbnail
+                        src={source.thumbnailUrl}
+                        path={source.thumbnailPath}
+                        alt={source.title || source.baseName}
+                        selected={checked}
+                      />
+                      {checked && (
+                        <div className="absolute left-2 top-2 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow">
+                          Selected {selectedOrder}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col gap-2 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                          {source.title || source.baseName}
+                        </p>
+                        <StatusPill tone={statusTone as 'good' | 'warn' | 'bad' | 'neutral'}>
+                          {source.packageType === 'bundle-package'
+                            ? 'Bundle'
+                            : source.readiness === true
+                              ? 'Ready'
+                              : source.readiness === false
+                                ? 'Not ready'
+                                : 'Manual'}
+                        </StatusPill>
+                      </div>
+                      <p className="truncate text-xs text-gray-500 dark:text-gray-400">{source.batchName || source.batchId}</p>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white">Pkg</div>
+                          <div className="truncate">{source.packageId || 'n/a'}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white">Art</div>
+                          <div className="truncate">{source.artworkId || 'n/a'}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white">Prof</div>
+                          <div className="truncate">{source.profileId || 'n/a'}</div>
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-white">Output</div>
+                          <div className="truncate" title={source.outputFolderPath || undefined}>
                             {source.outputFolderPath || 'n/a'}
-                          </p>
-                          {source.readiness === true && <StatusPill tone="good">Ready</StatusPill>}
-                          {source.readiness === false && <StatusPill tone="warn">Not ready</StatusPill>}
-                          {typeof source.readiness === 'string' && (
-                            <StatusPill tone="neutral">{source.readiness}</StatusPill>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          </div>
+                        </div>
+                      </div>
+                      {source.warnings.length > 0 && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300">Warning: {source.warnings.join(' · ')}</p>
+                      )}
+                      {source.errors.length > 0 && (
+                        <p className="text-[11px] text-red-700 dark:text-red-300">Error: {source.errors.join(' · ')}</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

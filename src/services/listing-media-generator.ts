@@ -19,7 +19,7 @@ export type ListingMediaGeneratorInput = {
   batchId: string;
   itemId: string;
   templateIds?: string[];
-  marketplace?: string;
+  purpose?: string;
   assetProfile?: string;
   overwrite?: boolean;
   userId?: string;
@@ -88,8 +88,8 @@ function getExtendedPath(settingsJson: Record<string, unknown>, key: string, fal
 
 function sortTemplates(templates: CompositeTemplate[]) {
   return [...templates].sort((a, b) => {
-    const marketplaceCompare = a.marketplace.localeCompare(b.marketplace);
-    if (marketplaceCompare !== 0) return marketplaceCompare;
+    const purposeCompare = a.purpose.localeCompare(b.purpose);
+    if (purposeCompare !== 0) return purposeCompare;
 
     const slotA = Number.isFinite(a.slot) ? (a.slot as number) : Number.MAX_SAFE_INTEGER;
     const slotB = Number.isFinite(b.slot) ? (b.slot as number) : Number.MAX_SAFE_INTEGER;
@@ -181,24 +181,24 @@ function resolveTemplateSelection(
     return sortTemplates(selected);
   }
 
-  const marketplace = readString(input.marketplace);
+  const purpose = readString(input.purpose);
   const assetProfile = readString(input.assetProfile);
 
-  if (!marketplace && !assetProfile) {
-    errors.push('Select templateIds, marketplace, or assetProfile before generating listing media');
+  if (!purpose && !assetProfile) {
+    errors.push('Select templateIds, purpose, or assetProfile before generating listing media');
     return [];
   }
 
   const selected = templates.filter((template) => {
-    if (marketplace && template.marketplace !== marketplace) return false;
+    if (purpose && template.purpose !== purpose) return false;
     if (assetProfile && template.assetProfile !== assetProfile) return false;
     return true;
   });
 
   if (selected.length === 0) {
     errors.push(
-      marketplace
-        ? `No composite templates found for marketplace: ${marketplace}`
+      purpose
+        ? `No composite templates found for purpose: ${purpose}`
         : `No composite templates found for asset profile: ${assetProfile}`
     );
   }
@@ -224,7 +224,7 @@ async function inspectExistingRenderedFile(
     width: metadata?.width || 0,
     height: metadata?.height || 0,
     assetProfile: '',
-    marketplace: '',
+    purpose: '',
     templateId: '',
     slot: null,
   };
@@ -240,7 +240,7 @@ function buildSubstitutions(context: LoadedItemContext, template: CompositeTempl
     PRODUCT_NAME: packageTitle,
     ARTWORK_TITLE: packageTitle,
     PROFILE_TYPE: template.assetProfile,
-    MARKETPLACE: template.marketplace,
+    TEMPLATE_PURPOSE: template.purpose,
     TEMPLATE_ID: template.id,
     CURRENT_YEAR: String(new Date().getFullYear()),
     CURRENT_DATE: new Date().toISOString().slice(0, 10),
@@ -273,7 +273,7 @@ async function renderTemplateIfNeeded(
             ...existingMetadata,
             role: template.outputRole || existingMetadata.role,
             assetProfile: template.assetProfile,
-            marketplace: template.marketplace,
+            purpose: template.purpose,
             templateId: template.id,
             slot: template.slot ?? null,
           }
@@ -284,7 +284,7 @@ async function renderTemplateIfNeeded(
             width: template.width,
             height: template.height,
             assetProfile: template.assetProfile,
-            marketplace: template.marketplace,
+            purpose: template.purpose,
             templateId: template.id,
             slot: template.slot ?? null,
           },

@@ -57,7 +57,7 @@ export default async function HomePage() {
           </h1>
           <p className="mt-6 text-lg leading-8 text-gray-600">
             Upload raster images, automatically convert to professional vector bundles
-            (SVG, AI, DXF, EPS), and generate marketplace-ready ZIP packages for
+            (SVG, AI, DXF, EPS), and generate listing-ready ZIP packages for
             Etsy, eBay, and more.
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
@@ -86,7 +86,7 @@ export default async function HomePage() {
             </div>
             <div className="rounded-lg border border-gray-200 p-6">
               <div className="mb-3 text-3xl">📦</div>
-              <h3 className="font-semibold text-gray-900">Marketplace Ready</h3>
+              <h3 className="font-semibold text-gray-900">Listing Ready</h3>
               <p className="mt-2 text-sm text-gray-600">
                 Auto-generated ZIP bundles with metadata, SKUs, and all formats included.
               </p>

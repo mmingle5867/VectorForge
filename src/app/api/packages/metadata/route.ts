@@ -24,7 +24,6 @@ function isPackageManifest(value: unknown): value is PackageManifestV2 {
       (value as PackageManifestV2).schemaVersion === '2.0' &&
       (value as PackageManifestV2).package &&
       (value as PackageManifestV2).files &&
-      (value as PackageManifestV2).marketplaces &&
       (value as PackageManifestV2).listing
   );
 }

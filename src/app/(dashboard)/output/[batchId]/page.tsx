@@ -57,7 +57,7 @@ interface OutputCompositeTemplateOption {
   name: string;
   description: string;
   assetProfile: string;
-  marketplace: string;
+  purpose: string;
   outputRole: string;
   slot: number | null;
   priority?: number | null;
@@ -80,7 +80,7 @@ interface OutputListingMediaGeneratedItem {
     width?: number;
     height?: number;
     assetProfile: string;
-    marketplace: string;
+    purpose: string;
     templateId: string;
     slot: number | null;
   };
@@ -263,7 +263,7 @@ function ListingMediaSection({
   item: OutputItem;
   templates: OutputCompositeTemplateOption[];
 }) {
-  const [marketplaceFilter, setMarketplaceFilter] = useState('');
+  const [purposeFilter, setPurposeFilter] = useState('');
   const [assetProfileFilter, setAssetProfileFilter] = useState('');
   const [overwrite, setOverwrite] = useState(false);
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
@@ -274,14 +274,14 @@ function ListingMediaSection({
 
   const filteredTemplates = useMemo(() => {
     return templates.filter((template) => {
-      if (marketplaceFilter && template.marketplace !== marketplaceFilter) return false;
+      if (purposeFilter && template.purpose !== purposeFilter) return false;
       if (assetProfileFilter && template.assetProfile !== assetProfileFilter) return false;
       return true;
     });
-  }, [templates, marketplaceFilter, assetProfileFilter]);
+  }, [templates, purposeFilter, assetProfileFilter]);
 
-  const marketplaceOptions = useMemo(
-    () => Array.from(new Set(templates.map((template) => template.marketplace).filter(Boolean))).sort(),
+  const purposeOptions = useMemo(
+    () => Array.from(new Set(templates.map((template) => template.purpose).filter(Boolean))).sort(),
     [templates]
   );
   const assetProfileOptions = useMemo(
@@ -343,18 +343,18 @@ function ListingMediaSection({
     }
   };
 
-  const generate = async (mode: 'selected' | 'marketplace') => {
+  const generate = async (mode: 'selected' | 'filtered') => {
     const templateIds = mode === 'selected' ? selectedTemplateIds : [];
-    const marketplace = mode === 'marketplace' ? marketplaceFilter : '';
-    const assetProfile = mode === 'marketplace' ? assetProfileFilter : '';
+    const purpose = mode === 'filtered' ? purposeFilter : '';
+    const assetProfile = mode === 'filtered' ? assetProfileFilter : '';
 
     if (mode === 'selected' && templateIds.length === 0) {
       setError('Select at least one template before generating listing media.');
       return;
     }
 
-    if (mode === 'marketplace' && !marketplace && !assetProfile) {
-      setError('Choose a marketplace or asset profile filter before generating a set.');
+    if (mode === 'filtered' && !purpose && !assetProfile) {
+      setError('Choose a purpose or asset profile filter before generating a set.');
       return;
     }
 
@@ -371,7 +371,7 @@ function ListingMediaSection({
           batchId,
           itemId: item.id,
           templateIds,
-          marketplace: marketplace || undefined,
+          purpose: purpose || undefined,
           assetProfile: assetProfile || undefined,
           overwrite,
         }),
@@ -442,16 +442,16 @@ function ListingMediaSection({
 
       <div className="mt-3 grid gap-2 md:grid-cols-3">
         <label className="space-y-1 text-[11px] font-medium text-gray-700 dark:text-gray-300">
-          Marketplace
+          Template Purpose
           <select
-            value={marketplaceFilter}
-            onChange={(event) => setMarketplaceFilter(event.target.value)}
+            value={purposeFilter}
+            onChange={(event) => setPurposeFilter(event.target.value)}
             className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
           >
-            <option value="">All marketplaces</option>
-            {marketplaceOptions.map((marketplace) => (
-              <option key={marketplace} value={marketplace}>
-                {marketplace}
+            <option value="">All purposes</option>
+            {purposeOptions.map((purpose) => (
+              <option key={purpose} value={purpose}>
+                {purpose}
               </option>
             ))}
           </select>
@@ -506,11 +506,11 @@ function ListingMediaSection({
         </button>
         <button
           type="button"
-          onClick={() => generate('marketplace')}
-          disabled={loading || (!marketplaceFilter && !assetProfileFilter)}
+          onClick={() => generate('filtered')}
+          disabled={loading || (!purposeFilter && !assetProfileFilter)}
           className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          Generate Marketplace Set
+          Generate Filtered Set
         </button>
       </div>
 
@@ -530,7 +530,7 @@ function ListingMediaSection({
                 <th className="px-2 py-1.5">Use</th>
                 <th className="px-2 py-1.5">Template</th>
                 <th className="px-2 py-1.5">Profile</th>
-                <th className="px-2 py-1.5">Market</th>
+                <th className="px-2 py-1.5">Purpose</th>
                 <th className="px-2 py-1.5">Slot</th>
                 <th className="px-2 py-1.5">Format</th>
               </tr>
@@ -557,7 +557,7 @@ function ListingMediaSection({
                       </div>
                     </td>
                     <td className="px-2 py-1.5 align-top text-gray-700 dark:text-gray-300">{template.assetProfile}</td>
-                    <td className="px-2 py-1.5 align-top text-gray-700 dark:text-gray-300">{template.marketplace}</td>
+                    <td className="px-2 py-1.5 align-top text-gray-700 dark:text-gray-300">{template.purpose}</td>
                     <td className="px-2 py-1.5 align-top text-gray-700 dark:text-gray-300">{template.slot ?? 'n/a'}</td>
                     <td className="px-2 py-1.5 align-top text-gray-700 dark:text-gray-300">{template.format || 'n/a'}</td>
                   </tr>
@@ -570,7 +570,7 @@ function ListingMediaSection({
 
       <div className="mt-3 grid gap-2 rounded-md border border-gray-200 bg-white p-3 text-[11px] text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 sm:grid-cols-3">
         <div><span className="font-medium">Selected:</span> {selectedTemplateIds.length}</div>
-        <div><span className="font-medium">Marketplace:</span> {marketplaceFilter || 'all'}</div>
+        <div><span className="font-medium">Purpose:</span> {purposeFilter || 'all'}</div>
         <div><span className="font-medium">Asset Profile:</span> {assetProfileFilter || 'all'}</div>
       </div>
 
@@ -637,7 +637,7 @@ function ListingMediaSection({
                       <div className="break-all text-green-800 dark:text-green-100">{entry.outputPath}</div>
                       <div className="grid grid-cols-2 gap-1 text-green-800 dark:text-green-100">
                         <div><span className="font-medium">Role:</span> {entry.metadata.role}</div>
-                        <div><span className="font-medium">Market:</span> {entry.metadata.marketplace}</div>
+                        <div><span className="font-medium">Purpose:</span> {entry.metadata.purpose}</div>
                         <div><span className="font-medium">Profile:</span> {entry.metadata.assetProfile}</div>
                         <div><span className="font-medium">Slot:</span> {entry.metadata.slot ?? 'n/a'}</div>
                         <div><span className="font-medium">Format:</span> {entry.metadata.format}</div>

@@ -2,8 +2,8 @@
   "id": "digital-main-mockup",
   "name": "Digital Main Mockup",
   "description": "Primary square mockup for a digital download listing.",
+  "purpose": "main-preview",
   "assetProfile": "digital",
-  "marketplace": "etsy",
   "outputRole": "main-image",
   "slot": 1,
   "priority": 10,
@@ -11,7 +11,7 @@
   "height": 2000,
   "format": "jpg",
   "quality": 90,
-  "outputFilename": "{{PROFILE_ID}}-etsy-01-main.jpg",
+  "outputFilename": "{{PROFILE_ID}}-01-main.jpg",
   "layers": [
     {
       "type": "background",

@@ -5,7 +5,6 @@ import type {
   ListingMediaSkippedItem,
 } from '@/services/listing-media-generator';
 import { findManifestPath } from '@/lib/output-naming';
-import { getMarketplaceProfileDefinition, type MarketplaceProfileKey } from '@/lib/marketplace-profiles';
 import type {
   PackageFileEntry,
   PackageManifestV2,
@@ -19,7 +18,7 @@ type ListingMediaManifestUpdateInput = {
   generated: ListingMediaGeneratedItem[];
   skipped: ListingMediaSkippedItem[];
   templateIds: string[];
-  marketplace?: string;
+  purpose?: string;
   assetProfile?: string;
   overwrite: boolean;
 };
@@ -35,10 +34,6 @@ function normalizeRelativePath(relativePath: string) {
   return relativePath.split(path.sep).join('/');
 }
 
-function readString(value: unknown) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
 function pathExists(filePath: string) {
   return fs.access(filePath).then(() => true).catch(() => false);
 }
@@ -49,13 +44,12 @@ function isPackageManifest(value: unknown): value is PackageManifestV2 {
       typeof value === 'object' &&
       (value as PackageManifestV2).schemaVersion === '2.0' &&
       (value as PackageManifestV2).package &&
-      (value as PackageManifestV2).files &&
-      (value as PackageManifestV2).marketplaces
+      (value as PackageManifestV2).files
   );
 }
 
 function fileEntryKey(entry: Pick<PackageFileEntry, 'path' | 'templateId'>) {
-  return `${readString(entry.templateId)}::${readString(entry.path)}`;
+  return `${(entry.templateId || '').trim()}::${(entry.path || '').trim()}`;
 }
 
 function upsertFileEntries(
@@ -70,16 +64,6 @@ function upsertFileEntries(
       merged[index] = entry;
     } else {
       merged.push(entry);
-    }
-  }
-  return merged;
-}
-
-function upsertStringValues(existing: string[] | undefined, values: string[]) {
-  const merged = Array.isArray(existing) ? [...existing] : [];
-  for (const value of values) {
-    if (!merged.includes(value)) {
-      merged.push(value);
     }
   }
   return merged;
@@ -110,7 +94,6 @@ function buildListingImageEntry(
     width: metadata.width || null,
     height: metadata.height || null,
     assetProfile: metadata.assetProfile || '',
-    marketplace: metadata.marketplace || '',
     templateId: metadata.templateId || '',
     slot: metadata.slot ?? null,
     sha256: '',
@@ -129,21 +112,13 @@ function appendProcessingHistory(
     timestamp: new Date().toISOString(),
     settings: {
       templateIds: input.templateIds,
-      marketplace: input.marketplace || '',
+      purpose: input.purpose || '',
       assetProfile: input.assetProfile || '',
       overwrite: input.overwrite,
     },
   };
 
   return [...(Array.isArray(existing) ? existing : []), nextEntry];
-}
-
-function getMarketplaceEntry(manifest: PackageManifestV2, marketplace: string) {
-  return manifest.marketplaces[marketplace] || null;
-}
-
-function resolveMarketplaceProfile(marketplace: string) {
-  return getMarketplaceProfileDefinition(marketplace as MarketplaceProfileKey);
 }
 
 async function buildManifestFileEntries(
@@ -224,7 +199,6 @@ export async function updateListingMediaManifest(
       ...manifest.files,
       listingImages: nextListingImages,
     },
-    marketplaces: { ...manifest.marketplaces },
     readiness: {
       ...manifest.readiness,
       imagesComplete: nextListingImages.length > 0,
@@ -235,47 +209,6 @@ export async function updateListingMediaManifest(
     },
     processingHistory: appendProcessingHistory(manifest.processingHistory, input),
   };
-
-  const marketplaceKeys = Array.from(
-    new Set(
-      nextListingImages
-        .map((entry) => readString(entry.marketplace) || readString(input.marketplace))
-        .filter(Boolean)
-    )
-  );
-
-  for (const marketplaceKey of marketplaceKeys) {
-    const existingEntry = getMarketplaceEntry(nextManifest, marketplaceKey);
-    const profile = resolveMarketplaceProfile(marketplaceKey);
-    const requiredImages = existingEntry?.requiredImages ?? 1;
-    const requiredDigitalFiles = existingEntry?.requiredDigitalFiles ?? 0;
-    const images = upsertStringValues(existingEntry?.images, nextListingImages
-      .filter((entry) => readString(entry.marketplace) === marketplaceKey || (!readString(entry.marketplace) && readString(input.marketplace) === marketplaceKey))
-      .map((entry) => entry.path));
-    const digitalFiles = existingEntry?.digitalFiles || [];
-    const validationErrors = [...(existingEntry?.validationErrors || [])];
-    if (images.length < requiredImages) {
-      validationErrors.push(`Missing required listing images for ${marketplaceKey}: ${requiredImages - images.length}`);
-    }
-    if (digitalFiles.length < requiredDigitalFiles) {
-      validationErrors.push(
-        `Missing required digital files for ${marketplaceKey}: ${requiredDigitalFiles - digitalFiles.length}`
-      );
-    }
-
-    nextManifest.marketplaces[marketplaceKey] = {
-      ready: images.length >= requiredImages && digitalFiles.length >= requiredDigitalFiles && validationErrors.length === 0,
-      profileId: existingEntry?.profileId || marketplaceKey,
-      maxImages: existingEntry?.maxImages ?? profile?.maxImages ?? 0,
-      maxVideos: existingEntry?.maxVideos ?? profile?.maxVideos ?? 0,
-      requiredImages,
-      requiredDigitalFiles,
-      validationErrors,
-      images,
-      videos: existingEntry?.videos || [],
-      digitalFiles,
-    };
-  }
 
   try {
     await fs.writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`, 'utf-8');

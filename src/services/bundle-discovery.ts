@@ -47,14 +47,18 @@ function getFileExtension(value: string) {
   return path.extname(value).toLowerCase();
 }
 
-function isPreferredThumbnailExtension(extension: string) {
-  return ['.png', '.jpg', '.jpeg', '.webp'].includes(extension);
-}
-
 function pickPreferredThumbnailPath(paths: Array<string | null | undefined>) {
   const normalizedPaths = paths.filter((value): value is string => Boolean(value)).map(toBundleRootRelativePath);
-  const raster = normalizedPaths.find((value) => isPreferredThumbnailExtension(getFileExtension(value)));
-  return raster || normalizedPaths[0] || null;
+  const preferredOrder = ['.jpg', '.jpeg', '.png', '.webp', '.svg'];
+
+  for (const extension of preferredOrder) {
+    const match = normalizedPaths.find((value) => getFileExtension(value) === extension);
+    if (match) {
+      return match;
+    }
+  }
+
+  return normalizedPaths[0] || null;
 }
 
 function readString(value: unknown) {

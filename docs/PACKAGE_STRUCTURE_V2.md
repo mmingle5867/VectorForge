@@ -331,7 +331,7 @@ Purpose:
 
 - Store listing copy and product metadata once, in a way future listing software can consume.
 - Keep the data platform-neutral so it can be mapped to Etsy, Shopify, eBay, or future systems later.
-- Avoid hard-coding marketplace-specific fields into the package schema.
+- Avoid hard-coding marketplace-specific fields into the package schema or VectorForge UI.
 - Allow VectorForge and future Listing Software to edit the same generic metadata without changing the package identity model.
 
 Current V2 listing metadata fields:
@@ -359,8 +359,11 @@ Rules:
 - Existing manifests without `listing` should still be loadable by downstream tools.
 - Future listing software may enrich or map these fields to marketplace-specific payloads, but the manifest itself stays platform-neutral.
 - The manifest remains the source of truth for generic listing metadata.
-- Marketplace-specific metadata should live in downstream Listing Software, not in the package manifest.
+- Marketplace-specific metadata and slot assignment should live in downstream Listing Software, not in the VectorForge manifest.
 - VectorForge may edit these fields now, and Listing Software may edit the same fields later.
+- Generated listing/composite images belong in `files.listingImages` as generic package assets.
+- Marketplace-specific image slot ordering and upload rules should be assigned later by Listing Software.
+- New VectorForge manifests do not emit a `marketplaces` section by default.
 
 ## Asset Profile Principle
 
@@ -496,7 +499,7 @@ README and license files will use substitutions such as:
 {{CURRENT_YEAR}}
 ```
 
-The substitution system should support profile-specific and marketplace-specific output without hard-coding the final text in processing services.
+The substitution system should support profile-specific output without hard-coding the final text in processing services. Marketplace-specific output belongs in downstream listing software.
 
 ## Future Marketplace And Composite System
 
@@ -508,7 +511,7 @@ Composite images will be generated from:
 - optional text layers
 - output templates
 
-Composite templates should be profile-specific and marketplace-aware. Marketplace profiles should define slot counts, preferred sizes, accepted formats, and required image or video rules.
+Composite templates should be profile-specific and purpose-driven. Template definitions should describe their role, purpose, output format, and size without hard-coding marketplace-specific rules into VectorForge.
 
 ## Base Asset Library
 
@@ -617,7 +620,7 @@ ZIP guidance:
 
 ## Marketplace Profiles
 
-Marketplace profiles describe channel rules without hard-coding one marketplace into processing logic.
+Marketplace profiles describe channel rules without hard-coding one marketplace into processing logic. VectorForge should not use marketplace profiles for manifest writes or generic listing image metadata.
 
 Initial profile keys:
 

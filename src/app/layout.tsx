@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'VectorForge - Vector File Automation Tool',
   description:
-    'Bulk-upload raster images, automatically convert to professional vector bundles (SVG, AI, DXF, EPS), and generate marketplace-ready ZIP packages.',
+    'Bulk-upload raster images, automatically convert to professional vector bundles (SVG, AI, DXF, EPS), and generate listing-ready ZIP packages.',
 };
 
 export default function RootLayout({

@@ -29,7 +29,7 @@ export interface CompositeRenderMetadata {
   width: number;
   height: number;
   assetProfile: string;
-  marketplace: string;
+  purpose: string;
   templateId: string;
   slot: number | null;
 }
@@ -74,7 +74,6 @@ function buildTemplateValues(input: CompositeRenderInput): TemplateValues {
     SKU: '',
     PRODUCT_NAME: path.basename(input.packageRoot),
     PROFILE_TYPE: input.template.assetProfile,
-    MARKETPLACE: input.template.marketplace,
     TEMPLATE_ID: input.template.id,
     OUTPUT_ROLE: input.template.outputRole,
     CURRENT_YEAR: String(new Date().getFullYear()),
@@ -330,7 +329,7 @@ export async function renderCompositeTemplate(
       width: input.template.width,
       height: input.template.height,
       assetProfile: input.template.assetProfile,
-      marketplace: input.template.marketplace,
+      purpose: input.template.purpose,
       templateId: input.template.id,
       slot: input.template.slot || null,
     },

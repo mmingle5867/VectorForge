@@ -96,7 +96,7 @@ interface CompositeTemplateOption {
   name: string;
   description: string;
   assetProfile: string;
-  marketplace: string;
+  purpose: string;
   outputRole: string;
   slot: number | null;
   priority?: number | null;
@@ -144,7 +144,7 @@ interface CompositePreviewMetadata {
   width: number;
   height: number;
   assetProfile: string;
-  marketplace: string;
+  purpose: string;
   templateId: string;
   slot: number | null;
 }
@@ -492,7 +492,7 @@ export default function ReviewPage() {
   const [compositePreviewUrl, setCompositePreviewUrl] = useState<string | null>(null);
   const [compositeOutputPath, setCompositeOutputPath] = useState<string | null>(null);
   const [compositeMetadata, setCompositeMetadata] = useState<CompositePreviewMetadata | null>(null);
-  const [listingMediaMarketplaceFilter, setListingMediaMarketplaceFilter] = useState('');
+  const [listingMediaPurposeFilter, setListingMediaPurposeFilter] = useState('');
   const [listingMediaAssetProfileFilter, setListingMediaAssetProfileFilter] = useState('');
   const [listingMediaOverwrite, setListingMediaOverwrite] = useState(false);
   const [selectedListingTemplateIds, setSelectedListingTemplateIds] = useState<string[]>([]);
@@ -732,7 +732,7 @@ export default function ReviewPage() {
   const canCopyEditableVectorPath = canOpenEditableVector;
   const canReloadEditedVector = Boolean(tuneItem && hasSavedSvgFile(tuneItem, savedFiles));
   const listingMediaTemplates = compositeTemplates.filter((template) => {
-    if (listingMediaMarketplaceFilter && template.marketplace !== listingMediaMarketplaceFilter) {
+    if (listingMediaPurposeFilter && template.purpose !== listingMediaPurposeFilter) {
       return false;
     }
     if (listingMediaAssetProfileFilter && template.assetProfile !== listingMediaAssetProfileFilter) {
@@ -745,8 +745,8 @@ export default function ReviewPage() {
     .map((templateId) => compositeTemplates.find((template) => template.id === templateId))
     .filter((template): template is CompositeTemplateOption => Boolean(template));
 
-  const listingMediaMarketplaceOptions = Array.from(
-    new Set(compositeTemplates.map((template) => template.marketplace).filter(Boolean))
+  const listingMediaPurposeOptions = Array.from(
+    new Set(compositeTemplates.map((template) => template.purpose).filter(Boolean))
   ).sort();
   const listingMediaAssetProfileOptions = Array.from(
     new Set(compositeTemplates.map((template) => template.assetProfile).filter(Boolean))
@@ -832,24 +832,24 @@ export default function ReviewPage() {
   };
 
   const generateListingMedia = async (
-    mode: 'selected' | 'marketplace'
+    mode: 'selected' | 'filtered'
   ) => {
     if (!tuneItem) return;
 
     const templateIds =
       mode === 'selected' ? selectedListingTemplateIds : [];
-    const marketplace =
-      mode === 'marketplace' ? listingMediaMarketplaceFilter : '';
+    const purpose =
+      mode === 'filtered' ? listingMediaPurposeFilter : '';
     const assetProfile =
-      mode === 'marketplace' ? listingMediaAssetProfileFilter : '';
+      mode === 'filtered' ? listingMediaAssetProfileFilter : '';
 
     if (mode === 'selected' && templateIds.length === 0) {
       setListingMediaError('Select at least one template before generating listing media.');
       return;
     }
 
-    if (mode === 'marketplace' && !marketplace && !assetProfile) {
-      setListingMediaError('Choose a marketplace or asset profile filter before generating a set.');
+    if (mode === 'filtered' && !purpose && !assetProfile) {
+      setListingMediaError('Choose a purpose or asset profile filter before generating a set.');
       return;
     }
 
@@ -866,7 +866,7 @@ export default function ReviewPage() {
           batchId,
           itemId: tuneItem.id,
           templateIds,
-          marketplace: marketplace || undefined,
+          purpose: purpose || undefined,
           assetProfile: assetProfile || undefined,
           overwrite: listingMediaOverwrite,
         }),
@@ -2409,7 +2409,7 @@ export default function ReviewPage() {
                                   {(() => {
                                     const template = compositeTemplates.find((candidate) => candidate.id === selectedCompositeTemplateId);
                                     if (!template) return 'Template details unavailable.';
-                                    return `${template.assetProfile} / ${template.marketplace} / ${template.outputRole}${template.slot ? ` / slot ${template.slot}` : ''}`;
+                                    return `${template.assetProfile} / ${template.purpose} / ${template.outputRole}${template.slot ? ` / slot ${template.slot}` : ''}`;
                                   })()}
                                 </div>
                               )}
@@ -2508,16 +2508,16 @@ export default function ReviewPage() {
 
                               <div className="grid gap-2 md:grid-cols-3">
                                 <label className="space-y-1 text-[11px] font-medium text-gray-700">
-                                  Marketplace
+                                  Template Purpose
                                   <select
-                                    value={listingMediaMarketplaceFilter}
-                                    onChange={(event) => setListingMediaMarketplaceFilter(event.target.value)}
+                                    value={listingMediaPurposeFilter}
+                                    onChange={(event) => setListingMediaPurposeFilter(event.target.value)}
                                     className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                   >
-                                    <option value="">All marketplaces</option>
-                                    {listingMediaMarketplaceOptions.map((marketplace) => (
-                                      <option key={marketplace} value={marketplace}>
-                                        {marketplace}
+                                    <option value="">All purposes</option>
+                                    {listingMediaPurposeOptions.map((purpose) => (
+                                      <option key={purpose} value={purpose}>
+                                        {purpose}
                                       </option>
                                     ))}
                                   </select>
@@ -2566,11 +2566,11 @@ export default function ReviewPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => generateListingMedia('marketplace')}
-                                  disabled={listingMediaLoading || (!listingMediaMarketplaceFilter && !listingMediaAssetProfileFilter)}
+                                  onClick={() => generateListingMedia('filtered')}
+                                  disabled={listingMediaLoading || (!listingMediaPurposeFilter && !listingMediaAssetProfileFilter)}
                                   className="rounded-md bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
                                 >
-                                  Generate Marketplace Set
+                                  Generate Filtered Set
                                 </button>
                               </div>
 
@@ -2586,7 +2586,7 @@ export default function ReviewPage() {
                                         <th className="px-2 py-1.5">Use</th>
                                         <th className="px-2 py-1.5">Template</th>
                                         <th className="px-2 py-1.5">Profile</th>
-                                        <th className="px-2 py-1.5">Market</th>
+                                        <th className="px-2 py-1.5">Purpose</th>
                                         <th className="px-2 py-1.5">Slot</th>
                                         <th className="px-2 py-1.5">Format</th>
                                       </tr>
@@ -2616,7 +2616,7 @@ export default function ReviewPage() {
                                               </div>
                                             </td>
                                             <td className="px-2 py-1.5 align-top text-gray-700">{template.assetProfile}</td>
-                                            <td className="px-2 py-1.5 align-top text-gray-700">{template.marketplace}</td>
+                                            <td className="px-2 py-1.5 align-top text-gray-700">{template.purpose}</td>
                                             <td className="px-2 py-1.5 align-top text-gray-700">{template.slot ?? 'n/a'}</td>
                                             <td className="px-2 py-1.5 align-top text-gray-700">
                                               {template.format || 'n/a'}
@@ -2678,7 +2678,7 @@ export default function ReviewPage() {
                                           <div className="break-all text-green-800">{item.outputPath}</div>
                                           <div className="grid grid-cols-2 gap-1 text-green-800">
                                             <div><span className="font-medium">Role:</span> {item.metadata.role}</div>
-                                            <div><span className="font-medium">Market:</span> {item.metadata.marketplace}</div>
+                                            <div><span className="font-medium">Purpose:</span> {item.metadata.purpose}</div>
                                             <div><span className="font-medium">Profile:</span> {item.metadata.assetProfile}</div>
                                             <div><span className="font-medium">Slot:</span> {item.metadata.slot ?? 'n/a'}</div>
                                           </div>

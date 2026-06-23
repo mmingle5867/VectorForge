@@ -244,7 +244,7 @@ export interface PackageManifestV2 {
   };
   supplementalFiles?: SupplementalFileEntry[];
   listing: ListingMetadata;
-  marketplaces: Record<string, MarketplaceManifestEntry>;
+  marketplaces?: Record<string, MarketplaceManifestEntry>;
   bundle?: BundleManifestSection;
   members?: BundleMember[];
   bundleMembership?: BundleMembershipMarker[];

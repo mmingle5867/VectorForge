@@ -35,6 +35,14 @@ function normalizeRelativePath(value: string) {
   return value.replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
+function toBundleRootRelativePath(value: string) {
+  const normalized = normalizeRelativePath(value);
+  if (normalized.startsWith('../')) {
+    return normalized.replace(/^(\.\.\/)+/, '');
+  }
+  return normalized;
+}
+
 function readString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -111,7 +119,7 @@ function resolveBundleThumbnailPath(manifest: PackageManifestV2, manifestPath: s
     const includedFiles = Array.isArray(member.includedFiles) ? member.includedFiles : [];
     const firstFile = includedFiles.find((file) => readString(file.bundlePath));
     if (firstFile?.bundlePath) {
-      return normalizeRelativePath(firstFile.bundlePath);
+      return toBundleRootRelativePath(firstFile.bundlePath);
     }
   }
 
@@ -120,7 +128,7 @@ function resolveBundleThumbnailPath(manifest: PackageManifestV2, manifestPath: s
   if (firstArtwork?.path) {
     const relative = normalizeRelativePath(firstArtwork.path);
     const fromManifestRoot = path.resolve(path.dirname(manifestPath), relative);
-    return normalizeRelativePath(path.relative(resolveBundleRoot(manifestPath), fromManifestRoot));
+    return toBundleRootRelativePath(path.relative(resolveBundleRoot(manifestPath), fromManifestRoot));
   }
 
   return null;
@@ -163,7 +171,11 @@ async function resolveZipStatus(zipPath: string | null) {
 function buildMemberSummaries(manifest: PackageManifestV2) {
   return (Array.isArray(manifest.members) ? manifest.members : []).map((member) => ({
     ...member,
-    thumbnailPath: member.includedFiles?.find((file) => readString(file.bundlePath))?.bundlePath || null,
+    thumbnailPath: member.includedFiles?.find((file) => readString(file.bundlePath))?.bundlePath
+      ? toBundleRootRelativePath(
+          member.includedFiles.find((file) => readString(file.bundlePath))?.bundlePath || ''
+        )
+      : null,
     includedFiles: member.includedFiles || [],
   }));
 }

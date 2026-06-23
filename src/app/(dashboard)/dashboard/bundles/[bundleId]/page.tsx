@@ -69,6 +69,42 @@ function formatDateTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function hasTransparentThumbnail(imagePath: string | null) {
+  if (!imagePath) return false;
+  const extension = `.${imagePath.toLowerCase().split('.').pop() || ''}`;
+  return ['.png', '.svg', '.webp'].includes(extension);
+}
+
+function ThumbnailFrame({
+  bundleId,
+  path: imagePath,
+  alt,
+  className,
+}: {
+  bundleId: string;
+  path: string | null;
+  alt: string;
+  className?: string;
+}) {
+  const transparent = hasTransparentThumbnail(imagePath);
+  const backgroundClass = transparent
+    ? 'bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.16)_1px,transparent_0)] bg-[size:10px_10px] bg-[#2b2b2b]'
+    : 'bg-gray-100 dark:bg-gray-900';
+  const source = imagePath
+    ? `/api/bundles/${encodeURIComponent(bundleId)}/image?path=${encodeURIComponent(imagePath)}`
+    : '';
+
+  return imagePath ? (
+    <div className={`overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 ${backgroundClass}`}>
+      <img src={source} alt={alt} className={className} />
+    </div>
+  ) : (
+    <div className="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-100 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+      No thumbnail
+    </div>
+  );
+}
+
 export default function BundleDetailPage() {
   const params = useParams<{ bundleId: string }>();
   const [bundleId, setBundleId] = useState<string>('');
@@ -232,19 +268,12 @@ export default function BundleDetailPage() {
       {bundle && (
         <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
           <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900">
-              {bundle.thumbnailPath ? (
-                <img
-                  src={`/api/bundles/${encodeURIComponent(bundle.bundleId)}/image?path=${encodeURIComponent(bundle.thumbnailPath)}`}
-                  alt={bundle.title}
-                  className="h-56 w-full object-contain"
-                />
-              ) : (
-                <div className="flex h-56 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-                  No thumbnail
-                </div>
-              )}
-            </div>
+            <ThumbnailFrame
+              bundleId={bundle.bundleId}
+              path={bundle.thumbnailPath}
+              alt={bundle.title}
+              className="h-56 w-full object-contain"
+            />
 
             <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
               <div><span className="font-medium text-gray-900 dark:text-white">Bundle ID:</span> {bundle.bundleId}</div>
@@ -325,19 +354,12 @@ export default function BundleDetailPage() {
                 const previewPath = member.previewPath;
                 return (
                   <div key={`${member.sortOrder}-${member.packageId}`} className="grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40 lg:grid-cols-[160px,1fr]">
-                    <div className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-950">
-                      {previewPath ? (
-                        <img
-                          src={`/api/bundles/${encodeURIComponent(bundle.bundleId)}/image?path=${encodeURIComponent(previewPath)}`}
-                          alt={member.productTitle}
-                          className="h-40 w-full object-contain"
-                        />
-                      ) : (
-                        <div className="flex h-40 items-center justify-center text-xs text-gray-500 dark:text-gray-400">
-                          No thumbnail
-                        </div>
-                      )}
-                    </div>
+                    <ThumbnailFrame
+                      bundleId={bundle.bundleId}
+                      path={previewPath}
+                      alt={member.productTitle}
+                      className="h-40 w-full object-contain"
+                    />
 
                     <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
                       <div className="flex flex-wrap items-center gap-2">

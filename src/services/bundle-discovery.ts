@@ -43,6 +43,20 @@ function toBundleRootRelativePath(value: string) {
   return normalized;
 }
 
+function getFileExtension(value: string) {
+  return path.extname(value).toLowerCase();
+}
+
+function isPreferredThumbnailExtension(extension: string) {
+  return ['.png', '.jpg', '.jpeg', '.webp'].includes(extension);
+}
+
+function pickPreferredThumbnailPath(paths: Array<string | null | undefined>) {
+  const normalizedPaths = paths.filter((value): value is string => Boolean(value)).map(toBundleRootRelativePath);
+  const raster = normalizedPaths.find((value) => isPreferredThumbnailExtension(getFileExtension(value)));
+  return raster || normalizedPaths[0] || null;
+}
+
 function readString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -115,20 +129,34 @@ function resolveBundleRoot(manifestPath: string) {
 
 function resolveBundleThumbnailPath(manifest: PackageManifestV2, manifestPath: string) {
   const members = Array.isArray(manifest.members) ? manifest.members : [];
+  const memberFilePaths: string[] = [];
   for (const member of members) {
     const includedFiles = Array.isArray(member.includedFiles) ? member.includedFiles : [];
-    const firstFile = includedFiles.find((file) => readString(file.bundlePath));
-    if (firstFile?.bundlePath) {
-      return toBundleRootRelativePath(firstFile.bundlePath);
-    }
+    memberFilePaths.push(
+      ...includedFiles
+        .map((file) => readString(file.bundlePath))
+        .filter((value) => Boolean(value))
+    );
+  }
+
+  const memberThumbnail = pickPreferredThumbnailPath(memberFilePaths);
+  if (memberThumbnail) {
+    return memberThumbnail;
   }
 
   const artworkFiles = Array.isArray(manifest.files?.artwork) ? manifest.files.artwork : [];
-  const firstArtwork = artworkFiles.find((file) => readString(file.path));
-  if (firstArtwork?.path) {
-    const relative = normalizeRelativePath(firstArtwork.path);
-    const fromManifestRoot = path.resolve(path.dirname(manifestPath), relative);
-    return toBundleRootRelativePath(path.relative(resolveBundleRoot(manifestPath), fromManifestRoot));
+  const artworkPaths = artworkFiles
+    .map((file) => readString(file.path))
+    .filter((value) => Boolean(value))
+    .map((relative) => {
+      const normalized = normalizeRelativePath(relative);
+      const fromManifestRoot = path.resolve(path.dirname(manifestPath), normalized);
+      return toBundleRootRelativePath(path.relative(resolveBundleRoot(manifestPath), fromManifestRoot));
+    });
+
+  const artworkThumbnail = pickPreferredThumbnailPath(artworkPaths);
+  if (artworkThumbnail) {
+    return artworkThumbnail;
   }
 
   return null;
@@ -171,11 +199,9 @@ async function resolveZipStatus(zipPath: string | null) {
 function buildMemberSummaries(manifest: PackageManifestV2) {
   return (Array.isArray(manifest.members) ? manifest.members : []).map((member) => ({
     ...member,
-    thumbnailPath: member.includedFiles?.find((file) => readString(file.bundlePath))?.bundlePath
-      ? toBundleRootRelativePath(
-          member.includedFiles.find((file) => readString(file.bundlePath))?.bundlePath || ''
-        )
-      : null,
+    thumbnailPath: pickPreferredThumbnailPath(
+      (member.includedFiles || []).map((file) => readString(file.bundlePath))
+    ),
     includedFiles: member.includedFiles || [],
   }));
 }

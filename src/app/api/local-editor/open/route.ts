@@ -92,6 +92,15 @@ function openFolder(folderPath: string) {
   launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [folderPath]);
 }
 
+function openFileWithDefaultApp(filePath: string) {
+  if (process.platform === 'win32') {
+    launchDetached('explorer.exe', [filePath]);
+    return;
+  }
+
+  launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [filePath]);
+}
+
 async function getManualEditorPath(extended: Record<string, unknown>) {
   const editorPath =
     typeof extended.manualEditorPath === 'string' ? extended.manualEditorPath.trim() : '';
@@ -196,8 +205,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    const editorPath = await getManualEditorPath(extended);
-
     const requestedTypes =
       action === 'editable'
         ? getSelectedFileTypes(extended.manualEditorFileTypes)
@@ -225,6 +232,15 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    if (action === 'file' && requestedTypes.length === 0) {
+      for (const filePath of requestedPaths) {
+        openFileWithDefaultApp(filePath);
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    const editorPath = await getManualEditorPath(extended);
 
     for (const filePath of requestedPaths) {
       if (!outputRoots.some((outputRoot) => isInsideDirectory(filePath, outputRoot))) {

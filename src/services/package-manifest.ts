@@ -283,9 +283,6 @@ export async function generatePackageManifest(input: ManifestInput) {
     externalRefs: {
       vectorForgeJobId: '',
       listingToolProductId: '',
-      etsyListingId: '',
-      shopifyProductId: '',
-      bigCommerceProductId: '',
     },
 
     artwork: {

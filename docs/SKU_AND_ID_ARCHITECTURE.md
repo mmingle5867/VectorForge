@@ -7,7 +7,7 @@ VectorForge intentionally separates four different identifiers:
 1. Artwork Identity
 2. Asset Profile Identity
 3. Product Variant SKU
-4. Marketplace Listing Identity
+4. Listing Identity
 
 Reason:
 A single artwork/design may be sold or produced in many different ways.
@@ -20,13 +20,12 @@ One design called "WilleyECoyote" may become:
 * a vinyl decal
 * a CNC file
 * a print product
-* several Etsy listings
-* several Shopify products
+* several listing records
 * several size/quantity variations
 
 These should not all share one overloaded SKU.
 
-The system needs stable identifiers that can grow over time without breaking old listings, folders, ZIP files, metadata, or marketplace records.
+The system needs stable identifiers that can grow over time without breaking old listings, folders, ZIP files, metadata, or listing records.
 
 ---
 
@@ -36,7 +35,7 @@ The system needs stable identifiers that can grow over time without breaking old
 
 The Artwork ID is the permanent master identity for the design/artwork itself.
 
-It represents the core creative work, not a specific product, size, material, color, marketplace, or listing.
+It represents the core creative work, not a specific product, size, material, color, channel, or listing.
 
 ### Format
 
@@ -145,7 +144,7 @@ Benefits:
 * Easy cross-reference.
 * Easier folder organization.
 * Easier customer support.
-* Easier marketplace tracking.
+* Easier listing tracking.
 * Easier future reporting.
 * Avoids unrelated independent number sequences.
 
@@ -230,23 +229,19 @@ CNC-000125-24X36
 * Product Variant SKUs may include color/material later if needed.
 * Physical-product SKUs should be readable enough to understand what the customer ordered.
 * Product Variant SKUs are more specific than Asset Profile IDs.
-* Product Variant SKUs may expand over time as more marketplace/product needs are discovered.
+* Product Variant SKUs may expand over time as more listing/product needs are discovered.
 
 ---
 
-## 5. Marketplace Listing Identity
+## 5. External Listing Identity
 
-Marketplace listing IDs are separate from SKUs.
+External listing IDs are separate from SKUs.
 
 A single Product Variant SKU may appear on:
 
-* Etsy
-* Shopify
-* BigCommerce
-* eBay
-* Other marketplaces
+* multiple listing channels
 
-A single marketplace listing may contain:
+A single external listing may contain:
 
 * multiple images
 * multiple videos
@@ -254,7 +249,7 @@ A single marketplace listing may contain:
 * multiple quantities
 * multiple prices
 
-Marketplace IDs should be stored separately from SKUs.
+External listing IDs should be stored separately from SKUs.
 
 Example:
 
@@ -270,11 +265,11 @@ LASR-000125-12X12-Q1
 LASR-000125-18X18-Q1
 LASR-000125-24X24-Q1
 
-Marketplace Listing:
-Etsy Listing ID: 1234567890
+External Listing:
+Listing ID: 1234567890
 ```
 
-The Etsy listing may contain all three variants.
+The listing may contain all three variants.
 
 ---
 
@@ -296,7 +291,7 @@ Rules:
 * `packageId` does not replace Artwork IDs.
 * `packageId` does not replace Asset Profile IDs.
 * `packageId` does not replace Product Variant SKUs.
-* `packageId` does not replace marketplace listing IDs.
+* `packageId` does not replace external listing IDs.
 * A dedicated package number sequence may be added later if multiple independent packages are issued for the same artwork/profile.
 
 Manifest V2 keeps `assetProfiles` for backward compatibility and introduces `productProfiles` as the preferred future field. During the transition, both fields may contain equivalent profile data.
@@ -350,7 +345,7 @@ bundleFolder
 includedFiles
 ```
 
-This lets future listing tools, marketplace upload tools, analytics, and accounting systems understand a bundle without requiring direct database access.
+This lets future listing tools, upload tools, analytics, and accounting systems understand a bundle without requiring direct database access.
 
 ---
 
@@ -499,7 +494,7 @@ Not yet changed:
 * ZIP names
 * SKU format
 * Metadata format
-* Marketplace listing system
+* Listing system
 * Asset Profile UI
 * Product Variant UI
 * Composite Template system
@@ -534,7 +529,7 @@ vinyl/
 cnc/
 sewing/
 print/
-marketplace/
+listing/
 metadata/
 ```
 
@@ -553,7 +548,7 @@ vinyl/
 cnc/
 sewing/
 print/
-marketplace/
+listing/
 metadata/
 ```
 
@@ -573,7 +568,7 @@ ART-000125_WilleyECoyote.jpg
 ART-000125_WilleyECoyote.zip
 ```
 
-Profile-specific or marketplace-specific files may later live inside profile folders.
+Profile-specific or channel-specific files may later live inside profile folders.
 
 ---
 
@@ -668,17 +663,14 @@ Future:
 * Create profile folders.
 * Configure profile-specific outputs.
 
-### Phase 5: Marketplace Profiles
+### Phase 5: Listing Profiles
 
 Future:
 
-* Etsy
-* Shopify
-* BigCommerce
-* eBay
+* channel-specific rules
 * Custom
 
-Each marketplace profile defines:
+Each listing profile defines:
 
 * image limits
 * video limits
@@ -694,15 +686,15 @@ Future:
 * Masks
 * Watermarks
 * Text overlays
-* Multiple marketplace images
+* Multiple listing images
 
-### Phase 7: Marketplace Listing Management
+### Phase 7: Listing Management
 
 Future:
 
 Track:
 
-* marketplace listing ID
+* external listing ID
 * channel
 * listing URL
 * variant SKUs
@@ -719,7 +711,7 @@ Do not break these rules:
 * Artwork IDs are never reused.
 * Asset Profile IDs remain tied to Artwork numeric sequence.
 * Product Variant SKUs may change/expand.
-* Marketplace IDs are separate from SKUs.
+* External listing IDs are separate from SKUs.
 * Folder numbering must not determine identity.
 * Filesystem names are not the source of truth.
 * Database identity is the source of truth.
@@ -844,7 +836,7 @@ Examples:
 * material guide
 * extra license addendum
 * thank-you note
-* marketplace-only promo image
+* listing-only promo image
 * internal notes
 
 Planned folder structure:
@@ -853,11 +845,11 @@ Planned folder structure:
 ART-000125_DadBorder/
   supplemental/
     customer/
-    marketplace/
+    listing/
     internal/
 ```
 
-Customer supplemental files may later be included in customer ZIPs. Marketplace supplemental files may later be used by listing tools. Internal supplemental files must stay out of customer ZIPs.
+Customer supplemental files may later be included in customer ZIPs. Listing supplemental files may later be used by listing tools. Internal supplemental files must stay out of customer ZIPs.
 
 ---
 
@@ -869,6 +861,6 @@ Asset Profile ID identifies how the design is being used or sold.
 
 Product Variant SKU identifies the exact customer-purchasable option.
 
-Marketplace Listing ID identifies the external marketplace record.
+External Listing ID identifies the external listing record.
 
 These should remain separate so VectorForge can grow from simple digital file creation into a full product/listing preparation system without corrupting old SKUs or losing traceability.

@@ -9,7 +9,7 @@ VTracer converts raster images (PNG, JPG, WebP, TIFF) into clean vector SVG file
 ### Balanced (Default)
 - Best for most use cases
 - Good balance between visual quality and file size
-- Recommended for marketplace listings
+- Recommended for listing images
 
 ### Maximum Quality
 - Highest fidelity to the original image

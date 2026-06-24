@@ -22,9 +22,6 @@ export interface PackageOwner {
 export interface ExternalRefs {
   vectorForgeJobId: string;
   listingToolProductId: string;
-  etsyListingId: string;
-  shopifyProductId: string;
-  bigCommerceProductId: string;
 }
 
 export interface RightsInfo {

@@ -1,6 +1,6 @@
 # VectorForge - Vector File Automation Tool
 
-A fast, production-ready tool for bulk-uploading raster images, automatically converting them to professional vector bundles (SVG, AI, DXF, EPS + previews), and generating marketplace-ready ZIP packages for Etsy, eBay, and more.
+A fast, production-ready tool for bulk-uploading raster images, automatically converting them to professional vector bundles (SVG, AI, DXF, EPS + previews), and generating listing-ready ZIP packages for external sales channels.
 
 ## Tech Stack
 
@@ -97,6 +97,11 @@ npm run worker:dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+On Windows, you can also use the desktop launcher:
+
+- [docs/LOCAL_STARTUP.md](docs/LOCAL_STARTUP.md)
+- `Start VectorForge.bat`
 
 ## Background Jobs (BullMQ + Redis)
 
@@ -205,7 +210,7 @@ Images below the threshold (default: 2000px width/height) are automatically upsc
 ### Vector Conversion (VTracer)
 VTracer is the primary and preferred raster-to-vector engine:
 - Produces clean, optimized SVG output
-- Best quality/speed balance for marketplace-ready vectors
+- Best quality/speed balance for listing-ready vectors
 - Configurable parameters (color mode, speckle filter, precision, etc.)
 - Additional formats (AI, DXF, EPS) generated from SVG
 
@@ -237,9 +242,9 @@ Server-Sent Events provide live updates during processing:
 - **Application log** (`./logs/vectorforge.log`): Server-side errors, events, queue status
 - **Per-batch log** (`processing-log.txt`): Detailed record of each item's processing (timestamp, filename, SKU, upscale info, conversion steps, warnings, status)
 
-### Marketplace Preview Image
+### Listing Preview Image
 
-Automatically generates a composite preview image for each converted vector, ready for marketplace listings (Etsy, eBay, Creative Market, etc.).
+Automatically generates a composite preview image for each converted vector, ready for listing images.
 
 **What it does:**
 - Composites the converted SVG (rendered as PNG) onto a configurable background image
@@ -249,7 +254,7 @@ Automatically generates a composite preview image for each converted vector, rea
 
 **How to configure:**
 1. Go to **Settings** in the dashboard
-2. Enable the **"Marketplace Preview"** toggle
+2. Enable the **"Listing Preview"** toggle
 3. Optionally configure the color tint (hex color + opacity)
 
 **Required base assets in `./base-assets/`:**
@@ -259,7 +264,7 @@ Automatically generates a composite preview image for each converted vector, rea
 | `preview-background.jpg` | Background image for the preview composite (recommended: 2000×2000px) |
 | `watermark.png` | Transparent PNG watermark overlay |
 
-If these files are missing when Marketplace Preview is enabled, the step will be skipped with a warning in the processing log.
+If these files are missing when Listing Preview is enabled, the step will be skipped with a warning in the processing log.
 
 ### CNC / Vinyl / Laser Cutter Mode
 
@@ -280,13 +285,13 @@ Switches VTracer to binary/monochrome tracing optimized for cutting machines (CN
 
 ---
 
-### Testing the Marketplace Preview
+### Testing the Listing Preview
 
-To test the Marketplace Preview feature end-to-end:
+To test the Listing Preview feature end-to-end:
 
 1. **Place a background image** — Save a `preview-background.jpg` (recommended 2000×2000px, JPEG) in the `./base-assets/` directory
 2. **Place a watermark** — Save a `watermark.png` (transparent PNG, e.g. your logo or "SAMPLE" text) in `./base-assets/`
-3. **Enable the feature** — Go to Settings → toggle "Marketplace Preview" on
+3. **Enable the feature** — Go to Settings → toggle "Listing Preview" on
 4. **Upload and convert** — Upload any raster image and start conversion
 5. **Check output** — In the output folder for the processed item, you'll find a `preview.jpg` composited with your background and watermark
 

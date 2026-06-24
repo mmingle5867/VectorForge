@@ -104,7 +104,7 @@ Finalization should:
 
 - Use the current saved SVG/PNG/JPG files.
 - Preserve manually edited PNG/JPG files.
-- Create or refresh marketplace preview/composites when configured.
+- Create or refresh listing preview/composites when configured.
 - Create the SKU file.
 - Create listing metadata.
 - Create the ZIP last.

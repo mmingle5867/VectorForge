@@ -68,7 +68,8 @@ Support:
 {{PHONE}}
 {{WEBSITE}}
 {{SUPPORT_URL}}
-{{ETSY_SHOP}}
+{{BRAND_NAME}}
+{{WEBSITE_URL}}
 
 Generated:
 {{CURRENT_DATE}}
@@ -169,8 +170,10 @@ export async function generatePackageDocuments(input: GeneratePackageDocumentsIn
   const productName = clean(input.productName);
   const userValues = normalizeUserTemplateVariables(settings.templateVariables);
   setKnownUserValue(userValues, 'COMPANY_NAME', settings.companyName);
+  setKnownUserValue(userValues, 'BRAND_NAME', settings.companyName);
   setKnownUserValue(userValues, 'CONTACT_NAME', settings.contactName);
   setKnownUserValue(userValues, 'WEBSITE', settings.website);
+  setKnownUserValue(userValues, 'WEBSITE_URL', settings.website);
   setKnownUserValue(userValues, 'EMAIL', settings.email);
   setKnownUserValue(userValues, 'PHONE', settings.phone);
   setKnownUserValue(userValues, 'SUPPORT_URL', settings.supportUrl);

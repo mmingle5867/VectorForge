@@ -596,9 +596,6 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
       externalRefs: {
         vectorForgeJobId: '',
         listingToolProductId: '',
-        etsyListingId: '',
-        shopifyProductId: '',
-        bigCommerceProductId: '',
       },
       artwork: {
         artworkId: '',

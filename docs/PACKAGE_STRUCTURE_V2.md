@@ -2,7 +2,7 @@
 
 ## Purpose
 
-VectorForge V2 packages need to support digital asset sales, laser products, vinyl products, CNC products, sewing or pattern products, print products, marketplace listing assets, customer download ZIPs, internal automation, and future listing software import.
+VectorForge V2 packages need to support digital asset sales, laser products, vinyl products, CNC products, sewing or pattern products, print products, listing assets, customer download ZIPs, internal automation, and future listing software import.
 
 The core principle is to organize by asset or product purpose, not only by file type.
 
@@ -20,11 +20,11 @@ ART-000125_WilleyECoyote/
   cnc/
   sewing/
   print/
-  marketplace/
+  listing/
   metadata/
 ```
 
-The database remains the source of truth for artwork identity, asset profiles, SKUs, marketplace listings, and issued numbers. Folder names are useful for humans, but they must not become the identity system.
+The database remains the source of truth for artwork identity, asset profiles, SKUs, listing records, and issued numbers. Folder names are useful for humans, but they must not become the identity system.
 
 ## _internal/
 
@@ -41,7 +41,7 @@ Contains:
 Rules:
 
 - Never include in customer download ZIPs.
-- Never upload directly to marketplaces as customer files.
+- Never upload listing-only files directly as customer files.
 - Listing software may read these files.
 - Manifest lives here in the future.
 
@@ -198,34 +198,33 @@ Contains:
 - mockups
 - size and color variants
 
-## marketplace/
+## listing/
 
-Purpose: Marketplace-level shared listing assets.
+Purpose: Shared listing assets used by downstream listing software.
 
 Suggested subfolders:
 
 ```text
-marketplace/etsy/
-marketplace/shopify/
-marketplace/bigcommerce/
-marketplace/ebay/
-marketplace/custom/
+listing/channel-a/
+listing/channel-b/
+listing/channel-c/
+listing/channel-d/
+listing/custom/
 ```
 
-Each marketplace folder may contain:
+Each listing folder may contain:
 
 - listing image exports
 - listing videos
-- platform-specific titles, descriptions, and tags
-- marketplace upload CSVs
+- listing-specific titles, descriptions, and tags
+- listing upload CSVs
 - listing export manifests
 
 Rules:
 
-- Marketplace files are for listing creation, not necessarily customer downloads.
-- Etsy may allow 20 images and 2 videos.
-- Other marketplaces may have different limits.
-- Marketplace profiles define slot counts and rules.
+- Listing files are for listing creation, not necessarily customer downloads.
+- Listing channels may allow different image/video counts.
+- Listing profile definitions determine slot counts and rules.
 
 ## metadata/
 
@@ -271,7 +270,7 @@ Internal package exports may include everything:
 
 - `artwork/`
 - profile folders
-- marketplace files
+- listing files
 - `metadata/`
 - `_internal/`
 
@@ -301,17 +300,17 @@ File path rules:
 - Distributable metadata must not contain absolute local paths.
 - Local debug paths may exist only in optional `localDebug` sections if needed.
 
-Manifest schema version `2.0` is intended to become the portable package interchange format for VectorForge, listing tools, marketplace upload tools, analytics, accounting, order systems, communication tools, and future APIs. It is additive: existing V1-compatible fields remain in place while new sections provide richer package identity, ownership, external references, rights, readiness, processing history, and extension data.
+Manifest schema version `2.0` is intended to become the portable package interchange format for VectorForge, listing tools, upload tools, analytics, accounting, order systems, communication tools, and future APIs. It is additive: existing V1-compatible fields remain in place while new sections provide richer package identity, ownership, external references, rights, readiness, processing history, and extension data.
 
 V2 manifest additions include:
 
 - `package`: deterministic package identity, package type, and package status.
 - `owner`: optional company, brand, and user references.
-- `externalRefs`: optional IDs from VectorForge, listing tools, and marketplaces.
+- `externalRefs`: optional neutral IDs from VectorForge and listing tools.
 - `rights`: ownership and license metadata.
 - `readiness`: package completeness flags for downstream automation.
 - `processingHistory`: append-only application steps and settings summaries.
-- `extensions`: tool-specific data for listing, analytics, accounting, and marketplace sync systems.
+- `extensions`: tool-specific data for listing, analytics, accounting, and sync systems.
 - `productProfiles`: preferred future profile field.
 
 Compatibility rules:
@@ -323,6 +322,34 @@ Compatibility rules:
 - A separate package numbering sequence is not required until VectorForge needs multiple independently issued packages for the same artwork/profile.
 - File entry checksums and fingerprints are reserved for future additions and may be empty until checksum generation is implemented.
 
+### externalRefs
+
+VectorForge uses neutral external references only.
+
+Current fields:
+
+- `vectorForgeJobId`
+- `listingToolProductId`
+
+Marketplace IDs belong in downstream Listing Software records or workspaces. A future Listing Software layer may maintain its own platform-specific structure, such as:
+
+```json
+{
+  "platformListings": {
+    "etsy": {
+      "listingId": "",
+      "shopId": "",
+      "status": "draft"
+    },
+    "shopify": {
+      "productId": "",
+      "variantId": "",
+      "status": "draft"
+    }
+  }
+}
+```
+
 ## Listing Metadata
 
 The manifest also includes a platform-neutral `listing` section for reusable product marketing data.
@@ -330,8 +357,8 @@ The manifest also includes a platform-neutral `listing` section for reusable pro
 Purpose:
 
 - Store listing copy and product metadata once, in a way future listing software can consume.
-- Keep the data platform-neutral so it can be mapped to Etsy, Shopify, eBay, or future systems later.
-- Avoid hard-coding marketplace-specific fields into the package schema or VectorForge UI.
+- Keep the data platform-neutral so it can be mapped to future listing systems later.
+- Avoid hard-coding channel-specific fields into the package schema or VectorForge UI.
 - Allow VectorForge and future Listing Software to edit the same generic metadata without changing the package identity model.
 
 Current V2 listing metadata fields:
@@ -357,13 +384,13 @@ Rules:
 
 - New manifests should emit the `listing` section even when all values are empty.
 - Existing manifests without `listing` should still be loadable by downstream tools.
-- Future listing software may enrich or map these fields to marketplace-specific payloads, but the manifest itself stays platform-neutral.
+- Future listing software may enrich or map these fields to channel-specific payloads, but the manifest itself stays platform-neutral.
 - The manifest remains the source of truth for generic listing metadata.
-- Marketplace-specific metadata and slot assignment should live in downstream Listing Software, not in the VectorForge manifest.
+- Channel-specific metadata and slot assignment should live in downstream Listing Software, not in the VectorForge manifest.
 - VectorForge may edit these fields now, and Listing Software may edit the same fields later.
 - Generated listing/composite images belong in `files.listingImages` as generic package assets.
-- Marketplace-specific image slot ordering and upload rules should be assigned later by Listing Software.
-- New VectorForge manifests do not emit a `marketplaces` section by default.
+- Channel-specific image slot ordering and upload rules should be assigned later by Listing Software.
+- New VectorForge manifests do not emit a `channels` section by default.
 
 ## Asset Profile Principle
 
@@ -499,9 +526,9 @@ README and license files will use substitutions such as:
 {{CURRENT_YEAR}}
 ```
 
-The substitution system should support profile-specific output without hard-coding the final text in processing services. Marketplace-specific output belongs in downstream listing software.
+The substitution system should support profile-specific output without hard-coding the final text in processing services. Channel-specific output belongs in downstream listing software.
 
-## Future Marketplace And Composite System
+## Future Listing And Composite System
 
 Composite images will be generated from:
 
@@ -511,7 +538,7 @@ Composite images will be generated from:
 - optional text layers
 - output templates
 
-Composite templates should be profile-specific and purpose-driven. Template definitions should describe their role, purpose, output format, and size without hard-coding marketplace-specific rules into VectorForge.
+Composite templates should be profile-specific and purpose-driven. Template definitions should describe their role, purpose, output format, and size without hard-coding channel-specific rules into VectorForge.
 
 ## Base Asset Library
 
@@ -549,7 +576,7 @@ Folders:
 - `templates/composites/`: JSON composite template definitions.
 - `templates/readme/`: future README template variants.
 - `templates/license/`: future license template variants.
-- `backgrounds/`: reusable marketplace or product mockup backgrounds.
+- `backgrounds/`: reusable listing or product mockup backgrounds.
 - `watermarks/`: reusable watermark images, including default and profile-specific marks.
 - `icons/`: reusable graphics for file type, usage, and listing information images.
 - `overlays/`: reusable frames, shadows, labels, and decorative layers.
@@ -584,7 +611,7 @@ Examples:
 - material guide
 - extra license addendum
 - thank-you note
-- marketplace-only promo image
+- listing-only promo image
 - internal notes
 
 Future package structure:
@@ -593,20 +620,20 @@ Future package structure:
 ART-000125_DadBorder/
   supplemental/
     customer/
-    marketplace/
+    listing/
     internal/
 
 BNDL-000001_FamilyBundle/
   supplemental/
     customer/
-    marketplace/
+    listing/
     internal/
 ```
 
 Rules:
 
 - `supplemental/customer/` may later be included in customer ZIPs.
-- `supplemental/marketplace/` may later be used by listing or media tools.
+- `supplemental/listing/` may later be used by listing or media tools.
 - `supplemental/internal/` must never be included in customer ZIPs.
 - Supplemental files belong to one package or bundle.
 - Base-assets remain the reusable source library and should not be treated as supplemental files.
@@ -615,24 +642,24 @@ ZIP guidance:
 
 - Customer ZIPs may include `supplemental/customer/` files when explicitly selected later.
 - Customer ZIPs must not include `supplemental/internal/`, `_internal/`, `manifest.json`, or processing logs.
-- Marketplace exports may later include `supplemental/marketplace/` files.
+- Listing exports may later include `supplemental/listing/` files.
 - Internal package exports may include all supplemental folders.
 
-## Marketplace Profiles
+## Listing Profiles
 
-Marketplace profiles describe channel rules without hard-coding one marketplace into processing logic. VectorForge should not use marketplace profiles for manifest writes or generic listing image metadata.
+Listing profiles describe channel rules without hard-coding one channel into processing logic. VectorForge should not use listing profiles for manifest writes or generic listing image metadata.
 
 Initial profile keys:
 
-- `etsy`
-- `shopify`
-- `bigcommerce`
-- `ebay`
+- `channel-a`
+- `channel-b`
+- `channel-c`
+- `channel-d`
 - `custom`
 
-Each marketplace profile defines:
+Each listing profile defines:
 
-- marketplace key
+- channel key
 - display label
 - maximum image count
 - maximum video count
@@ -643,7 +670,7 @@ Each marketplace profile defines:
 - main image rules
 - notes
 
-Current Etsy defaults:
+Current sample defaults:
 
 - max images: 20
 - max videos: 2
@@ -651,7 +678,7 @@ Current Etsy defaults:
 - allowed image formats: JPG and PNG
 - square preferred: true
 
-Other marketplace defaults are placeholders and should be editable later.
+Other channel defaults are placeholders and should be editable later.
 
 ## Composite Template Storage
 
@@ -675,7 +702,7 @@ Example template fields:
   "id": "digital-main-mockup",
   "name": "Digital Main Mockup",
   "assetProfile": "digital",
-  "marketplace": "etsy",
+  "purpose": "main-image",
   "outputRole": "main-image",
   "slot": 1,
   "priority": 10,
@@ -683,7 +710,7 @@ Example template fields:
   "height": 2000,
   "format": "jpg",
   "quality": 90,
-  "outputFilename": "{{PROFILE_ID}}-etsy-01-main.jpg",
+  "outputFilename": "{{PROFILE_ID}}-01-main.jpg",
   "layers": []
 }
 ```
@@ -715,28 +742,28 @@ sewing/listing-images/
 print/listing-images/
 ```
 
-Marketplace-specific export sets may later live under marketplace folders:
+Channel-specific export sets may later live under listing folders:
 
 ```text
-marketplace/etsy/
-marketplace/shopify/
-marketplace/bigcommerce/
-marketplace/ebay/
-marketplace/custom/
+listing/channel-a/
+listing/channel-b/
+listing/channel-c/
+listing/channel-d/
+listing/custom/
 ```
 
 Reason:
 
 - Most generated images describe an asset profile first.
-- Marketplace export folders are channel-specific packaging views.
-- Future listing software can import either profile-owned images or marketplace export sets.
+- Channel export folders are channel-specific packaging views.
+- Future listing software can import either profile-owned images or listing export sets.
 
 Rules:
 
 - Generated listing images may be regenerated.
 - Generated listing images should not overwrite manually edited base artwork files.
 - Templates should reference specific files and should not copy all of `base-assets`.
-- Manifest entries should eventually record marketplace key, asset profile, template ID, output role, slot, dimensions, and format.
+- Manifest entries should eventually record channel key, asset profile, template ID, output role, slot, dimensions, and format.
 
 ## Implementation Phases
 
@@ -757,7 +784,7 @@ Phase 6: Add asset profile support.
 
 Phase 7: Add README and template substitution generation.
 
-Phase 8: Add marketplace and composite image generation.
+Phase 8: Add listing and composite image generation.
 
 Path Management Phase 1C:
 
@@ -782,4 +809,4 @@ Path Management Phase 1C:
 
 ## Summary
 
-V2 package structure separates shared artwork, profile-specific deliverables, marketplace listing assets, metadata, and internal automation files. This keeps customer downloads clean while preserving enough package context for VectorForge, future listing software, and internal automation to understand what was generated and why.
+V2 package structure separates shared artwork, profile-specific deliverables, listing assets, metadata, and internal automation files. This keeps customer downloads clean while preserving enough package context for VectorForge, future listing software, and internal automation to understand what was generated and why.

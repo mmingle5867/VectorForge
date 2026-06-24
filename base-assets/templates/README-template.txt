@@ -25,7 +25,8 @@ Support:
 {{PHONE}}
 {{WEBSITE}}
 {{SUPPORT_URL}}
-{{ETSY_SHOP}}
+{{BRAND_NAME}}
+{{WEBSITE_URL}}
 
 Generated:
 {{CURRENT_DATE}}

@@ -1,5 +1,6 @@
 import { ASSET_PROFILE_TYPES, type AssetProfileType } from '@/lib/package-structure';
-import { type MarketplaceImageFormat } from '@/lib/marketplace-profiles';
+
+export type CompositeImageFormat = 'jpg' | 'png' | 'webp';
 
 export type CompositeLayerType =
   | 'background'
@@ -45,7 +46,7 @@ export interface CompositeLayer {
 export interface CompositeTemplateOutput {
   width: number;
   height: number;
-  format: MarketplaceImageFormat;
+  format: CompositeImageFormat;
   quality?: number;
   outputFilename: string;
 }

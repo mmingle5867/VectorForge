@@ -15,10 +15,12 @@ import {
   generatePackageDocuments,
   type PackageDocumentSettings,
 } from '@/services/template-renderer';
+import { upsertGeneratedAssetsForBatchItem } from '@/services/sema-identity';
 import type { SubstitutionData } from '@/lib/types';
 
 interface FinalizePackageInput {
   item: {
+    id?: string | null;
     originalFilename: string;
     baseName: string;
     sequenceNumber: number;
@@ -161,6 +163,18 @@ export async function finalizeManualEditPackage(input: FinalizePackageInput) {
 
   const zipPath = getZipPath(outputDir, input.item.baseName);
   await createZipFromFolder(outputDir, zipPath);
+
+  if (input.item.id) {
+    await upsertGeneratedAssetsForBatchItem(input.item.id, [
+      { role: 'primary-svg', filePath: svgPath, mimeType: 'image/svg+xml' },
+      { role: 'primary-png', filePath: pngPath, mimeType: 'image/png' },
+      { role: 'primary-jpg', filePath: jpgPath, mimeType: 'image/jpeg' },
+      { role: 'preview', filePath: marketplacePreviewPath, mimeType: 'image/jpeg' },
+      { role: 'metadata', filePath: metadataPath, mimeType: 'text/plain' },
+      { role: 'sku-file', filePath: skuFile.path, mimeType: 'text/plain' },
+      { role: 'customer-zip', filePath: zipPath, mimeType: 'application/zip' },
+    ].filter((asset) => Boolean(asset.filePath)));
+  }
 
   const manifestPath = await generatePackageManifest({
     outputDir,

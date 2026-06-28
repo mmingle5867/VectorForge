@@ -25,16 +25,19 @@ import { appendToProcessingLog, finalizeProcessingLog } from '../services/proces
 import { createZipFromFolder } from '../services/zip-generator';
 import { generateMarketplacePreview } from '../services/marketplace-preview';
 import { exportImportedSvgPackage } from '../services/svg-import-export';
+import { upsertGeneratedAssetsForBatchItem } from '../services/sema-identity';
 import { getIncrementalFolderName } from '../lib/server-utils';
 import { settingsToConversionOptions } from '../lib/vtracer-presets';
 import config from '../lib/config';
+
+const PROCESSING_QUEUE_NAME = `${config.identity.slug}-processing`;
 
 // ============================================================================
 // Worker Definition
 // ============================================================================
 
 const processingWorker = new Worker<ProcessingJobData>(
-  'vectorforge-processing',
+  PROCESSING_QUEUE_NAME,
   async (job: Job<ProcessingJobData>) => {
     const data = job.data;
     const startTime = Date.now();
@@ -105,6 +108,13 @@ const processingWorker = new Worker<ProcessingJobData>(
             completedAt: new Date(),
           },
         });
+
+        await upsertGeneratedAssetsForBatchItem(data.batchItemId, [
+          { role: 'primary-svg', filePath: svgExport.svgPath, mimeType: 'image/svg+xml' },
+          { role: 'primary-png', filePath: svgExport.pngPath, mimeType: 'image/png' },
+          { role: 'primary-jpg', filePath: svgExport.jpgPath, mimeType: 'image/jpeg' },
+          { role: 'customer-zip', filePath: zipPath, mimeType: 'application/zip' },
+        ]);
 
         await appendToProcessingLog(path.dirname(itemOutputDir), {
           originalFilename: data.originalFilename,
@@ -282,6 +292,12 @@ const processingWorker = new Worker<ProcessingJobData>(
           completedAt: new Date(),
         },
       });
+
+      await upsertGeneratedAssetsForBatchItem(data.batchItemId, [
+        { role: 'primary-svg', filePath: svgResult.path, mimeType: 'image/svg+xml' },
+        { role: 'preview', filePath: marketplacePreviewPath, mimeType: 'image/jpeg' },
+        { role: 'customer-zip', filePath: zipPath, mimeType: 'application/zip' },
+      ].filter((asset) => Boolean(asset.filePath)));
 
       // Append to processing log (includes VTracer settings used)
       await appendToProcessingLog(path.dirname(itemOutputDir), {

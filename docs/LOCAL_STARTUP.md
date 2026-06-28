@@ -13,6 +13,9 @@ What it does:
 - Checks that Node.js and npm are installed.
 - Checks for a Memurai/Redis service and starts it if possible.
 - Runs `npm install` only when `node_modules` is missing.
+- Creates local `uploads`, `output`, `base-assets`, and `logs` directories when missing.
+- Uses `LOCAL_AUTH_ENABLED=true` for local desktop startup.
+- Uses a local PostgreSQL `DATABASE_URL` default when no database URL is already configured.
 - Starts the VectorForge dev server.
 - Starts the background worker in a separate PowerShell window when Redis is available.
 - Opens the browser to the running VectorForge URL.
@@ -31,6 +34,17 @@ Redis notes:
 - If service startup fails due to permissions, run as Administrator or start Memurai from Services.
 - If Redis is unavailable, VectorForge still starts, but queue-backed features stay disabled.
 - `Stop VectorForge.bat` does not stop Memurai/Redis.
+
+Database notes:
+
+- Normal local use should point `DATABASE_URL` at a local PostgreSQL database.
+- The launcher default is `postgresql://postgres:postgres@localhost:5432/vectorforge?schema=public` when `DATABASE_URL` is unset.
+- Cloud databases are optional, not required for local desktop use.
+
+Path notes:
+
+- `UPLOAD_DIR`, `OUTPUT_DIR`, `BASE_ASSETS_DIR`, and `LOGS_DIR` may be relative project paths or absolute local filesystem paths.
+- Do not point normal working paths at cloud-synced folders.
 
 Port notes:
 

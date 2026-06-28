@@ -1,9 +1,32 @@
 /**
- * VectorForge Configuration
- * All paths are relative. Never use absolute paths.
+ * Application configuration
+ * Paths may be relative to the project root or absolute local filesystem paths.
  */
 
+function readBoolean(value: string | undefined, fallback: boolean) {
+  if (value === undefined) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
 export const config = {
+  identity: {
+    name: process.env.APP_NAME || 'local-asset-workbench',
+    displayName: process.env.APP_DISPLAY_NAME || 'VectorForge',
+    slug: process.env.APP_SLUG || 'local-asset-workbench',
+    sourceId: process.env.APP_SOURCE_ID || 'local-asset-workbench',
+    website: process.env.APP_WEBSITE || '',
+    supportEmail: process.env.APP_SUPPORT_EMAIL || '',
+  },
+
+  localFirst: {
+    localAuthEnabled: readBoolean(process.env.LOCAL_AUTH_ENABLED, false),
+    localUserId: process.env.LOCAL_USER_ID || 'local-user',
+    localUserEmail: process.env.LOCAL_USER_EMAIL || 'local@local-asset-workbench.local',
+    localUserName: process.env.LOCAL_USER_NAME || 'Local User',
+    localOwnerName: process.env.LOCAL_OWNER_NAME || 'Local Owner',
+    localWorkspaceName: process.env.LOCAL_WORKSPACE_NAME || 'Default Workspace',
+  },
+
   // File paths (relative)
   paths: {
     uploads: process.env.UPLOAD_DIR || './uploads',

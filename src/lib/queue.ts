@@ -2,6 +2,7 @@ import { Queue, Job, QueueEvents, type ConnectionOptions } from 'bullmq';
 import IORedis from 'ioredis';
 import { logger } from './logger';
 import { serializeError } from './error-utils';
+import config from './config';
 
 // =============================================================================
 // Redis Connection
@@ -10,6 +11,8 @@ import { serializeError } from './error-utils';
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const REDIS_LOG_THROTTLE_MS = 60_000;
 const isProduction = process.env.NODE_ENV === 'production';
+const PROCESSING_QUEUE_NAME = `${config.identity.slug}-processing`;
+const ZIP_QUEUE_NAME = `${config.identity.slug}-zip`;
 
 /**
  * Shared Redis connection for BullMQ.
@@ -128,7 +131,7 @@ let processingQueueInstance: Queue | null = null;
 
 export function getProcessingQueue(): Queue {
   if (!processingQueueInstance) {
-    processingQueueInstance = new Queue('vectorforge-processing', {
+    processingQueueInstance = new Queue(PROCESSING_QUEUE_NAME, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         attempts: 3,
@@ -164,7 +167,7 @@ let zipQueueInstance: Queue | null = null;
 
 export function getZipQueue(): Queue {
   if (!zipQueueInstance) {
-    zipQueueInstance = new Queue('vectorforge-zip', {
+    zipQueueInstance = new Queue(ZIP_QUEUE_NAME, {
       connection: getRedisConnection(),
       defaultJobOptions: {
         attempts: 2,
@@ -201,7 +204,7 @@ let processingQueueEventsInstance: QueueEvents | null = null;
 
 export function getProcessingQueueEvents(): QueueEvents {
   if (!processingQueueEventsInstance) {
-    processingQueueEventsInstance = new QueueEvents('vectorforge-processing', {
+    processingQueueEventsInstance = new QueueEvents(PROCESSING_QUEUE_NAME, {
       connection: getRedisConnection(),
     });
   }
@@ -221,7 +224,7 @@ let zipQueueEventsInstance: QueueEvents | null = null;
 
 export function getZipQueueEvents(): QueueEvents {
   if (!zipQueueEventsInstance) {
-    zipQueueEventsInstance = new QueueEvents('vectorforge-zip', {
+    zipQueueEventsInstance = new QueueEvents(ZIP_QUEUE_NAME, {
       connection: getRedisConnection(),
     });
   }

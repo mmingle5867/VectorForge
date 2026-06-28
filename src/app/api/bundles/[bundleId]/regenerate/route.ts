@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs/promises';
-import path from 'path';
 import { requireAuth } from '@/lib/auth';
 import config from '@/lib/config';
 import { DEFAULT_MANAGED_PATHS, resolveManagedPath } from '@/lib/path-management';
-import { createBundlePlan } from '@/services/bundle-planner';
 import { generateBundlePackage } from '@/services/bundle-generator';
-import { loadBundleById } from '@/services/bundle-discovery';
+import { createBundleExportPlanFromRelationship } from '@/services/bundle-relationships';
 
 function getString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -70,27 +67,10 @@ export async function POST(
       )
     );
 
-    const bundle = await loadBundleById(bundleOutputPath, bundleId);
-    if (!bundle) {
+    const plan = await createBundleExportPlanFromRelationship(user.id, bundleId, overrideTitle);
+    if (!plan) {
       return NextResponse.json({ success: false, error: 'Bundle not found' }, { status: 404 });
     }
-
-    const memberManifestPaths = bundle.manifest.members?.map((member) =>
-      path.resolve(path.dirname(bundle.manifestPath), member.sourceManifestPath)
-    );
-
-    if (!memberManifestPaths || memberManifestPaths.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Bundle manifest does not include source member manifests' },
-        { status: 400 }
-      );
-    }
-
-    const plan = await createBundlePlan({
-      bundleTitle: overrideTitle || bundle.title,
-      bundleId: bundle.bundleId,
-      memberPackages: memberManifestPaths.map((manifestPath) => ({ manifestPath })),
-    });
 
     if (plan.errors.length > 0) {
       return NextResponse.json(
@@ -98,8 +78,6 @@ export async function POST(
         { status: 400 }
       );
     }
-
-    await fs.rm(bundle.bundleFolderPath, { recursive: true, force: true });
 
     const result = await generateBundlePackage({
       plan,

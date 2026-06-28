@@ -8,6 +8,7 @@
 import path from 'path';
 import fs from 'fs/promises';
 import { logger, formatProcessingLogEntry } from '@/lib/logger';
+import config from '@/lib/config';
 
 export interface ProcessingLogEntry {
   originalFilename: string;
@@ -51,7 +52,7 @@ export async function appendToProcessingLog(
       await fs.access(logPath);
     } catch {
       const header = `================================================================================
-VECTORFORGE - BATCH PROCESSING LOG
+${config.identity.displayName.toUpperCase()} - BATCH PROCESSING LOG
 ================================================================================
 Generated: ${timestamp}
 ================================================================================

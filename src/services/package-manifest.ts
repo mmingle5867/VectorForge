@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import packageJson from '../../package.json';
+import prisma from '@/lib/prisma';
+import config from '@/lib/config';
 import {
   getPackageManifestPath,
   type PackageStructureVersion,
@@ -40,6 +42,15 @@ type ManifestInput = {
   licenseType?: string | null;
   structureVersion?: PackageStructureVersion;
 };
+
+type ManifestSemaContext = {
+  ownerId: string;
+  workspaceId: string;
+  itemId: string;
+  artworkId: string;
+  assetIds: string[];
+  assetByRole: Record<string, string>;
+} | null;
 
 function slugify(value: string) {
   return value
@@ -119,24 +130,35 @@ function relativePackagePath(outputDir: string, filePath: string | null | undefi
   return relativePath.split(path.sep).join('/');
 }
 
+function localSourcePath(filePath: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return filePath;
+  }
+
+  return relativePath.split(path.sep).join('/');
+}
+
 async function fileEntry(
   outputDir: string,
   filePath: string | null | undefined,
   role: string,
   fallbackMimeType?: string | null,
-  metadata?: Partial<PackageFileEntry>
+  metadata?: Partial<PackageFileEntry>,
+  options?: { allowExternalPath?: boolean }
 ): Promise<PackageFileEntry | null> {
   const relativePath = relativePackagePath(outputDir, filePath);
-  if (!relativePath || !filePath) return null;
+  if ((!relativePath && !options?.allowExternalPath) || !filePath) return null;
 
   try {
     const stats = await fs.stat(filePath);
     if (!stats.isFile()) return null;
 
     const format = formatFromPath(filePath);
+    const manifestPath = relativePath || localSourcePath(filePath);
     return {
       role,
-      path: relativePath,
+      path: manifestPath,
       format,
       mimeType: fallbackMimeType || mimeTypeFor(format),
       sizeBytes: stats.size,
@@ -158,10 +180,51 @@ async function collectEntries(entries: Array<Promise<PackageFileEntry | null>>) 
   return (await Promise.all(entries)).filter((entry): entry is PackageFileEntry => Boolean(entry));
 }
 
+async function getManifestSemaContext(input: ManifestInput): Promise<ManifestSemaContext> {
+  if (!input.item.id) return null;
+
+  const batchItem = await prisma.batchItem.findUnique({
+    where: { id: input.item.id },
+    include: {
+      owner: true,
+      workspace: true,
+      semaItem: true,
+      artwork: true,
+      assets: true,
+    },
+  });
+
+  if (!batchItem?.owner || !batchItem.workspace || !batchItem.semaItem || !batchItem.artwork) {
+    return null;
+  }
+
+  return {
+    ownerId: batchItem.owner.ownerId,
+    workspaceId: batchItem.workspace.workspaceId,
+    itemId: batchItem.semaItem.itemId,
+    artworkId: batchItem.artwork.artworkNumber,
+    assetIds: batchItem.assets.map((asset) => asset.assetId),
+    assetByRole: Object.fromEntries(batchItem.assets.map((asset) => [asset.role, asset.assetId])),
+  };
+}
+
+function semaFileMetadata(context: ManifestSemaContext, role: string) {
+  if (!context) return {};
+
+  return {
+    ownerId: context.ownerId,
+    workspaceId: context.workspaceId,
+    itemId: context.itemId,
+    artworkId: context.artworkId,
+    assetId: context.assetByRole[role] || '',
+  };
+}
+
 async function writeManifestWithSelfEntry(
   manifestPath: string,
   manifest: PackageManifestV2,
-  manifestRelativePath: string
+  manifestRelativePath: string,
+  metadata?: Partial<PackageFileEntry>
 ) {
   let nextManifest = manifest;
 
@@ -184,6 +247,7 @@ async function writeManifestWithSelfEntry(
       assetProfile: '',
       templateId: '',
       slot: null,
+      ...metadata,
     };
     const updatedManifest = {
       ...nextManifest,
@@ -211,15 +275,16 @@ export async function generatePackageManifest(input: ManifestInput) {
   const manifestRelativePath =
     relativePackagePath(input.outputDir, manifestPath) || 'manifest.json';
   const createdAt = new Date().toISOString();
+  const semaContext = await getManifestSemaContext(input);
   const artworkId = input.item.artworkNumber || input.item.artworkId || '';
   const profileId = input.item.profileNumber || input.item.assetProfileId || '';
   const primarySku = input.item.profileNumber || input.sku || '';
   const packageId = buildPackageId(input, artworkId, profileId, createdAt);
   const metadataEntries = await collectEntries([
-    fileEntry(input.outputDir, input.metadataPath, 'listing-info'),
-    fileEntry(input.outputDir, input.skuFilePath, 'sku-file'),
-    fileEntry(input.outputDir, input.readmePath, 'readme'),
-    fileEntry(input.outputDir, input.licensePath, 'license'),
+    fileEntry(input.outputDir, input.metadataPath, 'listing-info', null, semaFileMetadata(semaContext, 'metadata')),
+    fileEntry(input.outputDir, input.skuFilePath, 'sku-file', null, semaFileMetadata(semaContext, 'sku-file')),
+    fileEntry(input.outputDir, input.readmePath, 'readme', null, semaFileMetadata(semaContext, 'metadata')),
+    fileEntry(input.outputDir, input.licensePath, 'license', null, semaFileMetadata(semaContext, 'metadata')),
   ]);
   const listingPreviewEntry = await fileEntry(
     input.outputDir,
@@ -229,25 +294,30 @@ export async function generatePackageManifest(input: ManifestInput) {
     {
       templateId: 'listing-preview',
       slot: 1,
+      ...semaFileMetadata(semaContext, 'preview'),
     }
   );
   const artworkEntries = await collectEntries([
-    fileEntry(input.outputDir, input.svgPath, 'primary-svg'),
-    fileEntry(input.outputDir, input.pngPath, 'primary-png'),
-    fileEntry(input.outputDir, input.jpgPath, 'primary-jpg'),
+    fileEntry(input.outputDir, input.svgPath, 'primary-svg', null, semaFileMetadata(semaContext, 'primary-svg')),
+    fileEntry(input.outputDir, input.pngPath, 'primary-png', null, semaFileMetadata(semaContext, 'primary-png')),
+    fileEntry(input.outputDir, input.jpgPath, 'primary-jpg', null, semaFileMetadata(semaContext, 'primary-jpg')),
   ]);
   const sourceEntries = await collectEntries([
     fileEntry(input.outputDir, input.item.uploadPath, 'original-upload', input.item.mimeType, {
       assetProfile: '',
-    }),
+      ...semaFileMetadata(semaContext, 'source-file'),
+    }, { allowExternalPath: true }),
   ]);
   const downloadEntries = await collectEntries([
-    fileEntry(input.outputDir, input.zipPath, 'customer-zip'),
+    fileEntry(input.outputDir, input.zipPath, 'customer-zip', null, semaFileMetadata(semaContext, 'customer-zip')),
   ]);
   const supplementalFiles: SupplementalFileEntry[] = [];
   const assetProfile: AssetProfileEntry = {
     profileType: 'digital',
     profileId,
+    assetId: semaContext?.assetByRole['primary-svg'] || '',
+    itemId: semaContext?.itemId || '',
+    artworkId: semaContext?.artworkId || artworkId,
     status: 'completed',
     primarySku,
     folder: '.',
@@ -263,10 +333,24 @@ export async function generatePackageManifest(input: ManifestInput) {
 
   const manifest: PackageManifestV2 = {
     schemaVersion: '2.0',
-    sourceApp: 'VectorForge',
+    sourceApp: config.identity.sourceId,
     appVersion: packageJson.version,
+    sourceAppVersion: packageJson.version,
+    sourceSystem: config.identity.slug,
     createdAt,
     updatedAt: createdAt,
+    sema: semaContext
+      ? {
+          OwnerID: semaContext.ownerId,
+          WorkspaceID: semaContext.workspaceId,
+          ItemID: semaContext.itemId,
+          ArtworkID: semaContext.artworkId,
+          AssetIDs: semaContext.assetIds,
+          sourceApp: config.identity.sourceId,
+          createdAt,
+          updatedAt: createdAt,
+        }
+      : undefined,
 
     package: {
       packageId,
@@ -278,15 +362,17 @@ export async function generatePackageManifest(input: ManifestInput) {
       companyId: '',
       brandId: '',
       createdByUserId: '',
+      ownerId: semaContext?.ownerId || '',
+      workspaceId: semaContext?.workspaceId || '',
     },
 
     externalRefs: {
-      vectorForgeJobId: '',
+      sourceJobId: '',
       listingToolProductId: '',
     },
 
     artwork: {
-      artworkId,
+      artworkId: semaContext?.artworkId || artworkId,
       title: input.item.baseName || '',
       slug: slugify(input.item.baseName || ''),
       sourceFileName: input.item.originalFilename || '',
@@ -361,7 +447,7 @@ export async function generatePackageManifest(input: ManifestInput) {
     processingHistory: [
       {
         step: 'package-finalized',
-        app: 'VectorForge',
+        app: config.identity.sourceId,
         appVersion: packageJson.version,
         timestamp: createdAt,
         settings: {},
@@ -378,11 +464,16 @@ export async function generatePackageManifest(input: ManifestInput) {
     generation: {
       status: 'completed',
       workflowStatus: 'COMPLETED',
-      generatedBy: 'VectorForge',
+      generatedBy: config.identity.sourceId,
       notes: [],
     },
   };
 
-  await writeManifestWithSelfEntry(manifestPath, manifest, manifestRelativePath);
+  await writeManifestWithSelfEntry(
+    manifestPath,
+    manifest,
+    manifestRelativePath,
+    semaFileMetadata(semaContext, 'metadata')
+  );
   return manifestPath;
 }

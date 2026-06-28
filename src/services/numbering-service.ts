@@ -168,6 +168,9 @@ export async function ensureArtworkIdentityForBatchItem(input: {
   batchId: string;
   userId: string;
   title: string;
+  ownerId?: string | null;
+  workspaceId?: string | null;
+  semaItemId?: string | null;
 }) {
   await ensureDefaultSequences();
 
@@ -216,6 +219,9 @@ export async function ensureArtworkIdentityForBatchItem(input: {
       artwork = await tx.artwork.create({
         data: {
           userId: input.userId,
+          ownerId: input.ownerId ?? null,
+          workspaceId: input.workspaceId ?? null,
+          itemId: input.semaItemId ?? null,
           artworkNumber: artworkNumber.issuedNumber,
           numericSequence: artworkNumber.numericSequence,
           title: input.title,
@@ -229,6 +235,19 @@ export async function ensureArtworkIdentityForBatchItem(input: {
           artworkId: artwork.id,
           status: 'ASSIGNED',
           assignedAt: artworkNumber.assignedAt ?? new Date(),
+        },
+      });
+    } else if (
+      (input.ownerId && artwork.ownerId !== input.ownerId) ||
+      (input.workspaceId && artwork.workspaceId !== input.workspaceId) ||
+      (input.semaItemId && artwork.itemId !== input.semaItemId)
+    ) {
+      artwork = await tx.artwork.update({
+        where: { id: artwork.id },
+        data: {
+          ownerId: input.ownerId ?? artwork.ownerId,
+          workspaceId: input.workspaceId ?? artwork.workspaceId,
+          itemId: input.semaItemId ?? artwork.itemId,
         },
       });
     }
@@ -293,6 +312,7 @@ export async function ensureArtworkIdentityForBatchItem(input: {
       assetProfileId: digitalProfile.id,
       artworkNumber: artwork.artworkNumber,
       profileNumber: digitalProfile.profileNumber,
+      semaItemId: input.semaItemId ?? null,
     };
   });
 }

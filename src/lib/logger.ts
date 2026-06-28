@@ -1,11 +1,12 @@
 import winston from 'winston';
 import path from 'path';
+import config from '@/lib/config';
 
 const LOGS_DIR = process.env.LOGS_DIR || './logs';
 
 /**
  * Application-level logger using Winston.
- * Writes to both console and file (./logs/vectorforge.log).
+ * Writes to both console and file.
  */
 export const logger = winston.createLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -14,7 +15,7 @@ export const logger = winston.createLogger({
     winston.format.errors({ stack: true }),
     winston.format.json()
   ),
-  defaultMeta: { service: 'vectorforge' },
+  defaultMeta: { service: config.identity.slug },
   transports: [
     // Console output
     new winston.transports.Console({
@@ -28,7 +29,7 @@ export const logger = winston.createLogger({
     }),
     // File output
     new winston.transports.File({
-      filename: path.join(LOGS_DIR, 'vectorforge.log'),
+      filename: path.join(LOGS_DIR, `${config.identity.slug}.log`),
       maxsize: 10 * 1024 * 1024, // 10MB
       maxFiles: 5,
       tailable: true,

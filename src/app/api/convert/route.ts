@@ -10,6 +10,7 @@ import config from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { finalizeManualEditPackage } from '@/services/package-finalization';
 import { recomputeBatchStatus } from '@/services/batch-status';
+import { resolveManagedPath } from '@/lib/path-management';
 
 function getTemplateVariables(settingsJson: Record<string, unknown>) {
   const variables: Record<string, string> = {};
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     const settings = user.settings;
     const settingsJson = (settings?.defaultSubstitutions as Record<string, unknown>) || {};
-    const baseAssetsPath = settings?.baseAssetsPath || config.paths.baseAssets;
+    const baseAssetsPath = resolveManagedPath(settings?.baseAssetsPath || config.paths.baseAssets);
     const templatePath =
       typeof settingsJson.templatePath === 'string' && settingsJson.templatePath.trim()
         ? settingsJson.templatePath

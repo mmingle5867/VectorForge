@@ -14,6 +14,7 @@ import {
   type TuningExportSettingKey,
   type TuningExportSettings,
 } from '@/lib/tuning-defaults';
+import config from '@/lib/config';
 
 // ============================================================================
 // Types
@@ -141,7 +142,7 @@ const MANAGED_PATHS: ManagedPathConfig[] = [
   {
     key: 'outputPath',
     label: 'Output Path',
-    purpose: 'Completed VectorForge packages. Cloud storage is allowed.',
+    purpose: `Completed ${config.identity.displayName} packages. Cloud storage is allowed.`,
     defaultValue: './output',
     cloudPolicy: 'allowed',
   },
@@ -412,7 +413,7 @@ function OnboardingModal({ onComplete }: { onComplete: () => void }) {
             </svg>
           </div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-            Welcome to VectorForge!
+            Welcome to {config.identity.displayName}!
           </h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Let&apos;s configure your project folders. We&apos;ll create the standard directories for uploads, output, base assets, and logs.
@@ -1350,7 +1351,7 @@ export default function SettingsPage() {
               Paths
             </h2>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Configure where VectorForge reads, writes, and stores reusable assets. Existing files are not moved.
+              Configure where {config.identity.displayName} reads, writes, and stores reusable assets. Existing files are not moved.
             </p>
           </div>
           <button

@@ -15,6 +15,7 @@ import config from '@/lib/config';
 import { logger } from '@/lib/logger';
 import { extractBaseName } from '@/lib/utils';
 import { resolveManagedPath } from '@/lib/path-management';
+import { ensureBatchItemSemaContext } from '@/services/sema-identity';
 
 function isSupportedUpload(file: File) {
   const supportedFormats = config.processing.supportedFormats as readonly string[];
@@ -137,8 +138,22 @@ export async function POST(req: NextRequest) {
           },
         });
 
+        const semaContext = await ensureBatchItemSemaContext({
+          userId: user.id,
+          batchId: batch.id,
+          batchItemId: item.id,
+          title: baseName,
+          sourceFilePath: filePath,
+          sourceMimeType: file.type,
+        });
+
         uploadedItems.push({
           id: item.id,
+          ownerId: semaContext.owner.ownerId,
+          workspaceId: semaContext.workspace.workspaceId,
+          itemId: semaContext.item.itemId,
+          artworkId: semaContext.artwork.artworkNumber,
+          assetId: semaContext.sourceAsset.assetId,
           originalFilename: file.name,
           baseName: item.baseName,
           mimeType: file.type,

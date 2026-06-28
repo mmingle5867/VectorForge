@@ -17,10 +17,12 @@ export interface PackageOwner {
   companyId: string;
   brandId: string;
   createdByUserId: string;
+  ownerId?: string;
+  workspaceId?: string;
 }
 
 export interface ExternalRefs {
-  vectorForgeJobId: string;
+  sourceJobId: string;
   listingToolProductId: string;
 }
 
@@ -64,6 +66,11 @@ export interface PackageFileEntry {
   width?: number | null;
   height?: number | null;
   assetProfile?: string;
+  ownerId?: string;
+  workspaceId?: string;
+  itemId?: string;
+  artworkId?: string;
+  assetId?: string;
   marketplace?: string;
   templateId?: string;
   slot?: number | null;
@@ -93,9 +100,23 @@ export interface SupplementalFileEntry {
 export interface AssetProfileEntry {
   profileType: string;
   profileId: string;
+  assetId?: string;
+  itemId?: string;
+  artworkId?: string;
   status: string;
   primarySku: string;
   folder: string;
+}
+
+export interface SemaIdentity {
+  OwnerID: string;
+  WorkspaceID: string;
+  ItemID: string;
+  ArtworkID: string;
+  AssetIDs: string[];
+  sourceApp: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProductProfileEntry extends AssetProfileEntry {
@@ -181,6 +202,11 @@ export interface BundleIncludedFile {
   bundlePath: string;
   format: string;
   sizeBytes?: number;
+  assetId?: string;
+  ownerId?: string;
+  workspaceId?: string;
+  itemId?: string;
+  artworkId?: string;
 }
 
 export interface BundleMember {
@@ -189,10 +215,31 @@ export interface BundleMember {
   artworkId: string;
   profileId: string;
   productTitle: string;
+  assetIds?: string[];
   sourceManifestPath: string;
   sourcePackagePath: string;
   bundleFolder: string;
   includedFiles: BundleIncludedFile[];
+}
+
+export interface BundleRelationship {
+  RelationshipID: string;
+  RelationshipType: 'asset_bundle' | string;
+  OwnerID: string;
+  WorkspaceID: string;
+  ItemID: string;
+  ArtworkID: string;
+  BundleName: string;
+  MemberAssetIDs: Array<{
+    AssetID: string;
+    sortOrder: number;
+    role?: string;
+    filePath?: string | null;
+    ItemID?: string;
+    ArtworkID?: string;
+  }>;
+  CreatedAt: string;
+  UpdatedAt: string;
 }
 
 export interface BundleMembershipMarker {
@@ -214,8 +261,11 @@ export interface PackageManifestV2 {
   schemaVersion: PackageManifestSchemaVersion;
   sourceApp: string;
   appVersion: string;
+  sourceAppVersion?: string;
+  sourceSystem?: string;
   createdAt: string;
   updatedAt: string;
+  sema?: SemaIdentity;
   package: PackageIdentity;
   owner: PackageOwner;
   externalRefs: ExternalRefs;
@@ -243,6 +293,7 @@ export interface PackageManifestV2 {
   listing: ListingMetadata;
   marketplaces?: Record<string, MarketplaceManifestEntry>;
   bundle?: BundleManifestSection;
+  relationship?: BundleRelationship;
   members?: BundleMember[];
   bundleMembership?: BundleMembershipMarker[];
   rights: RightsInfo;

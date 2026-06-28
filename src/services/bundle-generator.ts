@@ -3,6 +3,7 @@ import path from 'path';
 import JSZip from 'jszip';
 import packageJson from '../../package.json';
 import { logger } from '@/lib/logger';
+import config from '@/lib/config';
 import { resolveManagedPath } from '@/lib/path-management';
 import { getArtworkPackageFolderName } from '@/lib/package-structure';
 import type {
@@ -200,35 +201,39 @@ function buildBundleFileMappings(manifestRoot: string, plan: BundlePlan, copiedF
     const sourceManifestPath = member.sourceManifestPath;
     const sourcePackagePath = member.sourcePackagePath;
 
-    sourceEntries.push({
-      role: 'source-manifest',
-      path: toManifestRelativePath(manifestRoot, sourceManifestPath),
-      format: 'json',
-      mimeType: 'application/json',
-      sizeBytes: 0,
-      sha256: '',
-      fingerprint: '',
-      width: null,
-      height: null,
-      assetProfile: member.profileId,
-      templateId: '',
-      slot: null,
-    });
+    if (sourceManifestPath) {
+      sourceEntries.push({
+        role: 'source-manifest',
+        path: toManifestRelativePath(manifestRoot, sourceManifestPath),
+        format: 'json',
+        mimeType: 'application/json',
+        sizeBytes: 0,
+        sha256: '',
+        fingerprint: '',
+        width: null,
+        height: null,
+        assetProfile: member.profileId,
+        templateId: '',
+        slot: null,
+      });
+    }
 
-    sourceEntries.push({
-      role: 'source-package',
-      path: toManifestRelativePath(manifestRoot, sourcePackagePath),
-      format: 'folder',
-      mimeType: 'application/octet-stream',
-      sizeBytes: 0,
-      sha256: '',
-      fingerprint: '',
-      width: null,
-      height: null,
-      assetProfile: member.profileId,
-      templateId: '',
-      slot: null,
-    });
+    if (sourcePackagePath) {
+      sourceEntries.push({
+        role: 'source-package',
+        path: toManifestRelativePath(manifestRoot, sourcePackagePath),
+        format: 'folder',
+        mimeType: 'application/octet-stream',
+        sizeBytes: 0,
+        sha256: '',
+        fingerprint: '',
+        width: null,
+        height: null,
+        assetProfile: member.profileId,
+        templateId: '',
+        slot: null,
+      });
+    }
 
     for (const file of member.includedFiles) {
       const copied = copiedFiles.find((candidate) => candidate.sourcePath === file.sourcePath);
@@ -252,6 +257,11 @@ function buildBundleFileMappings(manifestRoot: string, plan: BundlePlan, copiedF
         width: null,
         height: null,
         assetProfile: member.profileId,
+        ownerId: file.ownerId,
+        workspaceId: file.workspaceId,
+        itemId: file.itemId,
+        artworkId: file.artworkId,
+        assetId: file.assetId,
         templateId: '',
         slot: null,
       });
@@ -259,6 +269,35 @@ function buildBundleFileMappings(manifestRoot: string, plan: BundlePlan, copiedF
   }
 
   return { sourceEntries, artworkEntries };
+}
+
+function buildBundleRelationship(plan: BundlePlan, createdAt: string) {
+  const memberFiles = plan.members.flatMap((member) => member.includedFiles);
+  const assetFiles = memberFiles.filter((file) => file.assetId);
+  const first = assetFiles[0];
+  if (!first?.ownerId || !first.workspaceId || !first.itemId || !first.artworkId) {
+    return undefined;
+  }
+
+  return {
+    RelationshipID: plan.bundleId,
+    RelationshipType: 'asset_bundle',
+    OwnerID: first.ownerId,
+    WorkspaceID: first.workspaceId,
+    ItemID: first.itemId,
+    ArtworkID: first.artworkId,
+    BundleName: plan.title,
+    MemberAssetIDs: assetFiles.map((file, index) => ({
+      AssetID: file.assetId || '',
+      sortOrder: index + 1,
+      role: file.role,
+      filePath: file.sourcePath,
+      ItemID: file.itemId,
+      ArtworkID: file.artworkId,
+    })),
+    CreatedAt: createdAt,
+    UpdatedAt: createdAt,
+  };
 }
 
 function buildAssetProfiles(plan: BundlePlan): AssetProfileEntry[] {
@@ -346,28 +385,28 @@ function buildProcessingHistory(bundleId: string, plan: BundlePlan, bundleRoot: 
   return [
     {
       step: 'bundle-created',
-      app: 'VectorForge',
+      app: config.identity.sourceId,
       appVersion: packageJson.version,
       timestamp: now,
       settings,
     },
     {
       step: 'bundle-members-resolved',
-      app: 'VectorForge',
+      app: config.identity.sourceId,
       appVersion: packageJson.version,
       timestamp: now,
       settings,
     },
     {
       step: 'bundle-documents-generated',
-      app: 'VectorForge',
+      app: config.identity.sourceId,
       appVersion: packageJson.version,
       timestamp: now,
       settings,
     },
     {
       step: 'bundle-zip-generated',
-      app: 'VectorForge',
+      app: config.identity.sourceId,
       appVersion: packageJson.version,
       timestamp: now,
       settings: { ...settings, zipGenerated },
@@ -562,8 +601,13 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
       artworkId: member.artworkId,
       profileId: member.profileId,
       productTitle: member.productTitle,
-      sourceManifestPath: toManifestRelativePath(manifestRoot, member.sourceManifestPath),
-      sourcePackagePath: toManifestRelativePath(manifestRoot, member.sourcePackagePath),
+      assetIds: member.assetIds,
+      sourceManifestPath: member.sourceManifestPath
+        ? toManifestRelativePath(manifestRoot, member.sourceManifestPath)
+        : '',
+      sourcePackagePath: member.sourcePackagePath
+        ? toManifestRelativePath(manifestRoot, member.sourcePackagePath)
+        : '',
       bundleFolder: member.bundleFolder,
       includedFiles: member.includedFiles.map((file) => ({
         role: file.role,
@@ -574,15 +618,23 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
         ),
         format: file.format,
         sizeBytes: file.sizeBytes,
+        assetId: file.assetId,
+        ownerId: file.ownerId,
+        workspaceId: file.workspaceId,
+        itemId: file.itemId,
+        artworkId: file.artworkId,
       })),
     }));
+    const createdAt = new Date().toISOString();
 
     const manifest: PackageManifestV2 = {
       schemaVersion: '2.0',
-      sourceApp: 'VectorForge',
+      sourceApp: config.identity.sourceId,
       appVersion: packageJson.version,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      sourceAppVersion: packageJson.version,
+      sourceSystem: config.identity.slug,
+      createdAt,
+      updatedAt: createdAt,
       package: {
         packageId: input.plan.bundleId,
         packageType: 'bundle-package',
@@ -594,7 +646,7 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
         createdByUserId: '',
       },
       externalRefs: {
-        vectorForgeJobId: '',
+        sourceJobId: '',
         listingToolProductId: '',
       },
       artwork: {
@@ -627,6 +679,7 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
         missingFilePolicy: 'fail',
         zipPath: zipEntry?.path || `../package/${zipName}`,
       },
+      relationship: buildBundleRelationship(input.plan, createdAt),
       members: memberEntries,
       rights: {
         ownership: '',
@@ -664,23 +717,26 @@ export async function generateBundlePackage(input: BundleGenerationInput): Promi
       generation: {
         status: 'completed',
         workflowStatus: 'COMPLETED',
-        generatedBy: 'VectorForge',
+        generatedBy: config.identity.sourceId,
         notes: [],
       },
     };
 
     await writeBundleManifest(manifestPath, manifest);
 
-    const membershipUpdate = await updateBundleMembershipMarkers({
-      bundleId: input.plan.bundleId,
-      bundleTitle: input.plan.title,
-      bundleManifestPath: manifestPath,
-      members: input.plan.members.map((member) => ({
-        sourceManifestPath: member.sourceManifestPath,
-        sourcePackagePath: member.sourcePackagePath,
-      })),
-    });
-    warnings.push(...membershipUpdate.warnings);
+    const sourceManifestMembers = input.plan.members.filter((member) => member.sourceManifestPath);
+    if (sourceManifestMembers.length > 0) {
+      const membershipUpdate = await updateBundleMembershipMarkers({
+        bundleId: input.plan.bundleId,
+        bundleTitle: input.plan.title,
+        bundleManifestPath: manifestPath,
+        members: sourceManifestMembers.map((member) => ({
+          sourceManifestPath: member.sourceManifestPath,
+          sourcePackagePath: member.sourcePackagePath,
+        })),
+      });
+      warnings.push(...membershipUpdate.warnings);
+    }
 
     return {
       success: true,

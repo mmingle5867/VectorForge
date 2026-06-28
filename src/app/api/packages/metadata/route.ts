@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
         {
           success: false,
           error: 'Listing metadata editing requires Manifest V2.',
-          warnings: ['This package uses a legacy manifest and cannot be updated from VectorForge yet.'],
+          warnings: ['This package uses a legacy manifest and cannot be updated from this app yet.'],
         },
         { status: 400 }
       );

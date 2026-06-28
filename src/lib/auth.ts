@@ -6,6 +6,72 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import config from '@/lib/config';
+
+function splitLocalUserName(name: string) {
+  const [firstName, ...rest] = name.trim().split(/\s+/);
+  return {
+    firstName: firstName || 'Local',
+    lastName: rest.join(' ') || 'User',
+  };
+}
+
+export function isLocalAuthEnabled() {
+  return config.localFirst.localAuthEnabled;
+}
+
+async function getLocalUser() {
+  const clerkId = config.localFirst.localUserId;
+  const email = config.localFirst.localUserEmail;
+  const { firstName, lastName } = splitLocalUserName(config.localFirst.localUserName);
+
+  const existingByClerkId = await prisma.user.findUnique({
+    where: { clerkId },
+    include: { settings: true },
+  });
+
+  if (existingByClerkId) {
+    return prisma.user.update({
+      where: { id: existingByClerkId.id },
+      data: {
+        email,
+        firstName,
+        lastName,
+      },
+      include: { settings: true },
+    });
+  }
+
+  const existingByEmail = await prisma.user.findUnique({
+    where: { email },
+    include: { settings: true },
+  });
+
+  if (existingByEmail) {
+    return prisma.user.update({
+      where: { id: existingByEmail.id },
+      data: {
+        clerkId,
+        firstName,
+        lastName,
+      },
+      include: { settings: true },
+    });
+  }
+
+  return prisma.user.create({
+    data: {
+      clerkId,
+      email,
+      firstName,
+      lastName,
+      settings: {
+        create: {},
+      },
+    },
+    include: { settings: true },
+  });
+}
 
 /**
  * Get the current authenticated user from the database.
@@ -13,6 +79,19 @@ import { logger } from '@/lib/logger';
  * Also ensures UserSettings exist (creates defaults if missing).
  */
 export async function getCurrentUser() {
+  if (isLocalAuthEnabled()) {
+    const user = await getLocalUser();
+
+    if (!user.settings) {
+      const settings = await prisma.userSettings.create({
+        data: { userId: user.id },
+      });
+      return { ...user, settings };
+    }
+
+    return user;
+  }
+
   const { userId: clerkId } = await auth();
 
   if (!clerkId) {

@@ -306,7 +306,7 @@ V2 manifest additions include:
 
 - `package`: deterministic package identity, package type, and package status.
 - `owner`: optional company, brand, and user references.
-- `externalRefs`: optional neutral IDs from VectorForge and listing tools.
+- `externalRefs`: optional neutral IDs from the source system and downstream tools.
 - `rights`: ownership and license metadata.
 - `readiness`: package completeness flags for downstream automation.
 - `processingHistory`: append-only application steps and settings summaries.
@@ -328,20 +328,20 @@ VectorForge uses neutral external references only.
 
 Current fields:
 
-- `vectorForgeJobId`
+- `sourceJobId`
 - `listingToolProductId`
 
-Marketplace IDs belong in downstream Listing Software records or workspaces. A future Listing Software layer may maintain its own platform-specific structure, such as:
+Marketplace IDs belong in downstream Listing Software records or workspaces. A future Listing Software layer may maintain its own platform-specific structures outside VectorForge, such as:
 
 ```json
 {
   "platformListings": {
-    "etsy": {
+    "channelA": {
       "listingId": "",
-      "shopId": "",
+      "workspaceListingId": "",
       "status": "draft"
     },
-    "shopify": {
+    "channelB": {
       "productId": "",
       "variantId": "",
       "status": "draft"

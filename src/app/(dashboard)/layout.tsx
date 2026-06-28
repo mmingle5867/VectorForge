@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { UserButton } from '@clerk/nextjs';
+import config from '@/lib/config';
 
 export default function DashboardLayout({
   children,
@@ -25,7 +26,7 @@ export default function DashboardLayout({
                 d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
               />
             </svg>
-            <span className="text-lg font-bold text-gray-900">VectorForge</span>
+            <span className="text-lg font-bold text-gray-900">{config.identity.displayName}</span>
           </Link>
         </div>
 
@@ -83,7 +84,11 @@ export default function DashboardLayout({
       <div className="flex flex-1 flex-col">
         {/* Top Bar */}
         <header className="flex h-14 items-center justify-end border-b px-6">
-          <UserButton afterSignOutUrl="/" />
+          {config.localFirst.localAuthEnabled ? (
+            <span className="text-sm text-gray-600">Local mode</span>
+          ) : (
+            <UserButton afterSignOutUrl="/" />
+          )}
         </header>
 
         {/* Page Content */}

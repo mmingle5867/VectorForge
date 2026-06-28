@@ -11,15 +11,7 @@ export const ASSET_PROFILE_TYPES = [
 
 export type AssetProfileType = (typeof ASSET_PROFILE_TYPES)[number];
 
-export const MARKETPLACE_KEYS = [
-  'etsy',
-  'shopify',
-  'bigcommerce',
-  'ebay',
-  'custom',
-] as const;
-
-export type MarketplaceKey = (typeof MARKETPLACE_KEYS)[number] | string;
+export type ChannelKey = string;
 
 export const PROFILE_PACKAGE_PREFIXES: Record<AssetProfileType, string> = {
   digital: 'DIGI',
@@ -104,7 +96,6 @@ export function getV2PackageDirs(packageRoot: string) {
     cncDir: path.join(packageRoot, 'cnc'),
     sewingDir: path.join(packageRoot, 'sewing'),
     printDir: path.join(packageRoot, 'print'),
-    marketplaceDir: path.join(packageRoot, 'marketplace'),
     metadataDir: path.join(packageRoot, 'metadata'),
   };
 }
@@ -179,21 +170,12 @@ export function getCustomerZipPath(packageRoot: string, profileType: AssetProfil
   return path.join(getProfilePackageDir(packageRoot, profileType), zipName);
 }
 
-export function getMarketplaceDir(packageRoot: string, marketplaceKey: MarketplaceKey) {
-  const safeMarketplaceKey = sanitizePathSegment(marketplaceKey).toLowerCase() || 'custom';
-  return path.join(getV2PackageDirs(packageRoot).marketplaceDir, safeMarketplaceKey);
-}
-
 export function getSupplementalDir(packageRoot: string) {
   return path.join(packageRoot, 'supplemental');
 }
 
 export function getSupplementalCustomerDir(packageRoot: string) {
   return path.join(getSupplementalDir(packageRoot), 'customer');
-}
-
-export function getSupplementalMarketplaceDir(packageRoot: string) {
-  return path.join(getSupplementalDir(packageRoot), 'marketplace');
 }
 
 export function getSupplementalInternalDir(packageRoot: string) {

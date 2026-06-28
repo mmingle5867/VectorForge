@@ -14,7 +14,8 @@ import { createFixedCanvasRaster } from '@/services/raster-export';
 import { isSvgMimeOrPath } from '@/lib/svg-normalize';
 import { exportImportedSvgPackage } from '@/services/svg-import-export';
 import { recomputeBatchStatus } from '@/services/batch-status';
-import { ensureArtworkIdentityForBatchItem } from '@/services/numbering-service';
+import { ensureBatchItemSemaContext } from '@/services/sema-identity';
+import { resolveManagedPath } from '@/lib/path-management';
 import {
   generateTunedSvg,
   getPreviewValidationError,
@@ -221,14 +222,17 @@ export async function POST(
       : isHexColor(config.processing.pngExportArtworkColor)
         ? config.processing.pngExportArtworkColor
         : '#000000';
-    const outputBasePath = user.settings?.outputPath || config.paths.output;
+    const outputBasePath = resolveManagedPath(user.settings?.outputPath || config.paths.output);
     const imageBuffer = await readFile(item.uploadPath);
-    const identity = await ensureArtworkIdentityForBatchItem({
-      itemId: item.id,
+    const identityContext = await ensureBatchItemSemaContext({
+      batchItemId: item.id,
       batchId,
       userId: user.id,
       title: item.baseName,
+      sourceFilePath: item.uploadPath,
+      sourceMimeType: item.mimeType,
     });
+    const identity = identityContext.artwork;
     const packageFolderName = identity.artworkNumber
       ? getArtworkPackageFolderName(identity.artworkNumber, item.baseName)
       : item.baseName;

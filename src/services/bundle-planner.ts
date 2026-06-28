@@ -199,6 +199,11 @@ async function resolveIncludedFiles(input: {
       bundlePath: normalizeRelativePath(path.join('members', input.bundleFolder, path.basename(entry.path))),
       format: entry.format || path.extname(sourcePath).replace('.', '').toLowerCase() || 'unknown',
       sizeBytes: stats.size,
+      assetId: readString(entry.assetId),
+      ownerId: readString(entry.ownerId),
+      workspaceId: readString(entry.workspaceId),
+      itemId: readString(entry.itemId),
+      artworkId: readString(entry.artworkId),
     });
   }
 

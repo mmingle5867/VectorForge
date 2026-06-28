@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import packageJson from '../../package.json';
 import type {
   ListingMediaGeneratedItem,
   ListingMediaSkippedItem,
@@ -10,6 +11,7 @@ import type {
   PackageManifestV2,
   ProcessingHistoryEntry,
 } from '@/lib/package-manifest-schema';
+import config from '@/lib/config';
 
 type ListingMediaManifestUpdateInput = {
   packageRoot: string;
@@ -107,8 +109,8 @@ function appendProcessingHistory(
 ) {
   const nextEntry: ProcessingHistoryEntry = {
     step: 'listing-media-generated',
-    app: 'VectorForge',
-    appVersion: '1.0.0',
+    app: config.identity.sourceId,
+    appVersion: packageJson.version,
     timestamp: new Date().toISOString(),
     settings: {
       templateIds: input.templateIds,

@@ -104,6 +104,18 @@ Set-Location $projectRoot
 $devHost = 'localhost'
 $statePath = Join-Path $env:TEMP 'vectorforge-launch-state.json'
 
+if (-not $env:DATABASE_URL) {
+  $env:DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/vectorforge?schema=public'
+  Write-Info "DATABASE_URL not set. Using local PostgreSQL default."
+}
+
+foreach ($localDir in @('uploads', 'output', 'base-assets', 'logs')) {
+  $localPath = Join-Path $projectRoot $localDir
+  if (-not (Test-Path $localPath)) {
+    New-Item -ItemType Directory -Path $localPath | Out-Null
+  }
+}
+
 Write-Info "Project root: $projectRoot"
 
 $node = Get-Command node -ErrorAction SilentlyContinue
@@ -167,6 +179,7 @@ npm run worker:dev
 $serverCommand = @"
 Set-Location '$projectRoot'
 `$env:PORT = '$selectedPort'
+`$env:LOCAL_AUTH_ENABLED = 'true'
 npm run dev -- --hostname $devHost --port $selectedPort
 "@
 Write-Info "Starting VectorForge dev server..."

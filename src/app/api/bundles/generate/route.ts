@@ -5,6 +5,10 @@ import { logger } from '@/lib/logger';
 import { DEFAULT_MANAGED_PATHS, resolveManagedPath } from '@/lib/path-management';
 import { createBundlePlan } from '@/services/bundle-planner';
 import { generateBundlePackage } from '@/services/bundle-generator';
+import {
+  createAssetBundleRelationship,
+  createBundleExportPlanFromRelationship,
+} from '@/services/bundle-relationships';
 
 function getString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -48,6 +52,12 @@ export async function POST(req: NextRequest) {
     const bundleTitle = getString(body.bundleTitle);
     const bundleId = getString(body.bundleId) || undefined;
     const bundleNotes = getString(body.bundleNotes);
+    const exportPackage = body.exportPackage === true;
+    const memberAssetIds = Array.isArray(body.memberAssetIds)
+      ? (body.memberAssetIds as unknown[]).filter(
+          (value): value is string => typeof value === 'string'
+        )
+      : [];
     const memberManifestPaths = Array.isArray(body.memberManifestPaths)
       ? (body.memberManifestPaths as unknown[]).filter(
           (value): value is string => typeof value === 'string'
@@ -61,9 +71,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (memberManifestPaths.length === 0) {
+    if (memberAssetIds.length === 0 && memberManifestPaths.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'memberManifestPaths is required' },
+        { success: false, error: 'memberAssetIds or memberManifestPaths is required' },
         { status: 400 }
       );
     }
@@ -86,13 +96,15 @@ export async function POST(req: NextRequest) {
       )
     );
 
-    const plan = await createBundlePlan({
-      bundleTitle,
-      bundleId,
-      memberPackages: memberManifestPaths.map((manifestPath) => ({ manifestPath })),
-    });
+    const plan = memberManifestPaths.length > 0
+      ? await createBundlePlan({
+          bundleTitle,
+          bundleId,
+          memberPackages: memberManifestPaths.map((manifestPath) => ({ manifestPath })),
+        })
+      : null;
 
-    if (plan.errors.length > 0) {
+    if (plan && plan.errors.length > 0) {
       return NextResponse.json(
         {
           success: false,
@@ -104,8 +116,56 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const relationship = await createAssetBundleRelationship({
+      userId: user.id,
+      bundleName: bundleTitle,
+      relationshipId: bundleId || plan?.bundleId,
+      memberAssetIds:
+        memberAssetIds.length > 0
+          ? memberAssetIds
+          : (plan?.members || []).flatMap((member) =>
+              member.includedFiles.map((file) => file.assetId).filter((assetId): assetId is string => Boolean(assetId))
+            ),
+      metadata: {
+        notes: bundleNotes,
+        createdFrom: memberAssetIds.length > 0 ? 'assetIds' : 'packageManifests',
+        sourceManifestPaths: memberManifestPaths,
+      },
+    });
+
+    if (!relationship) {
+      return NextResponse.json(
+        { success: false, error: 'Bundle relationship could not be created' },
+        { status: 400 }
+      );
+    }
+
+    if (!exportPackage) {
+      return NextResponse.json({
+        success: true,
+        relationshipOnly: true,
+        bundleId: relationship.bundleId,
+        relationship: relationship.manifest.relationship,
+        bundle: relationship,
+        plan,
+        warnings: plan?.warnings || [],
+        errors: [],
+      });
+    }
+
+    const exportPlan =
+      plan ||
+      (await createBundleExportPlanFromRelationship(user.id, relationship.bundleId, bundleTitle));
+
+    if (!exportPlan) {
+      return NextResponse.json(
+        { success: false, error: 'Bundle export plan could not be created' },
+        { status: 400 }
+      );
+    }
+
     const result = await generateBundlePackage({
-      plan,
+      plan: exportPlan,
       bundleOutputPath,
       baseAssetsPath,
       documentSettings: {
@@ -126,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     if (!result.success) {
       logger.warn('Bundle generation failed', {
-        bundleId: plan.bundleId,
+        bundleId: exportPlan.bundleId,
         errors: result.errors,
         warnings: result.warnings,
       });
@@ -148,7 +208,8 @@ export async function POST(req: NextRequest) {
       zipPath: result.zipPath,
       warnings: result.warnings,
       errors: result.errors,
-      plan,
+      plan: exportPlan,
+      relationship: relationship.manifest.relationship,
     });
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {

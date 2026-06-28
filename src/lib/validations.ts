@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validateManagedPathValue } from '@/lib/path-management';
 
 /**
  * Validation schemas for VectorForge
@@ -13,11 +14,15 @@ export const userSettingsSchema = z.object({
   baseAssetsPath: z
     .string()
     .min(1)
-    .refine((p) => p.startsWith('./'), { message: 'Path must be relative (start with ./)' }),
+    .refine((p) => validateManagedPathValue(p) === null, {
+      message: 'Path must be a valid relative or absolute local path',
+    }),
   outputPath: z
     .string()
     .min(1)
-    .refine((p) => p.startsWith('./'), { message: 'Path must be relative (start with ./)' }),
+    .refine((p) => validateManagedPathValue(p) === null, {
+      message: 'Path must be a valid relative or absolute local path',
+    }),
   defaultSubstitutions: z.record(z.string(), z.string()).optional(),
 });
 

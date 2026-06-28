@@ -1,8 +1,8 @@
 // =============================================================================
 // VectorForge - Prisma Schema
 // =============================================================================
-// Database: Neon Postgres (PostgreSQL)
-// Run `npx prisma db push` or `npx prisma migrate dev` to sync
+// Database: PostgreSQL. Use a local PostgreSQL DATABASE_URL for local-first operation.
+// Run `npx prisma db push` or `npx prisma migrate dev` to sync.
 
 generator client {
   provider = "prisma-client-js"
@@ -32,6 +32,7 @@ model User {
   batches  Batch[]
   settings UserSettings?
   artworks Artwork[]
+  owner    Owner?
 
   @@map("users")
 }
@@ -49,7 +50,7 @@ model UserSettings {
   defaultUpscaleFactor  Int    @default(2) // 1, 2, or 4
   smartUpscaleThreshold Int    @default(2000) // px - upscale only if below this
 
-  // Path configuration (relative paths only)
+  // Path configuration. Relative and absolute local paths are supported.
   baseAssetsPath String @default("./base-assets")
   outputPath     String @default("./output")
 
@@ -74,6 +75,8 @@ model UserSettings {
 model Batch {
   id     String @id @default(cuid())
   userId String
+  ownerId String?
+  workspaceId String?
 
   // Batch metadata
   name   String? // Optional batch name/label
@@ -106,8 +109,12 @@ model Batch {
   // Relations
   user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   items BatchItem[]
+  owner Owner?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([ownerId])
+  @@index([workspaceId])
   @@index([status])
   @@map("batches")
 }
@@ -120,6 +127,9 @@ model Batch {
 model BatchItem {
   id      String @id @default(cuid())
   batchId String
+  ownerId String?
+  workspaceId String?
+  itemId String?
 
   // File identification
   originalFilename String
@@ -174,10 +184,17 @@ model BatchItem {
 
   // Relations
   batch        Batch         @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  owner        Owner?        @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  semaItem     Item?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
   artwork      Artwork?      @relation(fields: [artworkId], references: [id], onDelete: SetNull)
   assetProfile AssetProfile? @relation(fields: [assetProfileId], references: [id], onDelete: SetNull)
+  assets       Asset[]
 
   @@index([batchId])
+  @@index([ownerId])
+  @@index([workspaceId])
+  @@index([itemId])
   @@index([status])
   @@index([artworkId])
   @@index([assetProfileId])
@@ -231,6 +248,9 @@ model IssuedNumber {
 model Artwork {
   id              String        @id @default(cuid())
   userId          String
+  ownerId         String?
+  workspaceId     String?
+  itemId          String?
   artworkNumber   String        @unique
   numericSequence Int
   title           String
@@ -240,10 +260,18 @@ model Artwork {
   updatedAt       DateTime      @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  owner         Owner?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  workspace     Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  item          Item?          @relation(fields: [itemId], references: [id], onDelete: SetNull)
   batchItems    BatchItem[]
   assetProfiles AssetProfile[]
+  assets        Asset[]
+  relationships Relationship[]
 
   @@index([userId])
+  @@index([ownerId])
+  @@index([workspaceId])
+  @@index([itemId])
   @@index([status])
   @@map("artworks")
 }
@@ -281,6 +309,153 @@ model ProductVariant {
   @@index([assetProfileId])
   @@index([status])
   @@map("product_variants")
+}
+
+// =============================================================================
+// SEMA Foundation Models
+// =============================================================================
+
+model Owner {
+  id          String   @id @default(cuid())
+  ownerId    String   @unique
+  userId      String   @unique
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaces Workspace[]
+  items      Item[]
+  artworks   Artwork[]
+  assets     Asset[]
+  batches    Batch[]
+  batchItems BatchItem[]
+  relationships Relationship[]
+
+  @@map("owners")
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  workspaceId String
+  ownerId     String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner      Owner       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items      Item[]
+  artworks   Artwork[]
+  assets     Asset[]
+  batches    Batch[]
+  batchItems BatchItem[]
+  relationships Relationship[]
+
+  @@unique([ownerId, workspaceId])
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+model Item {
+  id          String     @id @default(cuid())
+  itemId      String
+  ownerId     String
+  workspaceId String
+  title       String
+  status      ItemStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  owner      Owner       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  artworks   Artwork[]
+  assets     Asset[]
+  batchItems BatchItem[]
+  relationships Relationship[]
+
+  @@unique([ownerId, itemId])
+  @@index([workspaceId])
+  @@index([status])
+  @@map("items")
+}
+
+model Asset {
+  id          String      @id @default(cuid())
+  assetId     String
+  ownerId     String
+  workspaceId String
+  itemId      String
+  artworkId   String
+  batchItemId String?
+  role        String
+  filePath    String?
+  mimeType    String?
+  metadata    Json        @default("{}")
+  status      AssetStatus @default(ACTIVE)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  owner      Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item       Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  artwork    Artwork    @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  batchItem  BatchItem? @relation(fields: [batchItemId], references: [id], onDelete: SetNull)
+  relationshipMembers RelationshipMember[]
+
+  @@unique([ownerId, assetId])
+  @@index([workspaceId])
+  @@index([itemId])
+  @@index([artworkId])
+  @@index([batchItemId])
+  @@index([status])
+  @@map("assets")
+}
+
+model Relationship {
+  id               String             @id @default(cuid())
+  relationshipId   String
+  relationshipType String
+  ownerId          String
+  workspaceId      String
+  itemId           String
+  artworkId        String
+  bundleName       String
+  metadata         Json               @default("{}")
+  status           RelationshipStatus @default(ACTIVE)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  owner     Owner                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item      Item                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  artwork   Artwork              @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  members   RelationshipMember[]
+
+  @@unique([ownerId, relationshipId])
+  @@index([workspaceId])
+  @@index([itemId])
+  @@index([artworkId])
+  @@index([relationshipType])
+  @@index([status])
+  @@map("relationships")
+}
+
+model RelationshipMember {
+  id             String   @id @default(cuid())
+  relationshipId String
+  assetId        String
+  sortOrder      Int
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  relationship Relationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  asset        Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([relationshipId, assetId])
+  @@index([assetId])
+  @@index([sortOrder])
+  @@map("relationship_members")
 }
 
 // =============================================================================
@@ -340,6 +515,24 @@ enum AssetProfileStatus {
 }
 
 enum ProductVariantStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum ItemStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum AssetStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum RelationshipStatus {
   ACTIVE
   RETIRED
   VOIDED

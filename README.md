@@ -1,13 +1,13 @@
 # VectorForge - Vector File Automation Tool
 
-A fast, production-ready tool for bulk-uploading raster images, automatically converting them to professional vector bundles (SVG, AI, DXF, EPS + previews), and generating listing-ready ZIP packages for external sales channels.
+A local-first tool for bulk-uploading raster images, converting them to professional vector assets (SVG, AI, DXF, EPS + previews), and generating SEF-aligned export packages for downstream tools.
 
 ## Tech Stack
 
 - **Framework:** Next.js 15 (App Router) + TypeScript
 - **Styling:** Tailwind CSS + shadcn/ui
-- **Authentication:** Clerk
-- **Database:** Neon Postgres + Prisma ORM
+- **Authentication:** Local auth mode by default for desktop use; Clerk optional
+- **Database:** Local PostgreSQL + Prisma ORM; managed PostgreSQL optional
 - **Background Jobs:** BullMQ + Redis (ioredis)
 - **Image Processing:** Sharp.js (upscaling) + VTracer (raster-to-vector)
 - **ZIP Generation:** JSZip
@@ -19,8 +19,8 @@ A fast, production-ready tool for bulk-uploading raster images, automatically co
 
 - Node.js 18+ (recommended: 20+)
 - npm or pnpm
-- A Neon Postgres database
-- A Clerk account (for authentication)
+- A local PostgreSQL database, or another PostgreSQL database available through `DATABASE_URL`
+- Clerk account only if cloud auth is enabled
 - Redis server (for BullMQ background jobs)
 - VTracer binary or npm package (for vector conversion)
 
@@ -44,15 +44,16 @@ Edit `.env.local` with your actual values:
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | Neon Postgres connection string |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | From Clerk dashboard |
-| `CLERK_SECRET_KEY` | From Clerk dashboard |
-| `CLERK_WEBHOOK_SECRET` | Webhook secret for user sync |
+| `DATABASE_URL` | Local or managed PostgreSQL connection string |
+| `LOCAL_AUTH_ENABLED` | Set `true` for local desktop use without Clerk |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Optional, from Clerk dashboard |
+| `CLERK_SECRET_KEY` | Optional, from Clerk dashboard |
+| `CLERK_WEBHOOK_SECRET` | Optional webhook secret for user sync |
 | `REDIS_URL` | Redis connection (default: `redis://localhost:6379`) |
-| `UPLOAD_DIR` | Relative upload path (default: `./uploads`) |
-| `OUTPUT_DIR` | Relative output path (default: `./output`) |
-| `BASE_ASSETS_DIR` | Relative base assets path (default: `./base-assets`) |
-| `LOGS_DIR` | Relative logs path (default: `./logs`) |
+| `UPLOAD_DIR` | Relative or absolute local upload path (default: `./uploads`) |
+| `OUTPUT_DIR` | Relative or absolute local output path (default: `./output`) |
+| `BASE_ASSETS_DIR` | Relative or absolute local base assets path (default: `./base-assets`) |
+| `LOGS_DIR` | Relative or absolute local logs path (default: `./logs`) |
 
 ### 3. Database Setup
 
@@ -102,6 +103,8 @@ On Windows, you can also use the desktop launcher:
 
 - [docs/LOCAL_STARTUP.md](docs/LOCAL_STARTUP.md)
 - `Start VectorForge.bat`
+
+Local-first and SEMA identity rules are documented in [docs/SEMA_FOUNDATION.md](docs/SEMA_FOUNDATION.md).
 
 ## Background Jobs (BullMQ + Redis)
 
@@ -168,7 +171,7 @@ vectorforge/
 │   │   ├── upload/                # Upload & review components
 │   │   └── shared/                # Shared/layout components
 │   ├── lib/
-│   │   ├── config.ts              # App configuration (all relative paths)
+│   │   ├── config.ts              # App configuration (relative or absolute local paths)
 │   │   ├── logger.ts              # Winston logger setup
 │   │   ├── prisma.ts              # Prisma client singleton
 │   │   ├── queue.ts               # BullMQ queue setup + Redis connection
@@ -185,10 +188,10 @@ vectorforge/
 │   │   └── zip-generator.ts       # JSZip bundle creation
 │   └── workers/
 │       └── processing-worker.ts   # BullMQ worker process
-├── uploads/                       # Uploaded files (gitignored, relative)
-├── output/                        # Generated output (gitignored, relative)
-├── base-assets/                   # Base asset templates (relative)
-├── logs/                          # Application logs (gitignored, relative)
+├── uploads/                       # Uploaded files (gitignored)
+├── output/                        # Generated output (gitignored)
+├── base-assets/                   # Base asset templates
+├── logs/                          # Application logs (gitignored)
 ├── .env.example
 ├── .gitignore
 ├── next.config.js
@@ -299,7 +302,7 @@ To test the Listing Preview feature end-to-end:
 
 ## Configuration
 
-**All paths are relative and configurable via `.env.local`:**
+**Paths are configurable via `.env.local` and may be relative project paths or absolute local filesystem paths:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -307,12 +310,14 @@ To test the Listing Preview feature end-to-end:
 | `OUTPUT_DIR` | `./output` | Where processed output goes |
 | `BASE_ASSETS_DIR` | `./base-assets` | Fallback assets directory |
 | `LOGS_DIR` | `./logs` | Application log files |
+| `DATABASE_URL` | local PostgreSQL URL | Database connection |
+| `LOCAL_AUTH_ENABLED` | `true` for launcher use | Bypass Clerk for local desktop use |
 | `REDIS_URL` | `redis://localhost:6379` | Redis for BullMQ |
 | `DEFAULT_UPSCALE_FACTOR` | `2` | Default upscale multiplier (1, 2, or 4) |
 | `SMART_UPSCALE_THRESHOLD` | `2000` | Upscale if below this px |
 | `MAX_BATCH_SIZE` | `50` | Maximum files per batch |
 
-> ⚠️ **Important:** Never use absolute paths. All file paths must be relative (starting with `./`).
+> Important: use local filesystem paths for normal VectorForge operation. Avoid cloud-synced working directories for uploads, output, assets, and logs.
 
 ## Deployment
 

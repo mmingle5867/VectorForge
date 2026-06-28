@@ -1,4 +1,6 @@
 import type { ListingMetadata, ProcessingHistoryEntry } from '@/lib/package-manifest-schema';
+import packageJson from '../../package.json';
+import config from '@/lib/config';
 
 export interface ListingMetadataCompleteness {
   percentage: number;
@@ -139,8 +141,8 @@ export function calculateListingMetadataCompleteness(listing: ListingMetadata): 
 export function appendListingMetadataHistory(existing: ProcessingHistoryEntry[] | undefined) {
   const nextEntry: ProcessingHistoryEntry = {
     step: 'listing-metadata-updated',
-    app: 'VectorForge',
-    appVersion: '1.0.0',
+    app: config.identity.sourceId,
+    appVersion: packageJson.version,
     timestamp: new Date().toISOString(),
     settings: {},
   };

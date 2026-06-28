@@ -13,6 +13,7 @@ import sharp from 'sharp';
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import config from '@/lib/config';
 import type { VTracerSettings } from '@/lib/vtracer-presets';
 import { getSVGOConfig, vtracerPresetToSVGO } from '@/lib/svgo-config';
 
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create a temporary directory for the test
-    const tmpDir = path.join(os.tmpdir(), `vectorforge-test-${Date.now()}`);
+    const tmpDir = path.join(os.tmpdir(), `${config.identity.slug}-test-${Date.now()}`);
     await mkdir(tmpDir, { recursive: true });
 
     try {

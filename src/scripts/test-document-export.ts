@@ -7,6 +7,7 @@ async function main() {
     ownerId: "cmqwlis97000xw65se30ubzeu",
     documentId: "DOC-000001",
     outputDirectory: path.resolve("output", "docforge"),
+    snapshotId: `manual-${Date.now()}`,
   });
 
   console.log("Document exported:");

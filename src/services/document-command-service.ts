@@ -7,7 +7,7 @@ Purpose:
 
 Execution model:
 
-    ExportTextDocumentCommand
+    ExportDocumentCommand
         ↓
     DocumentExportEvent
         ↓
@@ -15,7 +15,7 @@ Execution model:
         ↓
     Text Export Provider
         ↓
-    ExportTextDocumentResult
+    ExportDocumentResult
 
 Important:
     These structures are currently held in memory and returned to the caller.
@@ -135,7 +135,6 @@ export interface ExportDocumentCommand {
   requiredProviderId?: string;
 
   allowFallbackProviders: boolean;
-  requestedFormat: string;
 
   requestedBy: string;
   submittedAt: string;
@@ -150,7 +149,7 @@ Event
 */
 
 /**
- * Tracks execution of the ExportTextDocumentCommand.
+ * Tracks execution of the ExportDocumentCommand.
  */
 export interface DocumentExportEvent {
   eventId: string;
@@ -256,9 +255,9 @@ Combined Execution Response
  * Diagnostic Objects will each have independent storage and references.
  */
 export interface DocumentCommandExecution {
-  command: ExportTextDocumentCommand;
+  command: ExportDocumentCommand;
   event: DocumentExportEvent;
-  result: ExportTextDocumentResult;
+  result: ExportDocumentResult;
 }
 
 /*
@@ -312,7 +311,7 @@ Command Factory
 */
 
 /**
- * Creates a valid ExportTextDocumentCommand.
+ * Creates a valid ExportDocumentCommand.
  *
  * A factory prevents every calling application from manually constructing
  * commands differently.
@@ -324,8 +323,7 @@ export function createExportDocumentCommand(input: {
   requestedOutputType: string;
   requestedBy: string;
   outputDirectory?: string;
-  requestedOutputType: string;
-}): ExportTextDocumentCommand {
+}): ExportDocumentCommand {
   return {
     commandId: createTemporaryId("CMD"),
     commandType: "DOCUMENT.EXPORT",
@@ -338,15 +336,6 @@ export function createExportDocumentCommand(input: {
     ownerId: input.ownerId,
     workspaceId: input.workspaceId,
     documentId: input.documentId,
-
-    requestedOutputType:
-        input.requestedOutputType,
-
-    providerResolutionMode:
-        "DYNAMIC",
-
-    allowFallbackProviders:
-        true,
 
     requestedBy: input.requestedBy,
     submittedAt: new Date().toISOString(),
@@ -363,7 +352,7 @@ Command Execution
 */
 
 /**
- * Executes an ExportTextDocumentCommand.
+ * Executes an ExportDocumentCommand.
  *
  * Current implementation:
  *
@@ -386,7 +375,7 @@ Command Execution
  *     Result
  */
 export async function executeExportDocumentCommand(
-  command: ExportTextDocumentCommand,
+  command: ExportDocumentCommand,
 ): Promise<DocumentCommandExecution> {
   const event: DocumentExportEvent = {
     eventId: createTemporaryId("EVT"),
@@ -520,7 +509,7 @@ const providerResult:
       createdAt: new Date().toISOString(),
     };
 
-    const result: ExportTextDocumentResult = {
+    const result: ExportDocumentResult = {
       resultId: createTemporaryId("RES"),
       resultType: "DOCUMENT.EXPORT",
 
@@ -586,7 +575,7 @@ const providerResult:
       }),
     );
 
-    const failedResult: ExportTextDocumentResult = {
+    const failedResult: ExportDocumentResult = {
       resultId: createTemporaryId("RES"),
       resultType: "DOCUMENT.EXPORT",
 

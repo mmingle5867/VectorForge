@@ -38,6 +38,7 @@ import { getDocumentByDocumentId } from "@/services/document-service";
 
 export interface MarkdownExportProviderResult {
   documentId: string;
+  documentVersion: number;
   fileName: string;
   filePath: string;
   mimeType: "text/markdown";
@@ -78,7 +79,7 @@ export async function exportMarkdownDocument(input: {
     safeFileName(document.title) || document.documentId;
 
   const fileName =
-    `${titlePart}-${input.snapshotId}.md`;
+    `${titlePart}-v${document.version}-${input.snapshotId}.md`;
 
   const filePath =
     path.join(input.outputDirectory, fileName);
@@ -111,6 +112,7 @@ export async function exportMarkdownDocument(input: {
 
   return {
     documentId: document.documentId,
+    documentVersion: document.version,
     fileName,
     filePath,
     mimeType: "text/markdown",

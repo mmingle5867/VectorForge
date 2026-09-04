@@ -47,8 +47,8 @@ model UserSettings {
   userId String @unique
 
   // Upscaling defaults
-  defaultUpscaleFactor  Int    @default(2) // 1, 2, or 4
-  smartUpscaleThreshold Int    @default(2000) // px - upscale only if below this
+  defaultUpscaleFactor  Int @default(2) // 1, 2, or 4
+  smartUpscaleThreshold Int @default(2000) // px - upscale only if below this
 
   // Path configuration. Relative and absolute local paths are supported.
   baseAssetsPath String @default("./base-assets")
@@ -73,9 +73,9 @@ model UserSettings {
 // Represents a single upload/processing batch.
 
 model Batch {
-  id     String @id @default(cuid())
-  userId String
-  ownerId String?
+  id          String  @id @default(cuid())
+  userId      String
+  ownerId     String?
   workspaceId String?
 
   // Batch metadata
@@ -83,14 +83,14 @@ model Batch {
   status BatchStatus @default(PENDING)
 
   // Progress tracking
-  totalItems     Int @default(0)
-  completedItems Int @default(0)
-  failedItems    Int @default(0)
+  totalItems     Int     @default(0)
+  completedItems Int     @default(0)
+  failedItems    Int     @default(0)
   currentItemId  String? // ID of item currently being processed
 
   // Processing configuration for this batch
-  upscaleFactor         Int  @default(2)
-  smartUpscaleThreshold Int  @default(2000)
+  upscaleFactor         Int     @default(2)
+  smartUpscaleThreshold Int     @default(2000)
   useBaseAssets         Boolean @default(true)
 
   // Substitution data for this batch (JSON key-value pairs)
@@ -107,10 +107,10 @@ model Batch {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items BatchItem[]
-  owner Owner?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     BatchItem[]
+  owner     Owner?      @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  workspace Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([ownerId])
@@ -125,11 +125,11 @@ model Batch {
 // Represents a single file within a batch.
 
 model BatchItem {
-  id      String @id @default(cuid())
-  batchId String
-  ownerId String?
+  id          String  @id @default(cuid())
+  batchId     String
+  ownerId     String?
   workspaceId String?
-  itemId String?
+  itemId      String?
 
   // File identification
   originalFilename String
@@ -146,10 +146,10 @@ model BatchItem {
   profileNumber  String?
 
   // Processing status
-  status        BatchItemStatus @default(PENDING)
-  progress      Int     @default(0)   // 0-100 percentage complete
-  currentStep   String?               // e.g. "Upscaling image", "Converting with VTracer"
-  errorMsg      String?
+  status      BatchItemStatus @default(PENDING)
+  progress    Int             @default(0) // 0-100 percentage complete
+  currentStep String? // e.g. "Upscaling image", "Converting with VTracer"
+  errorMsg    String?
 
   // Image metadata
   originalWidth  Int?
@@ -158,10 +158,10 @@ model BatchItem {
   mimeType       String?
 
   // Upscaling
-  upscaleFactor    Int     @default(2)
-  upscaleApplied   Boolean @default(false)
-  upscaledWidth    Int?
-  upscaledHeight   Int?
+  upscaleFactor  Int     @default(2)
+  upscaleApplied Boolean @default(false)
+  upscaledWidth  Int?
+  upscaledHeight Int?
 
   // File paths (relative)
   uploadPath       String? // Original uploaded file
@@ -286,9 +286,9 @@ model AssetProfile {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  artwork       Artwork          @relation(fields: [artworkId], references: [id], onDelete: Cascade)
-  batchItems    BatchItem[]
-  variants      ProductVariant[]
+  artwork    Artwork          @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  batchItems BatchItem[]
+  variants   ProductVariant[]
 
   @@unique([artworkId, profileType])
   @@index([status])
@@ -316,21 +316,22 @@ model ProductVariant {
 // =============================================================================
 
 model Owner {
-  id          String   @id @default(cuid())
-  ownerId    String   @unique
-  userId      String   @unique
-  name        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  ownerId   String   @unique
+  userId    String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspaces Workspace[]
-  items      Item[]
-  artworks   Artwork[]
-  assets     Asset[]
-  batches    Batch[]
-  batchItems BatchItem[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaces    Workspace[]
+  items         Item[]
+  artworks      Artwork[]
+  assets        Asset[]
+  batches       Batch[]
+  batchItems    BatchItem[]
   relationships Relationship[]
+  documents     Document[]
 
   @@map("owners")
 }
@@ -343,13 +344,14 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner      Owner       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  items      Item[]
-  artworks   Artwork[]
-  assets     Asset[]
-  batches    Batch[]
-  batchItems BatchItem[]
+  owner         Owner          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items         Item[]
+  artworks      Artwork[]
+  assets        Asset[]
+  batches       Batch[]
+  batchItems    BatchItem[]
   relationships Relationship[]
+  documents     Document[]
 
   @@unique([ownerId, workspaceId])
   @@index([ownerId])
@@ -366,11 +368,11 @@ model Item {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  owner      Owner       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  artworks   Artwork[]
-  assets     Asset[]
-  batchItems BatchItem[]
+  owner         Owner          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  artworks      Artwork[]
+  assets        Asset[]
+  batchItems    BatchItem[]
   relationships Relationship[]
 
   @@unique([ownerId, itemId])
@@ -395,11 +397,11 @@ model Asset {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  owner      Owner      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  item       Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  artwork    Artwork    @relation(fields: [artworkId], references: [id], onDelete: Cascade)
-  batchItem  BatchItem? @relation(fields: [batchItemId], references: [id], onDelete: SetNull)
+  owner               Owner                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item                Item                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  artwork             Artwork              @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  batchItem           BatchItem?           @relation(fields: [batchItemId], references: [id], onDelete: SetNull)
   relationshipMembers RelationshipMember[]
 
   @@unique([ownerId, assetId])
@@ -456,6 +458,33 @@ model RelationshipMember {
   @@index([assetId])
   @@index([sortOrder])
   @@map("relationship_members")
+}
+
+// =============================================================================
+// Document Foundation Model
+// =============================================================================
+
+model Document {
+  id          String   @id @default(cuid())
+  documentId  String
+  ownerId     String
+  workspaceId String
+  title       String
+  content     String
+  format      String   @default("txt")
+  version     Int      @default(1)
+  metadata    Json     @default("{}")
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner     Owner     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, documentId])
+  @@index([status])
+  @@index([workspaceId])
+  @@map("documents")
 }
 
 // =============================================================================
@@ -533,6 +562,12 @@ enum AssetStatus {
 }
 
 enum RelationshipStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum DocumentStatus {
   ACTIVE
   RETIRED
   VOIDED

@@ -31,13 +31,13 @@ next-env.d.ts
 
 # Prisma
 
-prisma/migrations/
 node_modules/.prisma/
 
 # Application Data
 
 /uploads
 /output
+/database-backups/
 /base-assets
 !/base-assets/
 /base-assets/*
@@ -95,6 +95,7 @@ Desktop.ini
 
 *.tmp
 *.temp
+/prisma/schema.prisma.before-*
 
 # Archive Files
 

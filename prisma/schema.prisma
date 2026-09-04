@@ -33,6 +33,7 @@ model User {
   settings UserSettings?
   artworks Artwork[]
   owner    Owner?
+  profiles SemaProfile[]
 
   @@map("users")
 }
@@ -344,14 +345,17 @@ model Workspace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner         Owner          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  items         Item[]
-  artworks      Artwork[]
-  assets        Asset[]
-  batches       Batch[]
-  batchItems    BatchItem[]
-  relationships Relationship[]
-  documents     Document[]
+  owner                Owner                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  items                Item[]
+  artworks             Artwork[]
+  assets               Asset[]
+  batches              Batch[]
+  batchItems           BatchItem[]
+  relationships        Relationship[]
+  documents            Document[]
+  storageLocations     StorageLocation[]
+  categories           Category[]
+  dashboardPreferences DashboardPreference[]
 
   @@unique([ownerId, workspaceId])
   @@index([ownerId])
@@ -368,12 +372,13 @@ model Item {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  owner         Owner          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  artworks      Artwork[]
-  assets        Asset[]
-  batchItems    BatchItem[]
-  relationships Relationship[]
+  owner               Owner          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace           Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  artworks            Artwork[]
+  assets              Asset[]
+  batchItems          BatchItem[]
+  relationships       Relationship[]
+  categoryMemberships ItemCategory[]
 
   @@unique([ownerId, itemId])
   @@index([workspaceId])
@@ -403,6 +408,7 @@ model Asset {
   artwork             Artwork              @relation(fields: [artworkId], references: [id], onDelete: Cascade)
   batchItem           BatchItem?           @relation(fields: [batchItemId], references: [id], onDelete: SetNull)
   relationshipMembers RelationshipMember[]
+  versions            AssetVersion[]
 
   @@unique([ownerId, assetId])
   @@index([workspaceId])
@@ -427,11 +433,12 @@ model Relationship {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
-  owner     Owner                @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  workspace Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  item      Item                 @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  artwork   Artwork              @relation(fields: [artworkId], references: [id], onDelete: Cascade)
-  members   RelationshipMember[]
+  owner               Owner                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspace           Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  item                Item                   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  artwork             Artwork                @relation(fields: [artworkId], references: [id], onDelete: Cascade)
+  members             RelationshipMember[]
+  categoryMemberships RelationshipCategory[]
 
   @@unique([ownerId, relationshipId])
   @@index([workspaceId])
@@ -485,6 +492,205 @@ model Document {
   @@index([status])
   @@index([workspaceId])
   @@map("documents")
+}
+
+// =============================================================================
+// Local Profile and Storage Foundation
+// =============================================================================
+
+model SemaProfile {
+  id          String            @id @default(cuid())
+  profileId   String            @unique
+  userId      String
+  displayName String
+  isDefault   Boolean           @default(false)
+  status      SemaProfileStatus @default(ACTIVE)
+  metadata    Json              @default("{}")
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user                            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storageLocations                StorageLocation[]
+  categories                      Category[]
+  assetVersionsCreated            AssetVersion[]
+  categoryAssignments             ItemCategory[]
+  relationshipCategoryAssignments RelationshipCategory[]
+  dashboardPreferences            DashboardPreference[]
+
+  @@index([userId, status])
+  @@index([userId, isDefault])
+  @@map("sema_profiles")
+}
+
+model StorageLocation {
+  id              String                @id @default(cuid())
+  locationId      String                @unique
+  profileId       String
+  workspaceId     String?
+  name            String
+  kind            StorageLocationKind
+  basePath        String
+  isDefaultImport Boolean               @default(false)
+  isReadOnly      Boolean               @default(false)
+  status          StorageLocationStatus @default(ACTIVE)
+  metadata        Json                  @default("{}")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  profile        SemaProfile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workspace      Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assetLocations AssetLocation[]
+
+  @@unique([profileId, name])
+  @@index([workspaceId])
+  @@index([profileId, isDefaultImport])
+  @@index([status])
+  @@map("storage_locations")
+}
+
+// =============================================================================
+// Immutable Asset Version and Location Foundation
+// =============================================================================
+
+model AssetVersion {
+  id                 String             @id @default(cuid())
+  assetVersionId     String             @unique
+  assetId            String
+  createdByProfileId String?
+  versionNumber      Int
+  status             AssetVersionStatus @default(DRAFT)
+  sha256             String
+  byteLength         BigInt
+  mimeType           String?
+  metadata           Json               @default("{}")
+  createdAt          DateTime           @default(now())
+
+  asset            Asset           @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  createdByProfile SemaProfile?    @relation(fields: [createdByProfileId], references: [id], onDelete: SetNull)
+  locations        AssetLocation[]
+
+  @@unique([assetId, versionNumber])
+  @@index([createdByProfileId])
+  @@index([status])
+  @@index([sha256])
+  @@map("asset_versions")
+}
+
+model AssetLocation {
+  id                String              @id @default(cuid())
+  assetVersionId    String
+  storageLocationId String
+  relativePath      String
+  isPrimary         Boolean             @default(false)
+  status            AssetLocationStatus @default(AVAILABLE)
+  verifiedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  assetVersion    AssetVersion    @relation(fields: [assetVersionId], references: [id], onDelete: Restrict)
+  storageLocation StorageLocation @relation(fields: [storageLocationId], references: [id], onDelete: Restrict)
+
+  @@unique([storageLocationId, relativePath])
+  @@unique([assetVersionId, storageLocationId, relativePath])
+  @@index([assetVersionId, status])
+  @@index([storageLocationId, status])
+  @@map("asset_locations")
+}
+
+// =============================================================================
+// Hierarchical Category Foundation
+// =============================================================================
+
+model Category {
+  id             String            @id @default(cuid())
+  categoryId     String            @unique
+  profileId      String
+  workspaceId    String?
+  scopeType      CategoryScopeType
+  scopeId        String
+  parentId       String?
+  parentKey      String            @default("__ROOT__")
+  name           String
+  normalizedName String
+  sortOrder      Int               @default(0)
+  status         CategoryStatus    @default(ACTIVE)
+  metadata       Json              @default("{}")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  profile                 SemaProfile            @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workspace               Workspace?             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent                  Category?              @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children                Category[]             @relation("CategoryTree")
+  itemMemberships         ItemCategory[]
+  relationshipMemberships RelationshipCategory[]
+
+  @@unique([profileId, scopeType, scopeId, parentKey, normalizedName])
+  @@index([profileId, scopeType, scopeId])
+  @@index([parentId, sortOrder])
+  @@index([status])
+  @@map("categories")
+}
+
+model ItemCategory {
+  id                  String   @id @default(cuid())
+  itemId              String
+  categoryId          String
+  assignedByProfileId String?
+  isPrimary           Boolean  @default(false)
+  assignedAt          DateTime @default(now())
+
+  item              Item         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  category          Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  assignedByProfile SemaProfile? @relation(fields: [assignedByProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([itemId, categoryId])
+  @@index([categoryId])
+  @@index([itemId, isPrimary])
+  @@index([assignedByProfileId])
+  @@map("item_categories")
+}
+
+model RelationshipCategory {
+  id                  String   @id @default(cuid())
+  relationshipId      String
+  categoryId          String
+  assignedByProfileId String?
+  isPrimary           Boolean  @default(false)
+  assignedAt          DateTime @default(now())
+
+  relationship      Relationship @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  category          Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  assignedByProfile SemaProfile? @relation(fields: [assignedByProfileId], references: [id], onDelete: SetNull)
+
+  @@unique([relationshipId, categoryId])
+  @@index([categoryId])
+  @@index([relationshipId, isPrimary])
+  @@index([assignedByProfileId])
+  @@map("relationship_categories")
+}
+
+model DashboardPreference {
+  id                  String            @id @default(cuid())
+  profileId           String
+  workspaceId         String?
+  contextKey          String
+  viewMode            DashboardViewMode @default(THUMBNAIL)
+  expandedCategoryIds Json              @default("[]")
+  selectedCategoryIds Json              @default("[]")
+  includeDescendants  Boolean           @default(true)
+  categoryMatchMode   CategoryMatchMode @default(ANY)
+  filters             Json              @default("{}")
+  sorting             Json              @default("[]")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  profile   SemaProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  workspace Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, contextKey])
+  @@index([workspaceId])
+  @@map("dashboard_preferences")
 }
 
 // =============================================================================
@@ -571,4 +777,65 @@ enum DocumentStatus {
   ACTIVE
   RETIRED
   VOIDED
+}
+
+enum SemaProfileStatus {
+  ACTIVE
+  DISABLED
+  RETIRED
+}
+
+enum StorageLocationKind {
+  LOCAL_FILESYSTEM
+  NETWORK_FILESYSTEM
+  REMOVABLE_STORAGE
+  CLOUD_PROVIDER
+  OTHER
+}
+
+enum StorageLocationStatus {
+  ACTIVE
+  UNAVAILABLE
+  READ_ONLY
+  RETIRED
+}
+
+enum AssetVersionStatus {
+  DRAFT
+  PREVIEW
+  APPROVED
+  RETIRED
+  VOIDED
+}
+
+enum AssetLocationStatus {
+  AVAILABLE
+  UNAVAILABLE
+  MISSING
+  ARCHIVED
+}
+
+enum CategoryScopeType {
+  PROFILE
+  WORKSPACE
+  ORGANIZATION
+  PROJECT
+}
+
+enum CategoryStatus {
+  ACTIVE
+  RETIRED
+  VOIDED
+}
+
+enum DashboardViewMode {
+  LARGE_IMAGE
+  THUMBNAIL
+  LIST
+  DETAILS
+}
+
+enum CategoryMatchMode {
+  ANY
+  ALL
 }

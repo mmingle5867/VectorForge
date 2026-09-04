@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
+    "test:foundation-rules": "tsx src/scripts/test-foundation-rules.ts",
     "worker": "tsx src/workers/processing-worker-bootstrap.ts",
     "worker:dev": "tsx watch src/workers/processing-worker-bootstrap.ts"
   },

@@ -57,7 +57,28 @@ Package manifests include:
 - file references
 - processing metadata
 
-VectorForge remains marketplace-blind. Marketplace-specific listing rules, categories, pricing rules, field limits, and API logic belong in downstream Listing Software.
+VectorForge remains marketplace-blind. Marketplace-specific listing rules, marketplace taxonomies, pricing rules, field limits, and API logic belong in downstream Listing Software. VectorForge workspace Categories are application-neutral organizational references and are separate from marketplace categories.
+
+## Additive Foundation Models
+
+The first post-baseline migration adds structures without redirecting the existing upload or processing paths:
+
+- `SemaProfile` isolates each local SEMA account profile.
+- `StorageLocation` registers a profile-owned storage root.
+- `AssetVersion` records immutable, hashed versions beneath one logical Asset.
+- `AssetLocation` stores a relative path beneath a registered Storage Location.
+- `Category` forms a cycle-safe, single-parent tree with stable IDs.
+- `ItemCategory` allows an Item to belong to multiple Categories.
+- `RelationshipCategory` allows Bundles and other Relationships to be categorized without changing their members.
+- `DashboardPreference` stores the user's explorer and Category-tree state by context.
+
+Organization and Project Category scopes are reserved in the schema but remain disabled until their membership and permission foundations are implemented.
+
+## Compatibility Boundary
+
+Existing `Asset.filePath`, Batch, upload, processing, Preview/Tune, and Bundle behavior remains operational during this phase. New file writes are not switched to `AssetVersion` or `AssetLocation` until intake and migration services can calculate hashes, verify copies, and roll back failures safely.
+
+All Asset locations added through the new service must be relative to a registered Storage Location. Category membership is logical and never moves or duplicates physical files.
 
 ## Bundles
 

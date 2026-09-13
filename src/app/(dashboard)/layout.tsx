@@ -28,6 +28,7 @@ export default function DashboardLayout({
             </svg>
             <span className="text-lg font-bold text-gray-900">{config.identity.displayName}</span>
           </Link>
+          <p className="mt-1 pl-9 text-xs font-semibold text-gray-500">v0.64.3</p>
         </div>
 
         <nav className="space-y-1">
@@ -41,31 +42,13 @@ export default function DashboardLayout({
             Dashboard
           </Link>
           <Link
-            href="/upload"
+            href="/processing-history"
             className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Upload
-          </Link>
-          <Link
-            href="/dashboard/bundles"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4" />
-            </svg>
-            Bundles
-          </Link>
-          <Link
-            href="/bundles"
-            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12m6-6H6" />
-            </svg>
-            Bundle Builder
+            Processing History
           </Link>
           <Link
             href="/settings"

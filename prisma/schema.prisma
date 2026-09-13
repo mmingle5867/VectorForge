@@ -13,6 +13,149 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// The existing cuid() values are provisional implementation identifiers. The
+// SEMA Core migration replaces them in one controlled pass before this build is
+// used as a reference implementation.
+
+// =============================================================================
+// SEMA Core: local, authoritative, and application-neutral
+// =============================================================================
+
+model SemaCoreIdentityState {
+  stateKey        String   @id
+  installationId  String   @unique
+  nextLocalId     BigInt   @default(1)
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("sema_core_identity_state")
+}
+
+model SemaIssuedIdentifier {
+  semaId          String   @id
+  installationId  String
+  localValue      BigInt
+  localCode       String
+  typeCode        String?
+  issuedAt        DateTime @default(now())
+  metadata        Json     @default("{}")
+
+  @@unique([installationId, localValue])
+  @@index([installationId, localCode])
+  @@index([typeCode])
+  @@index([issuedAt])
+  @@map("sema_issued_identifiers")
+}
+
+model SemaCoreCommand {
+  id             String   @id
+  commandType    String
+  actorId        String?
+  workspaceId    String?
+  subjectIds     Json     @default("[]")
+  context        Json     @default("{}")
+  payload        Json     @default("{}")
+  status         String   @default("PENDING")
+  createdAt      DateTime @default(now())
+
+  executions     SemaCoreExecution[]
+  events         SemaCoreEvent[]
+  auditEntries   SemaCoreAuditEntry[]
+
+  @@index([commandType, createdAt])
+  @@index([actorId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@map("sema_core_commands")
+}
+
+model SemaCoreExecution {
+  id             String   @id
+  commandId      String
+  providerId     String?
+  status         String   @default("PENDING")
+  startedAt      DateTime?
+  completedAt    DateTime?
+  context        Json     @default("{}")
+  error          Json?
+  createdAt      DateTime @default(now())
+
+  command        SemaCoreCommand @relation(fields: [commandId], references: [id], onDelete: Restrict)
+  results        SemaCoreResult[]
+  events         SemaCoreEvent[]
+  auditEntries   SemaCoreAuditEntry[]
+
+  @@index([commandId, createdAt])
+  @@index([status, createdAt])
+  @@map("sema_core_executions")
+}
+
+model SemaCoreEvent {
+  id             String   @id
+  eventType      String
+  commandId      String?
+  executionId    String?
+  subjectIds     Json     @default("[]")
+  data           Json     @default("{}")
+  occurredAt     DateTime @default(now())
+
+  command        SemaCoreCommand? @relation(fields: [commandId], references: [id], onDelete: SetNull)
+  execution      SemaCoreExecution? @relation(fields: [executionId], references: [id], onDelete: SetNull)
+
+  @@index([eventType, occurredAt])
+  @@index([commandId, occurredAt])
+  @@index([executionId, occurredAt])
+  @@map("sema_core_events")
+}
+
+model SemaCoreResult {
+  id             String   @id
+  executionId    String
+  resultType     String
+  subjectIds     Json     @default("[]")
+  data           Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  execution      SemaCoreExecution @relation(fields: [executionId], references: [id], onDelete: Restrict)
+
+  @@index([executionId, createdAt])
+  @@map("sema_core_results")
+}
+
+model SemaCoreAuditEntry {
+  id             String   @id
+  action         String
+  actorId        String?
+  commandId      String?
+  executionId    String?
+  subjectIds     Json     @default("[]")
+  evidence       Json     @default("{}")
+  occurredAt     DateTime @default(now())
+
+  command        SemaCoreCommand? @relation(fields: [commandId], references: [id], onDelete: SetNull)
+  execution      SemaCoreExecution? @relation(fields: [executionId], references: [id], onDelete: SetNull)
+
+  @@index([action, occurredAt])
+  @@index([actorId, occurredAt])
+  @@map("sema_core_audit_entries")
+}
+
+model SemaCoreCapability {
+  id             String   @id
+  capabilityKey  String   @unique
+  displayName    String
+  description    String
+  providerKey    String
+  version        String
+  status         String   @default("ACTIVE")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, displayName])
+  @@map("sema_core_capabilities")
+}
+
 // =============================================================================
 // User Model
 // =============================================================================
@@ -427,7 +570,7 @@ model Relationship {
   workspaceId      String
   itemId           String
   artworkId        String
-  bundleName       String
+  relationshipName String
   metadata         Json               @default("{}")
   status           RelationshipStatus @default(ACTIVE)
   createdAt        DateTime           @default(now())

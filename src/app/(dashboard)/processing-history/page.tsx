@@ -1,0 +1,11 @@
+'use client';
+import { useEffect, useState } from 'react';
+import { formatDate } from '@/lib/utils';
+type Entry = { id: string; commandType: string; status: string; payload: unknown; createdAt: string };
+function label(type: string) { return type.replace('vectorforge.artwork.', '').replaceAll('-', ' ').replaceAll('.', ' / '); }
+export default function ProcessingHistoryPage() {
+  const [entries, setEntries] = useState<Entry[]>([]); const [error, setError] = useState('');
+  async function load() { try { const r = await fetch('/api/artwork/history', { cache: 'no-store' }); const d = await r.json(); if (!r.ok || !d.success) throw new Error(d.error || 'Unable to load history'); setEntries(d.commands); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to load history'); } }
+  useEffect(() => { void load(); }, []);
+  return <div className="mx-auto max-w-5xl"><div className="mb-6 flex items-start justify-between"><div><h1 className="text-2xl font-bold">Artwork Activity</h1><p className="mt-1 text-sm text-gray-600">Direct artwork actions and processing events. Batches are not part of the current VectorForge workflow.</p></div><button onClick={() => void load()} className="rounded border px-3 py-2 text-sm font-semibold">Refresh</button></div>{error && <p className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</p>}{entries.length === 0 ? <div className="rounded-xl border bg-white p-8 text-center text-sm text-gray-500">No direct-artwork activity has been recorded yet.</div> : <div className="overflow-hidden rounded-xl border bg-white"><table className="w-full text-left text-sm"><thead className="bg-gray-50 text-xs uppercase text-gray-500"><tr><th className="px-4 py-3">When</th><th className="px-4 py-3">Activity</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Details</th></tr></thead><tbody>{entries.map((entry) => <tr key={entry.id} className="border-t"><td className="whitespace-nowrap px-4 py-3">{formatDate(entry.createdAt)}</td><td className="px-4 py-3 font-semibold capitalize">{label(entry.commandType)}</td><td className="px-4 py-3">{entry.status}</td><td className="max-w-md truncate px-4 py-3 text-xs text-gray-600" title={JSON.stringify(entry.payload)}>{JSON.stringify(entry.payload)}</td></tr>)}</tbody></table></div>}</div>;
+}

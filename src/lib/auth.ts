@@ -7,6 +7,7 @@ import { auth, currentUser } from '@clerk/nextjs/server';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import config from '@/lib/config';
+import { issueSemaIdentifier } from '@/services/sema-core-identity';
 
 function splitLocalUserName(name: string) {
   const [firstName, ...rest] = name.trim().split(/\s+/);
@@ -59,6 +60,9 @@ async function getLocalUser() {
     });
   }
 
+  const settingsIdentifier = await issueSemaIdentifier('PST', {
+    purpose: 'user-settings-row',
+  });
   return prisma.user.create({
     data: {
       clerkId,
@@ -66,7 +70,7 @@ async function getLocalUser() {
       firstName,
       lastName,
       settings: {
-        create: {},
+        create: { id: settingsIdentifier.id },
       },
     },
     include: { settings: true },
@@ -113,6 +117,9 @@ export async function getCurrentUser() {
     if (!email) return null;
 
     try {
+      const settingsIdentifier = await issueSemaIdentifier('PST', {
+        purpose: 'user-settings-row',
+      });
       user = await prisma.user.create({
         data: {
           clerkId,
@@ -121,7 +128,7 @@ export async function getCurrentUser() {
           lastName: clerkUser.lastName,
           imageUrl: clerkUser.imageUrl,
           settings: {
-            create: {}, // Create with defaults
+            create: { id: settingsIdentifier.id }, // Create with defaults
           },
         },
         include: { settings: true },

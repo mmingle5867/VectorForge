@@ -5,6 +5,7 @@ import { logger } from '@/lib/logger';
 import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
 import { normalizeSvgRoot } from '@/lib/svg-normalize';
 import { applyRasterSourcePadding } from '@/lib/raster-source-padding';
+import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
 const TRACE_BORDER_PX = 2;
 const PNG_ALPHA_TRACE_THRESHOLD = 32;
@@ -21,6 +22,8 @@ const numberWithDefault = (schema: z.ZodDefault<z.ZodNumber>) =>
 
 export const previewTuneSchema = z.object({
   colorMode: z.enum(['color', 'binary']).default('binary'),
+  binaryTraceColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#000000'),
+  traceThicknessPx: numberWithDefault(z.number().min(0).max(20).default(0)),
   preUpscaleBlur: numberWithDefault(z.number().min(0).max(5).default(0)),
   blur: numberWithDefault(z.number().min(0).max(20).default(0)),
   blurPasses: numberWithDefault(z.number().int().min(1).max(3).default(1)),
@@ -41,6 +44,7 @@ export type PreviewTuneSettings = z.infer<typeof previewTuneSchema>;
 export const FIELD_RANGES: Record<string, string> = {
   preUpscaleBlur: '0-5',
   colorMode: 'color or binary',
+  traceThicknessPx: '0-20',
   blur: '0-20',
   blurPasses: '1-3',
   rasterSourcePaddingPx: '-100-200',
@@ -106,11 +110,59 @@ export function getSvgDiagnostics(svg: string) {
   };
 }
 
+function isClosedTraceElement(element: string, attributes: string) {
+  if (['polygon', 'rect', 'circle', 'ellipse'].includes(element.toLowerCase())) return true;
+  if (element.toLowerCase() !== 'path') return false;
+  const pathData = attributes.match(/\sd=(['"])(.*?)\1/i)?.[2] || '';
+  return /(?:^|\s)[zZ](?:\s|$)/.test(pathData) || /[zZ]\s*$/.test(pathData);
+}
+
+function replaceOrAddAttribute(attributes: string, name: string, value: string) {
+  const matcher = new RegExp(`\\s${name}=(['"])[^'"]*\\1`, 'i');
+  return matcher.test(attributes)
+    ? attributes.replace(matcher, ` ${name}="${value}"`)
+    // `attributes` includes the trailing slash from self-closing elements.
+    // Insert before it: `<path ... fill="#000"/>`, never `<path .../ fill="#000">`.
+    : /\s*\/\s*$/.test(attributes)
+      ? attributes.replace(/\s*\/\s*$/, (ending) => ` ${name}="${value}"${ending}`)
+      : `${attributes} ${name}="${value}"`;
+}
+
+function forceBinarySvgColor(svg: string, color: string, traceThicknessPx: number) {
+  return svg.replace(/<(path|polygon|polyline|rect|circle|ellipse)\b([^>]*)>/gi, (tag, element, attributes) => {
+    const closed = isClosedTraceElement(element, attributes);
+    let next = attributes;
+
+    if (closed) {
+      // Closed VTracer contours represent the filled artwork. Older logic left
+      // fill="none" intact, making valid artwork look like outline-only lines.
+      next = replaceOrAddAttribute(next, 'fill', color);
+      if (traceThicknessPx > 0) {
+        next = replaceOrAddAttribute(next, 'stroke', color);
+        next = replaceOrAddAttribute(next, 'stroke-width', String(traceThicknessPx));
+        next = replaceOrAddAttribute(next, 'stroke-linejoin', 'round');
+        next = replaceOrAddAttribute(next, 'paint-order', 'stroke fill');
+      }
+    } else {
+      // An open path has no interior to fill. Keep it as a line and apply the
+      // optional thickness as an explicit stroke width.
+      next = replaceOrAddAttribute(next, 'fill', 'none');
+      next = replaceOrAddAttribute(next, 'stroke', color);
+      if (traceThicknessPx > 0) {
+        next = replaceOrAddAttribute(next, 'stroke-width', String(traceThicknessPx));
+        next = replaceOrAddAttribute(next, 'stroke-linecap', 'round');
+        next = replaceOrAddAttribute(next, 'stroke-linejoin', 'round');
+      }
+    }
+    return `<${element}${next}>`;
+  });
+}
+
 export interface TunedSvgInput {
   imageBuffer: Buffer;
   originalWidth: number;
   originalHeight: number;
-  upscaleFactor: 1 | 2 | 4;
+  upscaleFactor: number;
   smartUpscaleThreshold: number;
   cncMode: boolean;
   settings: PreviewTuneSettings;
@@ -289,6 +341,12 @@ async function prepareTraceRgbaData(
 }
 
 export async function generateTunedSvg(input: TunedSvgInput) {
+  if (!Number.isInteger(input.upscaleFactor) || input.upscaleFactor < 1 || input.upscaleFactor > 10) {
+    throw new Error('Upscale factor must be a whole number from 1× through 10×');
+  }
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterTransform);
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.vectorTrace);
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.vectorOptimize);
   const sourceMetadata = await sharp(input.imageBuffer).metadata();
   const rasterSourcePaddingPx = input.settings.rasterSourcePaddingPx ?? input.settings.svgCanvasPaddingPx ?? 20;
   const sourcePaddingBackground = input.sourceMimeType?.toLowerCase().includes('png')
@@ -387,7 +445,7 @@ export async function generateTunedSvg(input: TunedSvgInput) {
     ],
   });
 
-  const svg = normalizeSvgRoot(optimized.data, traceWidth, traceHeight, {
+  const svg = normalizeSvgRoot(colorMode === 'binary' ? forceBinarySvgColor(optimized.data, input.settings.binaryTraceColor ?? '#000000', input.settings.traceThicknessPx ?? 0) : optimized.data, traceWidth, traceHeight, {
     canvasPaddingPx: input.settings.svgCanvasPaddingPx,
   });
   const diagnostics = getSvgDiagnostics(svg);

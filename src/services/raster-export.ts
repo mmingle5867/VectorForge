@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { logger } from '@/lib/logger';
+import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
 const SVG_BASE_DENSITY = 72;
 const SVG_RENDER_PIXEL_LIMIT = 200_000_000;
@@ -14,6 +15,7 @@ export interface RasterExportOptions {
   canvasPaddingPx?: number;
   forceArtworkColor?: boolean;
   preserveRasterPixels?: boolean;
+  whiteTransparencyThreshold?: number;
 }
 
 export interface SvgRasterExportOptions extends RasterExportOptions {
@@ -64,8 +66,9 @@ function parseHexColor(hex: string): { r: number; g: number; b: number } {
   };
 }
 
-async function preparePngArtwork(input: Buffer, color: string): Promise<Buffer> {
+async function preparePngArtwork(input: Buffer, color: string, threshold = 245): Promise<Buffer> {
   const artworkColor = parseHexColor(color);
+  const whiteThreshold = Math.max(0, Math.min(255, Math.round(threshold)));
   const { data, info } = await sharp(input)
     .ensureAlpha()
     .raw()
@@ -76,7 +79,7 @@ async function preparePngArtwork(input: Buffer, color: string): Promise<Buffer> 
     const g = data[index + 1];
     const b = data[index + 2];
     const a = data[index + 3];
-    const isNearWhite = r >= 245 && g >= 245 && b >= 245;
+    const isNearWhite = r >= whiteThreshold && g >= whiteThreshold && b >= whiteThreshold;
 
     if (a === 0 || isNearWhite) {
       data[index + 3] = 0;
@@ -269,6 +272,7 @@ export async function createFixedCanvasRaster(
   outputPath: string,
   options: RasterExportOptions
 ): Promise<void> {
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterTransform);
   const targetWidth = safeDimension(options.width);
   const targetHeight = safeDimension(options.height);
   const canvasPadding = safeCanvasPadding(options.canvasPaddingPx, targetWidth, targetHeight);
@@ -291,7 +295,11 @@ export async function createFixedCanvasRaster(
   const artwork = options.preserveRasterPixels
     ? await removeLowAlphaEdgeFringe(resized)
     : isPng || options.forceArtworkColor
-    ? await preparePngArtwork(resized, options.artworkColor || '#000000')
+    ? await preparePngArtwork(
+      resized,
+      options.artworkColor || '#000000',
+      options.whiteTransparencyThreshold
+    )
     : resized;
 
   const resizedMeta = await sharp(artwork).metadata();
@@ -318,11 +326,11 @@ export async function createFixedCanvasRaster(
     .toFile(outputPath);
 }
 
-export async function createFixedCanvasSvgRaster(
+export async function renderFixedCanvasSvgRaster(
   input: Buffer,
-  outputPath: string,
   options: SvgRasterExportOptions
-): Promise<void> {
+): Promise<Buffer> {
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterTransform);
   const targetWidth = safeDimension(options.width);
   const targetHeight = safeDimension(options.height);
   const canvasPadding = safeCanvasPadding(options.canvasPaddingPx, targetWidth, targetHeight);
@@ -339,7 +347,7 @@ export async function createFixedCanvasSvgRaster(
       : rendered
     : options.preserveColors
       ? rendered
-      : await recolorVisiblePixels(rendered, '#000000');
+      : await recolorVisiblePixels(rendered, options.artworkColor || '#000000');
 
   const canvas = sharp({
     create: {
@@ -355,16 +363,23 @@ export async function createFixedCanvasSvgRaster(
     const alphaDiagnostics = await getAlphaDiagnostics(pngBuffer);
     if (alphaDiagnostics.allTransparent) {
       logger.warn('SVG-derived PNG export is fully transparent', {
-        outputPath,
         ...alphaDiagnostics,
       });
     }
-    await sharp(pngBuffer).toFile(outputPath);
-    return;
+    return pngBuffer;
   }
 
-  await canvas
+  return canvas
     .flatten({ background: '#ffffff' })
     .jpeg({ quality: options.quality ?? 90 })
-    .toFile(outputPath);
+    .toBuffer();
+}
+
+export async function createFixedCanvasSvgRaster(
+  input: Buffer,
+  outputPath: string,
+  options: SvgRasterExportOptions
+): Promise<void> {
+  const raster = await renderFixedCanvasSvgRaster(input, options);
+  await sharp(raster).toFile(outputPath);
 }

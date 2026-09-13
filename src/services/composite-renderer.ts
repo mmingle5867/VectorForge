@@ -12,6 +12,7 @@ import {
   getProfileListingImagesDir,
 } from '@/lib/package-structure';
 import { renderTemplate, type TemplateValues } from '@/services/template-renderer';
+import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
 export interface CompositeRenderInput {
   template: CompositeTemplate;
@@ -272,6 +273,7 @@ async function renderSupportedLayer(
 export async function renderCompositeTemplate(
   input: CompositeRenderInput
 ): Promise<CompositeRenderResult> {
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterComposite);
   const validation = validateCompositeTemplate(input.template);
   if (!validation.valid) {
     throw new Error(`Invalid composite template: ${validation.errors.join('; ')}`);

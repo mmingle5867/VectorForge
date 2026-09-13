@@ -21,26 +21,30 @@ export async function GET(
     // Find the batch item
     const item = await prisma.batchItem.findUnique({
       where: { id: itemId },
-      include: { batch: true },
+      include: { batch: true, assets: true },
     });
 
     if (!item || item.batch.userId !== user.id) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    if (!item.uploadPath) {
+    const variant = req.nextUrl.searchParams.get('variant');
+    const originalPath = item.assets.find((asset) => asset.role === 'original-file')?.filePath;
+    const previewPath = variant === 'original' ? originalPath : item.uploadPath;
+
+    if (!previewPath) {
       return NextResponse.json({ error: 'No file available' }, { status: 404 });
     }
 
     // Read and resize for preview (max 800px)
-    const fileBuffer = await readFile(item.uploadPath);
-    if (isSvgMimeOrPath(item.mimeType, item.uploadPath)) {
+    const fileBuffer = await readFile(previewPath);
+    if (isSvgMimeOrPath(item.mimeType, previewPath)) {
       const normalized = normalizeImportedSvg(fileBuffer.toString('utf-8'));
 
       return new Response(normalized.svg, {
         headers: {
           'Content-Type': 'image/svg+xml',
-          'Cache-Control': 'private, max-age=3600',
+          'Cache-Control': 'private, no-store, max-age=0',
         },
       });
     }
@@ -53,7 +57,7 @@ export async function GET(
     return new Response(previewBuffer as unknown as BodyInit, {
       headers: {
         'Content-Type': 'image/jpeg',
-        'Cache-Control': 'private, max-age=3600',
+        'Cache-Control': 'private, no-store, max-age=0',
       },
     });
   } catch (error) {

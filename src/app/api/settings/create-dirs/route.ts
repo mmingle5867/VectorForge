@@ -17,6 +17,7 @@ import {
 } from '@/lib/path-management';
 
 const DEFAULT_DIRS = [
+  DEFAULT_MANAGED_PATHS.storageRootPath,
   DEFAULT_MANAGED_PATHS.workingPath,
   DEFAULT_MANAGED_PATHS.uploadPath,
   DEFAULT_MANAGED_PATHS.outputPath,

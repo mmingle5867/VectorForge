@@ -1,8 +1,22 @@
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
 
 import type { Prisma } from '@prisma/client';
 
 import prisma from '@/lib/prisma';
+import { issueSemaIdentifier } from '@/services/sema-core-identity';
+import { ensureOwnerAndWorkspace } from '@/services/sema-identity';
+
+export const DEFAULT_STORAGE_ROOT_PATH = './vectorforge-storage';
+export const DEFAULT_STORAGE_LOCATION_NAME = 'VectorForge Local Workspace';
+
+export interface VectorForgeStoragePaths {
+  base: string;
+  processing: string;
+  artwork: string;
+  bundles: string;
+}
 
 type StorageLocationKindValue =
   | 'LOCAL_FILESYSTEM'
@@ -11,20 +25,51 @@ type StorageLocationKindValue =
   | 'CLOUD_PROVIDER'
   | 'OTHER';
 
-function makeDefaultProfileId(userId: string): string {
-  return `PROFILE-LOCAL-${userId}`;
-}
-
-function makeStorageLocationId(): string {
-  return `LOCATION-${randomUUID().toUpperCase()}`;
-}
-
 function requireBasePath(value: string): string {
   const basePath = value.trim();
   if (!basePath) {
     throw new Error('Storage location base path is required');
   }
   return basePath;
+}
+
+function safeProfileDirectoryName(profileId: string): string {
+  return profileId
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'default-profile';
+}
+
+export function resolveProfileStorageBasePath(storageRootPath: string, profileId: string) {
+  const root = path.isAbsolute(storageRootPath)
+    ? path.resolve(storageRootPath)
+    : path.resolve(process.cwd(), storageRootPath);
+  return path.join(root, 'profiles', safeProfileDirectoryName(profileId));
+}
+
+function storageLocationName(basePath: string) {
+  const pathId = createHash('sha256').update(path.resolve(basePath)).digest('hex').slice(0, 8);
+  return `${DEFAULT_STORAGE_LOCATION_NAME} ${pathId}`;
+}
+
+export function getVectorForgeStoragePaths(basePath: string): VectorForgeStoragePaths {
+  const base = path.resolve(basePath);
+  return {
+    base,
+    processing: path.join(base, 'processing'),
+    artwork: path.join(base, 'artwork'),
+    bundles: path.join(base, 'bundles'),
+  };
+}
+
+export async function ensureVectorForgeStorageDirectories(basePath: string) {
+  const paths = getVectorForgeStoragePaths(basePath);
+  await Promise.all([
+    mkdir(paths.processing, { recursive: true }),
+    mkdir(paths.artwork, { recursive: true }),
+    mkdir(paths.bundles, { recursive: true }),
+  ]);
+  return paths;
 }
 
 export async function ensureDefaultSemaProfile(userId: string) {
@@ -36,7 +81,15 @@ export async function ensureDefaultSemaProfile(userId: string) {
   const displayName =
     [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || user.email;
 
-  const profileId = makeDefaultProfileId(userId);
+  const existing = await prisma.semaProfile.findFirst({
+    where: { userId, isDefault: true, status: 'ACTIVE' },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) return existing;
+
+  const profileId = (await issueSemaIdentifier('PRF', {
+    purpose: 'default-sema-profile',
+  })).id;
 
   return prisma.$transaction(async (tx) => {
     await tx.semaProfile.updateMany({
@@ -44,14 +97,8 @@ export async function ensureDefaultSemaProfile(userId: string) {
       data: { isDefault: false },
     });
 
-    return tx.semaProfile.upsert({
-      where: { profileId },
-      update: {
-        displayName,
-        isDefault: true,
-        status: 'ACTIVE',
-      },
-      create: {
+    return tx.semaProfile.create({
+      data: {
         profileId,
         userId,
         displayName,
@@ -75,6 +122,10 @@ export async function registerStorageLocation(input: {
   if (!name) {
     throw new Error('Storage location name is required');
   }
+  const locationIdentifier = await issueSemaIdentifier('LOC', {
+    purpose: 'storage-location',
+    name,
+  });
 
   const profile = await prisma.semaProfile.findUnique({
     where: { id: input.profileId },
@@ -103,7 +154,7 @@ export async function registerStorageLocation(input: {
 
     return tx.storageLocation.create({
       data: {
-        locationId: makeStorageLocationId(),
+        locationId: locationIdentifier.id,
         profileId: profile.id,
         workspaceId: input.workspaceId ?? null,
         name,
@@ -156,4 +207,130 @@ export async function getDefaultImportStorageLocation(profileId: string) {
     },
     orderBy: { createdAt: 'asc' },
   });
+}
+
+export async function configureDefaultImportStorageForUser(input: {
+  userId: string;
+  storageRootPath?: string;
+}) {
+  const profile = await ensureDefaultSemaProfile(input.userId);
+  const { workspace } = await ensureOwnerAndWorkspace(input.userId);
+  const basePath = resolveProfileStorageBasePath(
+    input.storageRootPath?.trim() || DEFAULT_STORAGE_ROOT_PATH,
+    profile.profileId
+  );
+  const locationName = storageLocationName(basePath);
+  const locationIdentifier = await issueSemaIdentifier('LOC', {
+    purpose: 'default-import-storage-location',
+  });
+
+  const location = await prisma.$transaction(async (tx) => {
+    await tx.storageLocation.updateMany({
+      where: {
+        profileId: profile.id,
+        isDefaultImport: true,
+        name: { not: locationName },
+      },
+      data: { isDefaultImport: false },
+    });
+
+    const location = await tx.storageLocation.upsert({
+      where: {
+        profileId_name: {
+          profileId: profile.id,
+          name: locationName,
+        },
+      },
+      update: {
+        workspaceId: workspace.id,
+        basePath,
+        isDefaultImport: true,
+        isReadOnly: false,
+        status: 'ACTIVE',
+        metadata: {
+          application: 'VectorForge',
+          layoutVersion: 1,
+          configuredRootPath: input.storageRootPath?.trim() || DEFAULT_STORAGE_ROOT_PATH,
+        },
+      },
+      create: {
+        locationId: locationIdentifier.id,
+        profileId: profile.id,
+        workspaceId: workspace.id,
+        name: locationName,
+        kind: 'LOCAL_FILESYSTEM',
+        basePath,
+        isDefaultImport: true,
+        metadata: {
+          application: 'VectorForge',
+          layoutVersion: 1,
+          configuredRootPath: input.storageRootPath?.trim() || DEFAULT_STORAGE_ROOT_PATH,
+        },
+      },
+    });
+    return location;
+  });
+
+  const paths = await ensureVectorForgeStorageDirectories(location.basePath);
+  return { profile, workspace, location, paths };
+}
+
+export async function configureAdditionalStorageForUser(input: {
+  userId: string;
+  storageRootPath: string;
+  makeDefaultImport?: boolean;
+}) {
+  const configuredRootPath = requireBasePath(input.storageRootPath);
+  const profile = await ensureDefaultSemaProfile(input.userId);
+  const { workspace } = await ensureOwnerAndWorkspace(input.userId);
+  const basePath = resolveProfileStorageBasePath(configuredRootPath, profile.profileId);
+  const locationName = storageLocationName(basePath);
+  const locationIdentifier = await issueSemaIdentifier('LOC', {
+    purpose: 'additional-storage-location',
+  });
+
+  const location = await prisma.$transaction(async (tx) => {
+    if (input.makeDefaultImport) {
+      await tx.storageLocation.updateMany({
+        where: { profileId: profile.id, isDefaultImport: true, name: { not: locationName } },
+        data: { isDefaultImport: false },
+      });
+    }
+    const location = await tx.storageLocation.upsert({
+      where: { profileId_name: { profileId: profile.id, name: locationName } },
+      update: {
+        workspaceId: workspace.id,
+        basePath,
+        isDefaultImport: input.makeDefaultImport ?? undefined,
+        isReadOnly: false,
+        status: 'ACTIVE',
+        metadata: { application: 'VectorForge', layoutVersion: 1, configuredRootPath },
+      },
+      create: {
+        locationId: locationIdentifier.id,
+        profileId: profile.id,
+        workspaceId: workspace.id,
+        name: locationName,
+        kind: 'LOCAL_FILESYSTEM',
+        basePath,
+        isDefaultImport: input.makeDefaultImport ?? false,
+        metadata: { application: 'VectorForge', layoutVersion: 1, configuredRootPath },
+      },
+    });
+    if (input.makeDefaultImport) {
+      const currentSettings = await tx.userSettings.findUnique({ where: { userId: input.userId } });
+      const currentExtended = currentSettings?.defaultSubstitutions && typeof currentSettings.defaultSubstitutions === 'object' && !Array.isArray(currentSettings.defaultSubstitutions)
+        ? currentSettings.defaultSubstitutions as Prisma.JsonObject
+        : {};
+      await tx.userSettings.upsert({
+        where: { userId: input.userId },
+        update: { defaultSubstitutions: { ...currentExtended, storageRootPath: configuredRootPath } },
+        create: { userId: input.userId, defaultSubstitutions: { storageRootPath: configuredRootPath } },
+      });
+    }
+    return location;
+  });
+
+  const paths = await ensureVectorForgeStorageDirectories(location.basePath);
+  return { profile, workspace, location, paths };
 }

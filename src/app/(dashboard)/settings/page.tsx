@@ -15,6 +15,8 @@ import {
   type TuningExportSettings,
 } from '@/lib/tuning-defaults';
 import config from '@/lib/config';
+import { DEFAULT_STATUS_COLORS } from '@/lib/status-colors';
+import ControlPresetManager from '@/components/control-preset-manager';
 
 // ============================================================================
 // Types
@@ -23,6 +25,7 @@ import config from '@/lib/config';
 interface UserSettings extends TuningExportSettings {
   defaultUpscaleFactor: number;
   smartUpscaleThreshold: number;
+  storageRootPath: string;
   workingPath: string;
   uploadPath: string;
   baseAssetsPath: string;
@@ -31,6 +34,9 @@ interface UserSettings extends TuningExportSettings {
   archivePath: string;
   templatePath: string;
   defaultSubstitutions: Record<string, string>;
+  statusColors: Record<string, string>;
+  workingVersionKeepCount: number;
+  workingVersionRetentionDays: number;
   // Listing Preview
   enableMarketplacePreview: boolean;
   enableColorTint: boolean;
@@ -63,6 +69,7 @@ interface PathTestResult {
 }
 
 type ManagedPathKey =
+  | 'storageRootPath'
   | 'workingPath'
   | 'uploadPath'
   | 'outputPath'
@@ -74,6 +81,7 @@ type ManagedPathKey =
 const DEFAULT_SETTINGS: UserSettings = {
   defaultUpscaleFactor: 2,
   smartUpscaleThreshold: 2000,
+  storageRootPath: './vectorforge-storage',
   workingPath: './.vectorforge-work',
   uploadPath: './uploads',
   baseAssetsPath: './base-assets',
@@ -82,6 +90,9 @@ const DEFAULT_SETTINGS: UserSettings = {
   archivePath: './archive',
   templatePath: './base-assets/templates',
   defaultSubstitutions: {},
+  statusColors: { ...DEFAULT_STATUS_COLORS },
+  workingVersionKeepCount: 3,
+  workingVersionRetentionDays: 30,
   enableMarketplacePreview: true,
   enableColorTint: false,
   tintColor: '#FFFFFF',
@@ -125,6 +136,13 @@ interface ManagedPathConfig {
 }
 
 const MANAGED_PATHS: ManagedPathConfig[] = [
+  {
+    key: 'storageRootPath',
+    label: 'VectorForge Storage Root',
+    purpose: 'Parent directory for profile-isolated processing inboxes and artwork working directories. VectorForge creates profiles/<profile-id> beneath this path.',
+    defaultValue: './vectorforge-storage',
+    cloudPolicy: 'allowed',
+  },
   {
     key: 'workingPath',
     label: 'Working Path',
@@ -492,6 +510,7 @@ export default function SettingsPage() {
           setSettings({
             defaultUpscaleFactor: data.settings.defaultUpscaleFactor ?? 2,
             smartUpscaleThreshold: data.settings.smartUpscaleThreshold ?? 2000,
+            storageRootPath: data.settings.storageRootPath ?? './vectorforge-storage',
             workingPath: data.settings.workingPath ?? './.vectorforge-work',
             uploadPath: data.settings.uploadPath ?? './uploads',
             baseAssetsPath: data.settings.baseAssetsPath ?? './base-assets',
@@ -499,6 +518,9 @@ export default function SettingsPage() {
             bundleOutputPath: data.settings.bundleOutputPath ?? './output/bundles',
             archivePath: data.settings.archivePath ?? './archive',
             templatePath: data.settings.templatePath ?? './base-assets/templates',
+            statusColors: data.settings.statusColors ?? { ...DEFAULT_STATUS_COLORS },
+            workingVersionKeepCount: data.settings.workingVersionKeepCount ?? 3,
+            workingVersionRetentionDays: data.settings.workingVersionRetentionDays ?? 30,
             defaultSubstitutions: data.settings.defaultSubstitutions ?? {},
             enableMarketplacePreview: data.settings.enableMarketplacePreview ?? true,
             enableColorTint: data.settings.enableColorTint ?? false,
@@ -769,7 +791,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            Configure default processing options, listing preview, and folder paths.
+            Configure processing, dashboard appearance, editors, and folder paths.
           </p>
         </div>
         <button
@@ -834,6 +856,8 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Listing Preview belongs to ListingForge and is intentionally hidden in VectorForge. */}
+      {false && (<>
       {/* Listing Preview Card */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between mb-4">
@@ -993,6 +1017,78 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      </>)}
+
+      {/* Dashboard status colors */}
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Dashboard Status Colors</h2>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          These colors identify each processing state in every dashboard layout.
+        </p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {Object.keys(DEFAULT_STATUS_COLORS).map((status) => (
+            <label key={status} className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{status.replaceAll('_', ' ')}</span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={settings.statusColors[status] ?? DEFAULT_STATUS_COLORS[status]}
+                  onChange={(event) => setSettings((current) => ({
+                    ...current,
+                    statusColors: { ...current.statusColors, [status]: event.target.value },
+                  }))}
+                  className="h-8 w-11 cursor-pointer rounded border border-gray-300"
+                />
+                <span className="w-16 font-mono text-xs text-gray-500">{settings.statusColors[status] ?? DEFAULT_STATUS_COLORS[status]}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Working-Version Retention</h2>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          These values control which older working raster versions are eligible when you run Version Cleanup. Cleanup is always manual and recoverable; the immutable original and current approved or working versions are never eligible.
+        </p>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Recent working versions to keep</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              step={1}
+              value={settings.workingVersionKeepCount}
+              onChange={(event) => setSettings((current) => ({
+                ...current,
+                workingVersionKeepCount: Math.max(1, Math.min(100, Number(event.target.value) || 1)),
+              }))}
+              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Keep this many of the newest working versions for every artwork.</p>
+          </label>
+          <label>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Retention time (days)</span>
+            <input
+              type="number"
+              min={0}
+              max={3650}
+              step={1}
+              value={settings.workingVersionRetentionDays}
+              onChange={(event) => setSettings((current) => ({
+                ...current,
+                workingVersionRetentionDays: Math.max(0, Math.min(3650, Number(event.target.value) || 0)),
+              }))}
+              className="mt-1.5 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Set to 0 to keep versions regardless of age.</p>
+          </label>
+        </div>
+      </div>
+
+      <ControlPresetManager />
 
       {/* Processing Settings Card */}
       <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">

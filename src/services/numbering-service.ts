@@ -1,5 +1,8 @@
 import type { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import {
+  issueSemaIdentifierInTransaction,
+} from '@/services/sema-core-identity';
 
 const DEFAULT_SEQUENCES = [
   { sequenceKey: 'artwork', label: 'Artwork', prefix: 'ART', paddingLength: 6, startingNumber: 1 },
@@ -172,8 +175,10 @@ export async function ensureArtworkIdentityForBatchItem(input: {
   workspaceId?: string | null;
   semaItemId?: string | null;
 }) {
-  await ensureDefaultSequences();
-
+  // Artwork and Asset Profile identity is issued only by SEMA Core. The legacy
+  // artwork/digital friendly-number sequences are deliberately not consulted.
+  // `numericSequence` remains a compatibility column for existing records and
+  // is not an identity or allocator for newly created records.
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
       SELECT id FROM "batch_items"
@@ -210,10 +215,8 @@ export async function ensureArtworkIdentityForBatchItem(input: {
     let artwork = item.artwork;
 
     if (!artwork) {
-      const artworkNumber = await issueNumberInTransaction(tx, 'artwork', {
-        itemId: item.id,
-        batchId: input.batchId,
-        notes: 'Allocated during first approve/save',
+      const artworkIdentifier = await issueSemaIdentifierInTransaction(tx, 'ART', {
+        purpose: 'artwork',
       });
 
       artwork = await tx.artwork.create({
@@ -222,19 +225,10 @@ export async function ensureArtworkIdentityForBatchItem(input: {
           ownerId: input.ownerId ?? null,
           workspaceId: input.workspaceId ?? null,
           itemId: input.semaItemId ?? null,
-          artworkNumber: artworkNumber.issuedNumber,
-          numericSequence: artworkNumber.numericSequence,
+          artworkNumber: artworkIdentifier.id,
+          numericSequence: 0,
           title: input.title,
           sourceItemId: item.id,
-        },
-      });
-
-      await tx.issuedNumber.update({
-        where: { id: artworkNumber.id },
-        data: {
-          artworkId: artwork.id,
-          status: 'ASSIGNED',
-          assignedAt: artworkNumber.assignedAt ?? new Date(),
         },
       });
     } else if (
@@ -266,33 +260,16 @@ export async function ensureArtworkIdentityForBatchItem(input: {
     }
 
     if (!digitalProfile) {
-      const digitalNumber = await issueNumberInTransaction(
-        tx,
-        'digital',
-        {
-          itemId: item.id,
-          batchId: input.batchId,
-          artworkId: artwork.id,
-          notes: 'Default digital profile allocated during first approve/save',
-        },
-        artwork.numericSequence
-      );
+      const profileIdentifier = await issueSemaIdentifierInTransaction(tx, 'PRF', {
+        purpose: 'digital-asset-profile',
+      });
 
       digitalProfile = await tx.assetProfile.create({
         data: {
           artworkId: artwork.id,
           profileType: 'DIGITAL',
-          profileNumber: digitalNumber.issuedNumber,
-          numericSequence: artwork.numericSequence,
-        },
-      });
-
-      await tx.issuedNumber.update({
-        where: { id: digitalNumber.id },
-        data: {
-          assetProfileId: digitalProfile.id,
-          status: 'ASSIGNED',
-          assignedAt: digitalNumber.assignedAt ?? new Date(),
+          profileNumber: profileIdentifier.id,
+          numericSequence: 0,
         },
       });
     }

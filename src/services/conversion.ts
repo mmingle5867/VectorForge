@@ -13,6 +13,7 @@ import { DEFAULT_CONVERSION_OPTIONS } from '@/lib/types';
 import { normalizeSvgRoot } from '@/lib/svg-normalize';
 import { getSvgPath } from '@/lib/output-naming';
 import config from '@/lib/config';
+import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
 const TRACE_BORDER_PX = 2;
 
@@ -30,6 +31,9 @@ export async function convertToSvg(
   baseName: string,
   options: Partial<ConversionOptions> = {}
 ): Promise<GeneratedFile | null> {
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterTransform);
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.vectorTrace);
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.vectorOptimize);
   const opts = { ...DEFAULT_CONVERSION_OPTIONS, ...options };
   const svgPath = getSvgPath(outputDir);
   const svgFilename = path.basename(svgPath);

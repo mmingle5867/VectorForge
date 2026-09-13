@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import { logger } from '@/lib/logger';
 import type { UpscaleOptions, UpscaleResult } from '@/lib/types';
 import { getOriginalSourcePath } from '@/lib/output-naming';
+import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
 /**
  * Upscale an image using Sharp.js with smart threshold logic.
@@ -20,6 +21,7 @@ export async function upscaleImage(
   outputDir: string,
   options: UpscaleOptions
 ): Promise<UpscaleResult> {
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterUpscale);
   const { factor, threshold, keepOriginal } = options;
 
   // Read image metadata
@@ -103,6 +105,7 @@ export async function generatePreview(
   outputDir: string,
   maxSize: number = 400
 ): Promise<string> {
+  await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterTransform);
   const ext = path.extname(inputPath);
   const baseName = path.basename(inputPath, ext);
   const previewFilename = `preview_${baseName}.jpg`;

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { Prisma } from '@prisma/client';
 
 import {
@@ -8,12 +6,9 @@ import {
   normalizeSha256,
 } from '@/lib/asset-location-rules';
 import prisma from '@/lib/prisma';
+import { issueSemaIdentifier } from '@/services/sema-core-identity';
 
 type AssetVersionStatusValue = 'DRAFT' | 'PREVIEW' | 'APPROVED' | 'RETIRED' | 'VOIDED';
-
-function makeAssetVersionId(): string {
-  return `ASSET-VERSION-${randomUUID().toUpperCase()}`;
-}
 
 export async function createAssetVersion(input: {
   assetId: string;
@@ -30,6 +25,14 @@ export async function createAssetVersion(input: {
   const relativePath = normalizeRelativeAssetPath(input.relativePath);
   const sha256 = normalizeSha256(input.sha256);
   const byteLength = normalizeByteLength(input.byteLength);
+  const versionIdentifier = await issueSemaIdentifier('SNP', {
+    purpose: 'asset-version',
+    assetRowKey: input.assetId,
+  });
+  const locationRowIdentifier = await issueSemaIdentifier('LOC', {
+    purpose: 'asset-location-row',
+    assetVersionId: versionIdentifier.id,
+  });
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
@@ -79,7 +82,7 @@ export async function createAssetVersion(input: {
 
     return tx.assetVersion.create({
       data: {
-        assetVersionId: makeAssetVersionId(),
+        assetVersionId: versionIdentifier.id,
         assetId: asset.id,
         createdByProfileId: input.createdByProfileId,
         versionNumber,
@@ -90,6 +93,7 @@ export async function createAssetVersion(input: {
         metadata: input.metadata ?? {},
         locations: {
           create: {
+            id: locationRowIdentifier.id,
             storageLocationId: storageLocation.id,
             relativePath,
             isPrimary: true,

@@ -12,6 +12,12 @@ import {
   FACTORY_TUNING_EXPORT_DEFAULTS,
   type TuningExportSettings,
 } from '@/lib/tuning-defaults';
+import {
+  DEFAULT_RASTER_EDITOR_PREPARATION,
+  type ControlPreset,
+  type RasterEditorPreparation,
+  type TuneControlSettings,
+} from '@/lib/control-presets';
 
 interface BatchItem {
   id: string;
@@ -40,22 +46,7 @@ interface BatchInfo {
   smartUpscaleThreshold: number;
 }
 
-interface TuneSettings {
-  colorMode: 'color' | 'binary';
-  preUpscaleBlur: number;
-  blur: number;
-  blurPasses: number;
-  rasterSourcePaddingPx: number;
-  svgCanvasPaddingPx: number;
-  exportCanvasPaddingPx: number;
-  pathPrecision: number;
-  cornerThreshold: number;
-  filterSpeckle: number;
-  lengthThreshold: number;
-  spliceThreshold: number;
-  colorPrecision: number;
-  layerDifference: number;
-}
+type TuneSettings = TuneControlSettings;
 
 interface TunePreview {
   svgBase64: string;
@@ -89,6 +80,23 @@ interface SavedOutputFile {
   filename: string;
   path: string;
   size: number;
+}
+
+interface RasterWorkingVersion {
+  key: string;
+  assetVersionId?: string;
+  versionNumber?: number;
+  filePath: string;
+  isCurrent?: boolean;
+  createdAt?: string;
+  metadata?: unknown;
+  width?: number | null;
+  height?: number | null;
+}
+
+interface RasterVersionHistory {
+  original: { key: 'original'; label: string; filePath: string; width?: number | null; height?: number | null } | null;
+  versions: RasterWorkingVersion[];
 }
 
 interface CompositeTemplateOption {
@@ -190,6 +198,8 @@ function getStatusMessage(
 
 const DEFAULT_TUNE_SETTINGS: TuneSettings = {
   colorMode: 'binary',
+  binaryTraceColor: '#000000',
+  traceThicknessPx: 0,
   preUpscaleBlur: FACTORY_TUNING_EXPORT_DEFAULTS.preUpscaleBlur,
   blur: FACTORY_TUNING_EXPORT_DEFAULTS.preprocessingBlur,
   blurPasses: FACTORY_TUNING_EXPORT_DEFAULTS.blurPasses,
@@ -210,6 +220,8 @@ function getTuneSettingsFromSiteSettings(
 ): TuneSettings {
   return {
     colorMode: settings?.colorMode ?? (settings?.cncMode === false ? 'color' : 'binary'),
+    binaryTraceColor: DEFAULT_TUNE_SETTINGS.binaryTraceColor,
+    traceThicknessPx: DEFAULT_TUNE_SETTINGS.traceThicknessPx,
     preUpscaleBlur: settings?.preUpscaleBlur ?? DEFAULT_TUNE_SETTINGS.preUpscaleBlur,
     blur: settings?.preprocessingBlur ?? DEFAULT_TUNE_SETTINGS.blur,
     blurPasses: settings?.blurPasses ?? DEFAULT_TUNE_SETTINGS.blurPasses,
@@ -461,6 +473,18 @@ export default function ReviewPage() {
   const [tuneItem, setTuneItem] = useState<BatchItem | null>(null);
   const [siteTuneDefaults, setSiteTuneDefaults] = useState<TuneSettings>(DEFAULT_TUNE_SETTINGS);
   const [tuneSettings, setTuneSettings] = useState<TuneSettings>(DEFAULT_TUNE_SETTINGS);
+  const [controlPresets, setControlPresets] = useState<ControlPreset[]>([]);
+  const [selectedControlPresetId, setSelectedControlPresetId] = useState('');
+  const [controlPreferencesLoaded, setControlPreferencesLoaded] = useState(false);
+  const [rasterPreparation, setRasterPreparation] = useState<RasterEditorPreparation>(DEFAULT_RASTER_EDITOR_PREPARATION);
+  const [rasterPreparationOpen, setRasterPreparationOpen] = useState(false);
+  const [rasterPreparing, setRasterPreparing] = useState(false);
+  const [rasterPreparationError, setRasterPreparationError] = useState('');
+  const [rasterUpscaleConfirmed, setRasterUpscaleConfirmed] = useState(false);
+  const [rasterVersionHistory, setRasterVersionHistory] = useState<RasterVersionHistory | null>(null);
+  const [rasterVersionLoading, setRasterVersionLoading] = useState(false);
+  const [selectedRasterVersionKey, setSelectedRasterVersionKey] = useState<string | null>(null);
+  const [hoveredRasterVersionKey, setHoveredRasterVersionKey] = useState<string | null>(null);
   const [tunePreview, setTunePreview] = useState<TunePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -483,6 +507,7 @@ export default function ReviewPage() {
   const [canvasPan, setCanvasPan] = useState<Point>({ x: 0, y: 0 });
   const [canvasPanStart, setCanvasPanStart] = useState<{ pointer: Point; pan: Point } | null>(null);
   const [autoOpenedItemId, setAutoOpenedItemId] = useState<string | null>(null);
+  const [autoOpenedRasterItemId, setAutoOpenedRasterItemId] = useState<string | null>(null);
   const [compositeTemplates, setCompositeTemplates] = useState<CompositeTemplateOption[]>([]);
   const [selectedCompositeTemplateId, setSelectedCompositeTemplateId] = useState('');
   const [compositeLoading, setCompositeLoading] = useState(false);
@@ -572,6 +597,42 @@ export default function ReviewPage() {
   }, [tuneItem]);
 
   useEffect(() => {
+    async function fetchControlPreferences() {
+      try {
+        const res = await fetch('/api/control-presets', { cache: 'no-store' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setControlPresets(Array.isArray(data.presets) ? data.presets : []);
+          setRasterPreparation(data.rasterPreparation ?? DEFAULT_RASTER_EDITOR_PREPARATION);
+          if (data.lastSettings) {
+            setTuneSettings(data.lastSettings);
+            setSiteTuneDefaults(data.lastSettings);
+          }
+        }
+      } finally {
+        setControlPreferencesLoaded(true);
+      }
+    }
+    fetchControlPreferences();
+  }, []);
+
+  useEffect(() => {
+    if (!controlPreferencesLoaded) return;
+    const timer = window.setTimeout(() => {
+      fetch('/api/control-presets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'persist-current',
+          settings: tuneSettings,
+          rasterPreparation,
+        }),
+      }).catch(() => undefined);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [controlPreferencesLoaded, rasterPreparation, tuneSettings]);
+
+  useEffect(() => {
     if (!tuneItem) return;
 
     async function fetchCompositeTemplates() {
@@ -647,7 +708,6 @@ export default function ReviewPage() {
   const openTunePanel = (item: BatchItem) => {
     const existingFiles = getSavedFilesForItem(item);
     setTuneItem(item);
-    setTuneSettings(siteTuneDefaults);
     setTunePreview(null);
     setPreviewError(null);
     setPreviewStatus('idle');
@@ -684,6 +744,21 @@ export default function ReviewPage() {
   }, [requestedItemId, loading, autoOpenedItemId, items, siteTuneDefaults]);
 
   useEffect(() => {
+    if (
+      searchParams.get('openRaster') !== '1' ||
+      !tuneItem ||
+      tuneItem.id !== requestedItemId ||
+      autoOpenedRasterItemId === tuneItem.id
+    ) return;
+    setRasterPreparationError('');
+    setRasterVersionHistory(null);
+    setSelectedRasterVersionKey(null);
+    setRasterPreparationOpen(true);
+    void loadRasterVersionHistory(tuneItem.id);
+    setAutoOpenedRasterItemId(tuneItem.id);
+  }, [autoOpenedRasterItemId, requestedItemId, searchParams, tuneItem]);
+
+  useEffect(() => {
     const toolbar = previewToolbarRef.current;
     if (!toolbar) return;
 
@@ -704,6 +779,42 @@ export default function ReviewPage() {
 
   const updateTuneColorMode = (colorMode: 'color' | 'binary') => {
     setTuneSettings((prev) => ({ ...prev, colorMode }));
+  };
+
+  const applyControlPreset = (presetId: string) => {
+    setSelectedControlPresetId(presetId);
+    const preset = controlPresets.find((entry) => entry.id === presetId);
+    if (!preset) return;
+    setTuneSettings(preset.settings);
+    setRasterPreparation(preset.rasterPreparation);
+    setLocalEditorMessage(`Loaded preset: ${preset.name}`);
+  };
+
+  const saveCurrentControlPreset = async () => {
+    const name = window.prompt('Preset name');
+    if (!name?.trim()) return;
+    const description = window.prompt('Preset description', '') ?? '';
+    try {
+      const res = await fetch('/api/control-presets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-preset',
+          name: name.trim(),
+          description: description.trim(),
+          settings: tuneSettings,
+          rasterPreparation,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unable to save preset');
+      setControlPresets(data.presets);
+      const saved = [...data.presets].reverse().find((preset: ControlPreset) => preset.name === name.trim());
+      if (saved) setSelectedControlPresetId(saved.id);
+      setLocalEditorMessage(`Saved control preset: ${name.trim()}`);
+    } catch (error) {
+      setLocalEditorMessage(error instanceof Error ? error.message : 'Unable to save preset');
+    }
   };
 
   const previewSvgDataUrl = tunePreview
@@ -1267,10 +1378,78 @@ export default function ReviewPage() {
     }
   };
 
-  const openOriginalRaster = async () => {
+  const loadRasterVersionHistory = async (itemId: string) => {
+    setRasterVersionLoading(true);
+    try {
+      const res = await fetch(`/api/batches/${batchId}/items/${itemId}/raster-versions`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unable to load raster versions');
+      setRasterVersionHistory({ original: data.original ?? null, versions: Array.isArray(data.versions) ? data.versions : [] });
+    } catch (error) {
+      setRasterVersionHistory(null);
+      setRasterPreparationError(error instanceof Error ? error.message : 'Unable to load raster versions');
+    } finally {
+      setRasterVersionLoading(false);
+    }
+  };
+
+  const openOriginalRaster = () => {
+    setRasterPreparationError('');
+    setRasterUpscaleConfirmed(false);
+    setRasterVersionHistory(null);
+    setSelectedRasterVersionKey(null);
+    setRasterPreparationOpen(true);
+    if (tuneItem) void loadRasterVersionHistory(tuneItem.id);
+  };
+
+  const refreshWorkingImage = async () => {
+    if (!tuneItem) return;
+    await fetchBatch({ keepLoading: true });
+    setTuneItem((current) => current && current.id === tuneItem.id ? { ...current, previewUrl: `/api/preview/${tuneItem.id}?t=${Date.now()}` } : current);
+    setPreviewStatusMessage('Working image refreshed from disk.');
+  };
+
+  const activateRasterVersion = async (versionKey: string, openAfterActivation: boolean) => {
+    if (!tuneItem) return;
+    setRasterPreparing(true);
+    setRasterPreparationError('');
+    try {
+      const res = await fetch(`/api/batches/${batchId}/items/${tuneItem.id}/raster-versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ versionKey }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unable to activate raster version');
+      await fetchBatch({ keepLoading: true });
+      if (openAfterActivation) {
+        setSelectedRasterVersionKey(null);
+        await launchOriginalRaster(false);
+      }
+      void loadRasterVersionHistory(tuneItem.id);
+    } catch (error) {
+      setRasterPreparationError(error instanceof Error ? error.message : 'Unable to activate raster version');
+    } finally {
+      setRasterPreparing(false);
+    }
+  };
+
+  const launchOriginalRaster = async (prepare: boolean) => {
     if (!tuneItem) return;
 
-    setLocalEditorMessage('Opening original raster...');
+    if (!prepare && selectedRasterVersionKey) {
+      await activateRasterVersion(selectedRasterVersionKey, true);
+      return;
+    }
+
+    if (prepare && rasterPreparation.upscaleFactor > 1 && !rasterUpscaleConfirmed) {
+      setRasterPreparationError('Confirm the output size before creating an upscaled working version.');
+      return;
+    }
+
+    setRasterPreparing(true);
+    setRasterPreparationError('');
+    setLocalEditorMessage(prepare ? 'Preparing working raster for the editor...' : 'Opening working raster...');
 
     try {
       const res = await fetch('/api/local-editor/open', {
@@ -1280,18 +1459,48 @@ export default function ReviewPage() {
           action: 'original-raster',
           batchId,
           itemId: tuneItem.id,
+          prepare,
+          preparation: rasterPreparation,
+          sourceVersionKey: prepare ? selectedRasterVersionKey : null,
         }),
       });
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        setLocalEditorMessage(data.error || 'Failed to open original raster');
+        const message = data.error || 'Failed to open working raster';
+        setRasterPreparationError(message);
+        setLocalEditorMessage(message);
         return;
       }
 
-      setLocalEditorMessage('Opened original raster. Save it in the editor, then Generate Preview again.');
-    } catch {
-      setLocalEditorMessage('Failed to open original raster');
+      setRasterPreparationOpen(false);
+      setLocalEditorMessage(
+        data.prepared
+          ? 'Created a new prepared working version and opened it. The new raster is now shown in Preview/Tune; save in the editor, then Generate Preview when ready.'
+          : 'Opened the current working raster. Save in the editor, then Generate Preview again.'
+      );
+      if (data.prepared) {
+        await fetchBatch({ keepLoading: true });
+
+        // The preview route resolves the current working file from the database.
+        // Give its URL a fresh cache key and return the panel to raster view so the
+        // newly prepared image is visible before any vector trace is generated.
+        const previewUrl = `/api/preview/${tuneItem.id}?t=${Date.now()}`;
+        setTuneItem((current) => current && current.id === tuneItem.id
+          ? { ...current, previewUrl }
+          : current);
+        setTunePreview(null);
+        setPreviewError(null);
+        setPreviewStatus('idle');
+        setPreviewStatusMessage('Prepared working raster is ready to review before tracing.');
+        setPreviewViewMode('original');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to open working raster';
+      setRasterPreparationError(message);
+      setLocalEditorMessage(message);
+    } finally {
+      setRasterPreparing(false);
     }
   };
 
@@ -2157,6 +2366,33 @@ export default function ReviewPage() {
                       </div>
 
                       <div className={`border-b border-gray-200 ${compactTunePanel ? 'p-2' : 'p-3'}`}>
+                        <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                          Control preset
+                        </label>
+                        <div className="mb-3 flex gap-1.5">
+                          <select
+                            value={selectedControlPresetId}
+                            onChange={(event) => applyControlPreset(event.target.value)}
+                            className="min-w-0 flex-1 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-xs"
+                          >
+                            <option value="">Current persistent settings</option>
+                            {controlPresets.map((preset) => (
+                              <option key={preset.id} value={preset.id}>{preset.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={saveCurrentControlPreset}
+                            className="rounded-md border border-blue-300 bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-700"
+                          >
+                            Save Set
+                          </button>
+                        </div>
+                        {selectedControlPresetId && (
+                          <p className="mb-3 rounded-md bg-gray-50 px-2 py-1.5 text-[11px] text-gray-600">
+                            {controlPresets.find((preset) => preset.id === selectedControlPresetId)?.description || 'No preset description'}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-1.5">
                           <PanelIconButton title="Generate Preview" onClick={generatePreview} disabled={previewLoading} primary>
                             {previewLoading ? '...' : '▶'}
@@ -2170,7 +2406,7 @@ export default function ReviewPage() {
                             </PanelIconButton>
                           )}
                           {canOpenOriginalRaster && (
-                            <PanelIconButton title="Open Original Raster" onClick={openOriginalRaster}>
+                            <PanelIconButton title="Prepare / Open Working Raster" onClick={openOriginalRaster}>
                               ◫
                             </PanelIconButton>
                           )}
@@ -2763,6 +2999,140 @@ export default function ReviewPage() {
                 </aside>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {rasterPreparationOpen && tuneItem && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-3 sm:p-5">
+          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-md flex-col rounded-xl bg-white shadow-2xl sm:max-h-[calc(100vh-2.5rem)]">
+            <div className="shrink-0 border-b px-5 py-4"><div className="flex items-center justify-between gap-3"><h3 className="text-lg font-bold text-gray-900">Prepare Working Raster</h3><button type="button" title="Refresh image from the current working file after saving in the raster editor" aria-label="Refresh image from the current working file" disabled={rasterPreparing} onClick={() => void refreshWorkingImage()} className="rounded border border-gray-300 px-3 py-1.5 text-sm font-semibold disabled:opacity-50">Refresh image</button></div>
+            <p className="mt-1 text-sm text-gray-600">
+              Opening the current working copy makes no changes. Blur or upscale is an explicit, separately confirmed action that creates a new version.
+            </p>
+            </div><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4"><div className="space-y-4">
+              {rasterPreparationError && (
+                <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm font-semibold text-red-800">
+                  {rasterPreparationError}
+                </div>
+              )}
+              <label className="block">
+                <span className="flex justify-between text-sm font-semibold"><span>Blur</span><span>{rasterPreparation.blur.toFixed(1)}</span></span>
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  step="0.1"
+                  value={rasterPreparation.blur}
+                  onChange={(event) => setRasterPreparation((current) => ({ ...current, blur: Number(event.target.value) }))}
+                  className="mt-2 w-full accent-blue-600"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold">Upscale before editing</span>
+                <select
+                  value={rasterPreparation.upscaleFactor}
+                  onChange={(event) => {
+                    setRasterUpscaleConfirmed(false);
+                    setRasterPreparation((current) => ({ ...current, upscaleFactor: Number(event.target.value) as 1 | 2 | 4 }));
+                  }}
+                  className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                >
+                  <option value={1}>1x — no upscale</option>
+                  <option value={2}>2x</option>
+                  <option value={4}>4x</option>
+                </select>
+              </label>
+              {rasterPreparation.upscaleFactor > 1 && (
+                <label className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                  <input
+                    type="checkbox"
+                    checked={rasterUpscaleConfirmed}
+                    onChange={(event) => setRasterUpscaleConfirmed(event.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    I understand this creates a new enlarged working version. Output is limited to 64 megapixels; larger requests are blocked.
+                  </span>
+                </label>
+              )}
+              <div className="rounded-md border border-gray-200 p-3 text-sm">
+                <div className="font-semibold text-gray-900">Working-version history</div><p className="mt-1 text-xs font-semibold text-gray-700">Selected image size: {selectedRasterVersionKey === 'original' ? `${tuneItem.originalWidth ?? '—'} × ${tuneItem.originalHeight ?? '—'} px` : (() => { const version = rasterVersionHistory?.versions.find((entry) => entry.key === selectedRasterVersionKey) ?? rasterVersionHistory?.versions.find((entry) => entry.isCurrent); return version?.width && version?.height ? `${version.width} × ${version.height} px` : `${tuneItem.originalWidth ?? '—'} × ${tuneItem.originalHeight ?? '—'} px`; })()}</p>
+                <p className="mt-1 text-xs text-gray-600">Choose a prior version or the untouched original to make it the current working raster, then open it in the editor.</p>
+                <div className="mt-3 flex h-40 items-center justify-center rounded border bg-gray-50 p-2">
+                  <img
+                    src={hoveredRasterVersionKey ? `/api/batches/${batchId}/items/${tuneItem.id}/raster-versions?previewKey=${encodeURIComponent(hoveredRasterVersionKey)}` : tuneItem.previewUrl}
+                    alt="Selected raster version preview"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+                <p className="mt-1 text-center text-xs text-gray-500">Hover a version to inspect it here; click once to select it.</p>
+                {rasterVersionLoading ? (
+                  <p className="mt-2 text-xs text-gray-500">Loading versions…</p>
+                ) : (
+                  <div className="mt-2 max-h-36 space-y-1 overflow-y-auto">
+                    {rasterVersionHistory?.original && (
+                      <button
+                        type="button"
+                        disabled={rasterPreparing}
+                        onMouseEnter={() => setHoveredRasterVersionKey('original')}
+                        onMouseLeave={() => setHoveredRasterVersionKey(null)}
+                        onClick={() => setSelectedRasterVersionKey('original')}
+                        className={`flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-gray-100 disabled:opacity-50 ${selectedRasterVersionKey === 'original' ? 'bg-blue-100 ring-1 ring-blue-500' : ''}`}
+                      >
+                        <span>Untouched original {rasterVersionHistory.original.width && rasterVersionHistory.original.height ? `· ${rasterVersionHistory.original.width} × ${rasterVersionHistory.original.height}` : ''}</span><span className="font-semibold">Select</span>
+                      </button>
+                    )}
+                    {rasterVersionHistory?.versions.map((version) => (
+                      <button
+                        key={version.key}
+                        type="button"
+                        disabled={rasterPreparing}
+                        onMouseEnter={() => setHoveredRasterVersionKey(version.key)}
+                        onMouseLeave={() => setHoveredRasterVersionKey(null)}
+                        onClick={() => setSelectedRasterVersionKey(version.key)}
+                        className={`flex w-full items-center justify-between rounded px-2 py-1 text-left text-xs hover:bg-gray-100 disabled:opacity-50 ${selectedRasterVersionKey === version.key ? 'bg-blue-100 ring-1 ring-blue-500' : ''}`}
+                      >
+                        <span>Working version {version.versionNumber ?? '—'}{version.isCurrent ? ' (current)' : ''}{version.width && version.height ? ` · ${version.width} × ${version.height}` : ''}</span>
+                        <span className="font-semibold">{selectedRasterVersionKey === version.key ? 'Selected' : 'Select'}</span>
+                      </button>
+                    ))}
+                    {!rasterVersionHistory?.original && !rasterVersionHistory?.versions.length && (
+                      <p className="text-xs text-gray-500">No saved versions are available yet.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-900">
+                These preparation choices and the current vectorizer controls are saved automatically for your next session.
+              </div>
+            </div></div>
+            <div className="shrink-0 border-t px-5 py-4"><div className="grid gap-2">
+              <button
+                type="button"
+                disabled={rasterPreparing}
+                onClick={() => launchOriginalRaster(false)}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {rasterPreparing ? 'Opening…' : 'Open Current Working Copy'}
+              </button>
+              <button
+                type="button"
+                disabled={rasterPreparing}
+                onClick={() => launchOriginalRaster(true)}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold"
+              >
+                Apply Blur/Upscale and Create New Version
+              </button>
+              <button
+                type="button"
+                disabled={rasterPreparing}
+                onClick={() => setRasterPreparationOpen(false)}
+                className="px-4 py-2 text-sm text-gray-600"
+              >
+                Cancel
+              </button>
+            </div></div>
           </div>
         </div>
       )}

@@ -5,9 +5,13 @@ import { spawn } from 'child_process';
 import { requireAuth } from '@/lib/auth';
 import config from '@/lib/config';
 import prisma from '@/lib/prisma';
+import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
+import { normalizeRasterEditorPreparation } from '@/lib/control-presets';
+import { logger } from '@/lib/logger';
+import { prepareDirectRasterForEditor, prepareRasterForEditor } from '@/services/raster-editor-preparation';
 
 type EditableFileType = 'PNG' | 'JPG' | 'SVG';
-type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster';
+type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-working-png';
 
 interface GeneratedFileInput {
   type: string;
@@ -39,6 +43,23 @@ function getExtendedPath(settingsJson: unknown, key: string, fallback: string) {
 function isInsideDirectory(targetPath: string, directoryPath: string) {
   const relative = path.relative(directoryPath, targetPath);
   return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function isInsideAuthorizedProfileStorage(input: {
+  profileId: string;
+  defaultArtworkPath: string;
+  filePath: string;
+}) {
+  if (isInsideDirectory(input.filePath, input.defaultArtworkPath)) return true;
+
+  // Existing artwork may remain at a registered prior/local/cloud location
+  // after the default import location changes. Registration, rather than a
+  // folder-name pattern, remains the authorization boundary.
+  const locations = await prisma.storageLocation.findMany({
+    where: { profileId: input.profileId, status: 'ACTIVE', isReadOnly: false },
+    select: { basePath: true },
+  });
+  return locations.some((location) => isInsideDirectory(input.filePath, location.basePath));
 }
 
 function getExtendedSettings(settings: unknown) {
@@ -75,30 +96,47 @@ async function assertExistingPath(filePath: string, expected: 'file' | 'director
 }
 
 function launchDetached(command: string, args: string[]) {
-  const child = spawn(command, args, {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: false,
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+    // A configured editor must either spawn promptly or report a clear error.
+    // Do not leave the browser request pending indefinitely when Windows cannot
+    // start the associated executable.
+    const timeout = setTimeout(() => finish(() => reject(new Error(`Timed out while starting ${path.basename(command)}`))), 5000);
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.once('error', (error) => finish(() => reject(error)));
+    child.once('spawn', () => {
+      child.unref();
+      finish(resolve);
+    });
   });
-  child.unref();
 }
 
-function openFolder(folderPath: string) {
+async function openFolder(folderPath: string) {
   if (process.platform === 'win32') {
-    launchDetached('explorer.exe', [folderPath]);
+    await launchDetached('explorer.exe', [folderPath]);
     return;
   }
 
-  launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [folderPath]);
+  await launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [folderPath]);
 }
 
-function openFileWithDefaultApp(filePath: string) {
+async function openFileWithDefaultApp(filePath: string) {
   if (process.platform === 'win32') {
-    launchDetached('explorer.exe', [filePath]);
+    await launchDetached('explorer.exe', [filePath]);
     return;
   }
 
-  launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [filePath]);
+  await launchDetached(process.platform === 'darwin' ? 'open' : 'xdg-open', [filePath]);
 }
 
 async function getManualEditorPath(extended: Record<string, unknown>) {
@@ -117,6 +155,14 @@ async function getManualEditorPath(extended: Record<string, unknown>) {
   return editorPath;
 }
 
+async function getVectorEditorPath(extended: Record<string, unknown>) {
+  const editorPath = typeof extended.vectorEditorPath === 'string' ? extended.vectorEditorPath.trim() : '';
+  if (!editorPath) throw new Error('Local Only: vector editor is not configured in Settings');
+  if (!path.isAbsolute(editorPath)) throw new Error('Local Only: vector editor path must be an absolute path');
+  await assertExistingPath(editorPath, 'file');
+  return editorPath;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth();
@@ -127,7 +173,65 @@ export async function POST(req: NextRequest) {
     const requestedFileType = typeof body.fileType === 'string' ? body.fileType.toUpperCase() : '';
     const extended = getExtendedSettings(user.settings?.defaultSubstitutions);
 
+    if (action === 'direct-working-png') {
+      const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
+      const artwork = await prisma.artwork.findFirst({
+        where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
+        include: { assets: { where: { role: 'working-png', status: 'ACTIVE' }, take: 1 } },
+      });
+      const png = artwork?.assets[0];
+      if (!png?.filePath) return NextResponse.json({ success: false, error: 'Create the working PNG before editing it' }, { status: 404 });
+      await assertExistingPath(png.filePath, 'file');
+      await launchDetached(await getManualEditorPath(extended), [png.filePath]);
+      return NextResponse.json({ success: true, filePath: png.filePath });
+    }
+
+    if (action === 'direct-output-raster') {
+      const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
+      const outputType = body.outputType === 'PNG' ? 'approved-png' : body.outputType === 'JPG' ? 'approved-jpg' : null;
+      if (!artworkId || !outputType) return NextResponse.json({ success: false, error: 'Choose a saved PNG or JPG output' }, { status: 400 });
+      const artwork = await prisma.artwork.findFirst({ where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } }, include: { assets: { where: { role: outputType, status: 'ACTIVE' }, take: 1 } } });
+      const output = artwork?.assets[0];
+      if (!output?.filePath) return NextResponse.json({ success: false, error: 'Save this output before opening it in the raster editor' }, { status: 404 });
+      await assertExistingPath(output.filePath, 'file');
+      await launchDetached(await getManualEditorPath(extended), [output.filePath]);
+      return NextResponse.json({ success: true, filePath: output.filePath });
+    }
+
+    if (action === 'direct-vector') {
+      const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
+      const artwork = await prisma.artwork.findFirst({
+        where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
+        include: { assets: { where: { role: 'approved-svg', status: 'ACTIVE' }, take: 1 } },
+      });
+      const vector = artwork?.assets[0];
+      if (!vector?.filePath) return NextResponse.json({ success: false, error: 'Save an approved vector before opening the vector editor' }, { status: 404 });
+      await assertExistingPath(vector.filePath, 'file');
+      await launchDetached(await getVectorEditorPath(extended), [vector.filePath]);
+      return NextResponse.json({ success: true, filePath: vector.filePath });
+    }
+
     if (action === 'original-raster') {
+      const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
+      if (artworkId) {
+        const artwork = await prisma.artwork.findFirst({
+          where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
+          include: { assets: { where: { role: 'source-file' }, take: 1 } },
+        });
+        const source = artwork?.assets[0];
+        if (!artwork || !source?.filePath || !isRasterUpload(source.mimeType, source.filePath)) return NextResponse.json({ success: false, error: 'Artwork raster was not found' }, { status: 404 });
+        const preparation = normalizeRasterEditorPreparation(body.preparation);
+        const prepared = body.prepare === true
+          ? await prepareDirectRasterForEditor({ userId: user.id, artworkId, preparation, sourceVersionKey: typeof body.sourceVersionKey === 'string' ? body.sourceVersionKey : null })
+          : { filePath: path.resolve(source.filePath), prepared: false };
+        const sourceMetadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+          ? source.metadata as Record<string, unknown>
+          : {};
+        await prisma.asset.update({ where: { id: source.id }, data: { metadata: { ...sourceMetadata, jpegReadyForVectorizing: false } } });
+        await assertExistingPath(prepared.filePath, 'file');
+        await launchDetached(await getManualEditorPath(extended), [prepared.filePath]);
+        return NextResponse.json({ success: true, prepared: prepared.prepared, filePath: prepared.filePath });
+      }
       const batchId = typeof body.batchId === 'string' ? body.batchId : '';
       const itemId = typeof body.itemId === 'string' ? body.itemId : '';
 
@@ -160,11 +264,54 @@ export async function POST(req: NextRequest) {
       const uploadsRoot = resolveConfiguredPath(
         getExtendedPath(user.settings?.defaultSubstitutions, 'uploadPath', config.paths.uploads)
       );
-      const resolvedUploadPath = path.resolve(item.uploadPath);
-
-      if (!isInsideDirectory(resolvedUploadPath, uploadsRoot)) {
+      const storageRootSetting = getExtendedPath(
+        user.settings?.defaultSubstitutions,
+        'storageRootPath',
+        './vectorforge-storage'
+      );
+      const profileStorage = await configureDefaultImportStorageForUser({
+        userId: user.id,
+        storageRootPath: storageRootSetting,
+      });
+      const currentWorkingPath = path.resolve(item.uploadPath);
+      if (
+        !isInsideDirectory(currentWorkingPath, uploadsRoot) &&
+        !(await isInsideAuthorizedProfileStorage({
+          profileId: profileStorage.profile.id,
+          defaultArtworkPath: profileStorage.paths.artwork,
+          filePath: currentWorkingPath,
+        }))
+      ) {
         return NextResponse.json(
-          { success: false, error: 'Original raster file is outside the configured uploads directory' },
+          { success: false, error: 'Working raster file is outside the current profile storage' },
+          { status: 400 }
+        );
+      }
+      try {
+        await assertExistingPath(currentWorkingPath, 'file');
+      } catch {
+        return NextResponse.json(
+          { success: false, error: 'Working raster file is missing on disk' },
+          { status: 404 }
+        );
+      }
+      const preparation = normalizeRasterEditorPreparation(body.preparation);
+      const sourceVersionKey = typeof body.sourceVersionKey === 'string' ? body.sourceVersionKey : null;
+      const prepared = body.prepare === true
+        ? await prepareRasterForEditor({ userId: user.id, batchId, itemId, preparation, sourceVersionKey })
+        : { filePath: path.resolve(item.uploadPath), prepared: false };
+      const resolvedUploadPath = path.resolve(prepared.filePath);
+
+      if (
+        !isInsideDirectory(resolvedUploadPath, uploadsRoot) &&
+        !(await isInsideAuthorizedProfileStorage({
+          profileId: profileStorage.profile.id,
+          defaultArtworkPath: profileStorage.paths.artwork,
+          filePath: resolvedUploadPath,
+        }))
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'Working raster file is outside the current profile storage' },
           { status: 400 }
         );
       }
@@ -179,8 +326,12 @@ export async function POST(req: NextRequest) {
       }
 
       const editorPath = await getManualEditorPath(extended);
-      launchDetached(editorPath, [resolvedUploadPath]);
-      return NextResponse.json({ success: true });
+      await launchDetached(editorPath, [resolvedUploadPath]);
+      return NextResponse.json({
+        success: true,
+        prepared: prepared.prepared,
+        filePath: resolvedUploadPath,
+      });
     }
 
     const configuredOutputPath = user.settings?.outputPath || config.paths.output;
@@ -201,7 +352,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'folder') {
       await assertExistingPath(resolvedOutputFolder, 'directory');
-      openFolder(resolvedOutputFolder);
+      await openFolder(resolvedOutputFolder);
       return NextResponse.json({ success: true });
     }
 
@@ -235,7 +386,7 @@ export async function POST(req: NextRequest) {
 
     if (action === 'file' && requestedTypes.length === 0) {
       for (const filePath of requestedPaths) {
-        openFileWithDefaultApp(filePath);
+        await openFileWithDefaultApp(filePath);
       }
       return NextResponse.json({ success: true });
     }
@@ -254,16 +405,20 @@ export async function POST(req: NextRequest) {
 
     const allowMultipleFiles = Boolean(extended.manualEditorAllowMultipleFiles);
     if (allowMultipleFiles) {
-      launchDetached(editorPath, requestedPaths);
+      await launchDetached(editorPath, requestedPaths);
     } else {
       for (const filePath of requestedPaths) {
-        launchDetached(editorPath, [filePath]);
+        await launchDetached(editorPath, [filePath]);
       }
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to open local editor';
+    logger.error('Local editor open failed', {
+      error: message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

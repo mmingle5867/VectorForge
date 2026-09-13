@@ -24,9 +24,12 @@ import {
   isHexColor,
   type TuningExportSettingKey,
 } from '@/lib/tuning-defaults';
+import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
+import { normalizeStatusColors } from '@/lib/status-colors';
 
 // Reserved keys stored in defaultSubstitutions JSON for extended settings
 const EXTENDED_KEYS = [
+  'storageRootPath',
   'workingPath',
   'uploadPath',
   'bundleOutputPath',
@@ -73,6 +76,12 @@ const EXTENDED_KEYS = [
   'supportUrl',
   'defaultLicenseType',
   'templateVariables',
+  'statusColors',
+  'workingVersionKeepCount',
+  'workingVersionRetentionDays',
+  'lastTuneControlSettings',
+  'rasterEditorPreparation',
+  'controlPresets',
 ] as const;
 
 const TUNING_EXPORT_KEYS = [
@@ -216,6 +225,20 @@ function getNumberSetting(
   return settingsFallbacks[key];
 }
 
+function getWholeNumberSetting(value: unknown, fallback: number) {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function validateWorkingVersionRetention(label: string, value: unknown, min: number, max: number) {
+  if (value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    return `${label} must be a whole number between ${min} and ${max}`;
+  }
+  return null;
+}
+
 function getTuningExportSettings(extended: Record<string, unknown>) {
   return {
     preUpscaleBlur: getNumberSetting(extended, 'preUpscaleBlur'),
@@ -314,6 +337,10 @@ export async function GET() {
         smartUpscaleThreshold: user.settings.smartUpscaleThreshold,
         baseAssetsPath: user.settings.baseAssetsPath,
         outputPath: user.settings.outputPath,
+        storageRootPath: getPathSetting(
+          extended.storageRootPath,
+          DEFAULT_MANAGED_PATHS.storageRootPath
+        ),
         workingPath: getPathSetting(extended.workingPath, DEFAULT_MANAGED_PATHS.workingPath),
         uploadPath: getPathSetting(extended.uploadPath, config.paths.uploads),
         bundleOutputPath: getPathSetting(
@@ -323,6 +350,9 @@ export async function GET() {
         archivePath: getPathSetting(extended.archivePath, DEFAULT_MANAGED_PATHS.archivePath),
         templatePath: getPathSetting(extended.templatePath, DEFAULT_MANAGED_PATHS.templatePath),
         defaultSubstitutions: mergedSubstitutionVariables,
+        statusColors: normalizeStatusColors(extended.statusColors),
+        workingVersionKeepCount: getWholeNumberSetting(extended.workingVersionKeepCount, 3),
+        workingVersionRetentionDays: getWholeNumberSetting(extended.workingVersionRetentionDays, 30),
         // Extended settings
         enableMarketplacePreview: extended.enableMarketplacePreview ?? true,
         enableColorTint: extended.enableColorTint ?? false,
@@ -362,6 +392,7 @@ export async function PUT(req: NextRequest) {
     const {
       defaultUpscaleFactor,
       smartUpscaleThreshold,
+      storageRootPath,
       workingPath,
       uploadPath,
       bundleOutputPath,
@@ -370,6 +401,9 @@ export async function PUT(req: NextRequest) {
       outputPath,
       templatePath,
       defaultSubstitutions,
+      statusColors,
+      workingVersionKeepCount,
+      workingVersionRetentionDays,
       // Extended settings
       enableMarketplacePreview,
       enableColorTint,
@@ -436,6 +470,7 @@ export async function PUT(req: NextRequest) {
     };
 
     const pathInputs = {
+      storageRootPath,
       workingPath,
       uploadPath,
       bundleOutputPath,
@@ -487,6 +522,26 @@ export async function PUT(req: NextRequest) {
         { success: false, error: 'Watermark opacity must be between 0 and 100' },
         { status: 400 }
       );
+    }
+
+    const workingVersionKeepCountError = validateWorkingVersionRetention(
+      'Recent working versions to keep',
+      workingVersionKeepCount,
+      1,
+      100
+    );
+    if (workingVersionKeepCountError) {
+      return NextResponse.json({ success: false, error: workingVersionKeepCountError }, { status: 400 });
+    }
+
+    const workingVersionRetentionDaysError = validateWorkingVersionRetention(
+      'Working-version retention days',
+      workingVersionRetentionDays,
+      0,
+      3650
+    );
+    if (workingVersionRetentionDaysError) {
+      return NextResponse.json({ success: false, error: workingVersionRetentionDaysError }, { status: 400 });
     }
 
     const allowedEditorFileTypes = ['PNG', 'JPG', 'SVG'];
@@ -559,14 +614,20 @@ export async function PUT(req: NextRequest) {
     }
 
     // Merge user substitutions with extended settings into a single JSON blob
-    const mergedSubstitutions: Record<
-      string,
-      string | number | boolean | string[] | Record<string, string>
-    > = {
+    const existingExtended = user.settings?.defaultSubstitutions && typeof user.settings.defaultSubstitutions === 'object'
+      ? user.settings.defaultSubstitutions as Record<string, unknown>
+      : {};
+    const mergedSubstitutions: Record<string, unknown> = {
       ...(defaultSubstitutions || {}),
     };
+    for (const key of ['lastTuneControlSettings', 'rasterEditorPreparation', 'controlPresets'] as const) {
+      if (existingExtended[key] !== undefined) mergedSubstitutions[key] = existingExtended[key];
+    }
 
     // Store extended settings in the same JSON field
+    if (storageRootPath !== undefined) {
+      mergedSubstitutions.storageRootPath = String(storageRootPath);
+    }
     if (workingPath !== undefined) mergedSubstitutions.workingPath = String(workingPath);
     if (uploadPath !== undefined) mergedSubstitutions.uploadPath = String(uploadPath);
     if (bundleOutputPath !== undefined) {
@@ -574,6 +635,13 @@ export async function PUT(req: NextRequest) {
     }
     if (archivePath !== undefined) mergedSubstitutions.archivePath = String(archivePath);
     if (templatePath !== undefined) mergedSubstitutions.templatePath = String(templatePath);
+    if (statusColors !== undefined) mergedSubstitutions.statusColors = normalizeStatusColors(statusColors);
+    if (workingVersionKeepCount !== undefined) {
+      mergedSubstitutions.workingVersionKeepCount = Number(workingVersionKeepCount);
+    }
+    if (workingVersionRetentionDays !== undefined) {
+      mergedSubstitutions.workingVersionRetentionDays = Number(workingVersionRetentionDays);
+    }
     if (enableMarketplacePreview !== undefined) mergedSubstitutions.enableMarketplacePreview = enableMarketplacePreview;
     if (enableColorTint !== undefined) mergedSubstitutions.enableColorTint = enableColorTint;
     if (tintColor !== undefined) mergedSubstitutions.tintColor = tintColor;
@@ -639,6 +707,14 @@ export async function PUT(req: NextRequest) {
         outputPath: outputPath ?? './output',
         defaultSubstitutions: mergedSubstitutions as unknown as Record<string, string>,
       },
+    });
+
+    await configureDefaultImportStorageForUser({
+      userId: user.id,
+      storageRootPath:
+        storageRootPath ??
+        (mergedSubstitutions.storageRootPath as string | undefined) ??
+        DEFAULT_MANAGED_PATHS.storageRootPath,
     });
 
     logger.info('Settings updated', { userId: user.id });

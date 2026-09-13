@@ -25,7 +25,7 @@ Important:
 ===============================================================================
 */
 
-import { randomUUID } from "node:crypto";
+import { issueSemaIdentifier } from "@/services/sema-core-identity";
 import path from "node:path";
 
 import {
@@ -267,33 +267,25 @@ Helper Functions
 */
 
 /**
- * Generates a short readable identifier.
- *
- * randomUUID() returns a globally unique value such as:
- *
- *     43a4f92d-f778-40df-b034-e18dc64b13f7
- *
- * Removing hyphens and shortening it keeps test output easier to read.
- * The final SEMA ID generator will later replace this helper.
+ * Requests an identifier from the installed SEMA Core.
  */
-function createTemporaryId(prefix: string): string {
-  const uniquePart = randomUUID().replaceAll("-", "").slice(0, 16);
-  return `${prefix}-${uniquePart}`;
+async function createCoreId(typeCode: 'CMD' | 'EVT' | 'RSL' | 'SNP', purpose: string) {
+  return (await issueSemaIdentifier(typeCode, { purpose })).id;
 }
 
 /**
  * Creates a standardized diagnostic log entry.
  */
-function createLogEntry(input: {
+async function createLogEntry(input: {
   severity: DiagnosticSeverity;
   category: string;
   source: string;
   message: string;
   relatedReferenceIds?: string[];
   metadata?: Record<string, string | number | boolean | null>;
-}): DiagnosticLogEntry {
+}): Promise<DiagnosticLogEntry> {
   return {
-    logEntryId: createTemporaryId("LOG"),
+    logEntryId: await createCoreId("EVT", "diagnostic-log-entry"),
     timestamp: new Date().toISOString(),
     severity: input.severity,
     category: input.category,
@@ -316,16 +308,16 @@ Command Factory
  * A factory prevents every calling application from manually constructing
  * commands differently.
  */
-export function createExportDocumentCommand(input: {
+export async function createExportDocumentCommand(input: {
   ownerId: string;
   workspaceId: string;
   documentId: string;
   requestedOutputType: string;
   requestedBy: string;
   outputDirectory?: string;
-}): ExportDocumentCommand {
+}): Promise<ExportDocumentCommand> {
   return {
-    commandId: createTemporaryId("CMD"),
+    commandId: await createCoreId("CMD", "document-export-command"),
     commandType: "DOCUMENT.EXPORT",
     capability: "Document.Export",
     requestedOutputType: input.requestedOutputType,
@@ -378,7 +370,7 @@ export async function executeExportDocumentCommand(
   command: ExportDocumentCommand,
 ): Promise<DocumentCommandExecution> {
   const event: DocumentExportEvent = {
-    eventId: createTemporaryId("EVT"),
+    eventId: await createCoreId("EVT", "document-export-event"),
     eventType: "DOCUMENT.EXPORT",
 
     originatingCommandId: command.commandId,
@@ -395,7 +387,7 @@ export async function executeExportDocumentCommand(
    * Record that SeloBond-style execution has begun.
    */
   event.diagnosticLogEntries.push(
-    createLogEntry({
+    await createLogEntry({
       severity: "INFORMATION",
       category: "EXECUTION",
       source: "DocumentCommandService",
@@ -410,7 +402,7 @@ export async function executeExportDocumentCommand(
     event.progressPercent = 25;
 
     event.diagnosticLogEntries.push(
-      createLogEntry({
+      await createLogEntry({
         severity: "INFORMATION",
         category: "PROVIDER",
         source: "DocumentCommandService",
@@ -448,7 +440,7 @@ export async function executeExportDocumentCommand(
   );
 
 event.diagnosticLogEntries.push(
-  createLogEntry({
+  await createLogEntry({
     severity: "INFORMATION",
     category: "PROVIDER_SELECTION",
     source: "ProviderRegistry",
@@ -478,7 +470,7 @@ const providerResult:
     event.progressPercent = 75;
 
     event.diagnosticLogEntries.push(
-      createLogEntry({
+      await createLogEntry({
         severity: "INFORMATION",
         category: "OUTPUT",
         source: "TextExportProvider",
@@ -496,7 +488,7 @@ const providerResult:
 
     const immutableReference: ImmutableFileReference = {
       referenceType: "IMMUTABLE_FILE_SNAPSHOT",
-      referenceId: createTemporaryId("REF"),
+      referenceId: await createCoreId("SNP", "immutable-file-reference"),
 
       fileName: providerResult.fileName,
       filePath: providerResult.filePath,
@@ -510,7 +502,7 @@ const providerResult:
     };
 
     const result: ExportDocumentResult = {
-      resultId: createTemporaryId("RES"),
+      resultId: await createCoreId("RSL", "document-export-result"),
       resultType: "DOCUMENT.EXPORT",
 
       originatingCommandId: command.commandId,
@@ -534,7 +526,7 @@ const providerResult:
     event.completedAt = new Date().toISOString();
 
     event.diagnosticLogEntries.push(
-      createLogEntry({
+      await createLogEntry({
         severity: "INFORMATION",
         category: "RESULT",
         source: "DocumentCommandService",
@@ -566,7 +558,7 @@ const providerResult:
     event.completedAt = new Date().toISOString();
 
     event.diagnosticLogEntries.push(
-      createLogEntry({
+      await createLogEntry({
         severity: "ERROR",
         category: "EXECUTION",
         source: "DocumentCommandService",
@@ -576,7 +568,7 @@ const providerResult:
     );
 
     const failedResult: ExportDocumentResult = {
-      resultId: createTemporaryId("RES"),
+      resultId: await createCoreId("RSL", "document-export-failure-result"),
       resultType: "DOCUMENT.EXPORT",
 
       originatingCommandId: command.commandId,

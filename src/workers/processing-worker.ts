@@ -28,6 +28,7 @@ import { exportImportedSvgPackage } from '../services/svg-import-export';
 import { upsertGeneratedAssetsForBatchItem } from '../services/sema-identity';
 import { getIncrementalFolderName } from '../lib/server-utils';
 import { settingsToConversionOptions } from '../lib/vtracer-presets';
+import { completeCoreExecution, createCoreCommand, startCoreExecution } from '../services/sema-core';
 import config from '../lib/config';
 
 const PROCESSING_QUEUE_NAME = `${config.identity.slug}-processing`;
@@ -48,7 +49,18 @@ const processingWorker = new Worker<ProcessingJobData>(
       baseName: data.baseName,
     });
 
+    let coreExecutionId: string | null = null;
     try {
+      const coreCommand = await createCoreCommand({
+        commandType: 'vectorforge.artwork.process',
+        subjectIds: [data.batchId, data.batchItemId],
+        payload: { queueJobId: job.id ?? null, baseName: data.baseName },
+      });
+      const coreExecution = await startCoreExecution({
+        commandId: coreCommand.id,
+        providerId: 'vectorforge.local.processing-worker',
+      });
+      coreExecutionId = coreExecution.id;
       // ====================================================================
       // Step 1: Update status to UPSCALING
       // ====================================================================
@@ -57,11 +69,14 @@ const processingWorker = new Worker<ProcessingJobData>(
       // Create output directory for this item
       const existingItem = await prisma.batchItem.findUnique({
         where: { id: data.batchItemId },
-        select: { outputFolderPath: true },
+        select: { outputFolderPath: true, uploadPath: true, baseName: true, mimeType: true },
       });
+      const workingUploadPath = existingItem?.uploadPath || data.uploadPath;
+      const workingBaseName = existingItem?.baseName || data.baseName;
+      const workingMimeType = existingItem?.mimeType || data.mimeType;
       const itemOutputDir = await createOutputDirectory(
         data.outputBasePath,
-        data.baseName,
+        workingBaseName,
         existingItem?.outputFolderPath
       );
       if (existingItem?.outputFolderPath !== itemOutputDir) {
@@ -71,11 +86,11 @@ const processingWorker = new Worker<ProcessingJobData>(
         });
       }
 
-      if (isSvgMimeOrPath(data.mimeType, data.uploadPath || data.originalFilename)) {
+      if (isSvgMimeOrPath(workingMimeType, workingUploadPath || data.originalFilename)) {
         await job.updateProgress(25);
         await updateItemStatus(data.batchItemId, 'GENERATING_FILES', 25, 'Exporting imported SVG...');
 
-        const originalSvg = await readFile(data.uploadPath, 'utf-8');
+        const originalSvg = await readFile(workingUploadPath, 'utf-8');
         const pngExportArtworkColor = isHexColor(data.pngExportArtworkColor)
           ? data.pngExportArtworkColor
           : isHexColor(config.processing.pngExportArtworkColor)
@@ -143,11 +158,19 @@ const processingWorker = new Worker<ProcessingJobData>(
           svgSize: svgExport.files[0]?.size || 0,
         });
 
+        await completeCoreExecution({
+          executionId: coreExecutionId,
+          status: 'SUCCESS',
+          resultType: 'vectorforge.processing.completed',
+          subjectIds: [data.batchId, data.batchItemId],
+          result: { processingTimeMs: processingTime, svgPath: svgExport.svgPath, zipPath },
+        });
+
         return { success: true, sku: null, processingTime };
       }
 
       // Smart upscale
-      const upscaleResult = await upscaleImage(data.uploadPath, itemOutputDir, {
+      const upscaleResult = await upscaleImage(workingUploadPath, itemOutputDir, {
         factor: data.upscaleFactor as 1 | 2 | 4,
         threshold: data.smartUpscaleThreshold,
         keepOriginal: true,
@@ -332,6 +355,14 @@ const processingWorker = new Worker<ProcessingJobData>(
         upscaled: upscaleResult.applied,
       });
 
+      await completeCoreExecution({
+        executionId: coreExecutionId,
+        status: 'SUCCESS',
+        resultType: 'vectorforge.processing.completed',
+        subjectIds: [data.batchId, data.batchItemId],
+        result: { processingTimeMs: processingTime, svgPath: svgResult.path, zipPath },
+      });
+
       return { success: true, sku, processingTime };
     } catch (error) {
       const processingTime = Date.now() - startTime;
@@ -369,6 +400,16 @@ const processingWorker = new Worker<ProcessingJobData>(
         status: 'FAILED',
         processingTimeMs: processingTime,
       });
+
+      if (coreExecutionId) {
+        await completeCoreExecution({
+          executionId: coreExecutionId,
+          status: 'FAILED',
+          resultType: 'vectorforge.processing.failed',
+          subjectIds: [data.batchId, data.batchItemId],
+          error: { message: errorMsg, processingTimeMs: processingTime },
+        }).catch((coreError) => logger.error('Worker: unable to record Core execution failure', { coreError }));
+      }
 
       throw error; // Re-throw for BullMQ retry logic
     }

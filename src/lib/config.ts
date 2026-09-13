@@ -9,6 +9,12 @@ function readBoolean(value: string | undefined, fallback: boolean) {
 }
 
 export const config = {
+  sema: {
+    // The permanent root InstallationID for this initial local Core. The old
+    // SEMA_INSTALLATION_CODE name is accepted only as a configuration alias.
+    installationId: process.env.SEMA_INSTALLATION_ID || process.env.SEMA_INSTALLATION_CODE || '3',
+  },
+
   identity: {
     name: process.env.APP_NAME || 'local-asset-workbench',
     displayName: process.env.APP_DISPLAY_NAME || 'VectorForge',

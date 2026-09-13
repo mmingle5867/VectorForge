@@ -19,7 +19,7 @@ import {
 } from "@/services/document-command-service";
 
 async function main(): Promise<void> {
-  const command = createExportDocumentCommand({
+  const command = await createExportDocumentCommand({
     ownerId: "cmqwlis97000xw65se30ubzeu",
     workspaceId: "cmqwlis9c000zw65sqkpi3q80",
     documentId: "DOC-000001",

@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import config from '@/lib/config';
 import { ensureArtworkIdentityForBatchItem } from '@/services/numbering-service';
+import { issueSemaIdentifier } from '@/services/sema-core-identity';
 
 type EnsureBatchItemSemaContextInput = {
   userId: string;
@@ -22,56 +23,43 @@ type GeneratedAssetInput = {
 
 type GeneratedAssetForBatchItemInput = Omit<GeneratedAssetInput, 'batchItemId'>;
 
-function makeOwnerObjectId(userId: string) {
-  return `OWNER-${userId}`;
-}
-
-function makeWorkspaceObjectId() {
-  return 'WORKSPACE-DEFAULT';
-}
-
-function makeItemObjectId(batchItemId: string) {
-  return `ITEM-${batchItemId}`;
-}
-
-function makeAssetObjectId(batchItemId: string, role: string) {
-  const safeRole = role
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-  return `ASSET-${batchItemId}-${safeRole || 'FILE'}`;
-}
-
 export async function ensureOwnerAndWorkspace(userId: string) {
-  const owner = await prisma.owner.upsert({
-    where: { userId },
-    update: {
-      name: config.localFirst.localOwnerName,
-    },
-    create: {
-      userId,
-      ownerId: makeOwnerObjectId(userId),
-      name: config.localFirst.localOwnerName,
-    },
-  });
-
-  const workspace = await prisma.workspace.upsert({
-    where: {
-      ownerId_workspaceId: {
-        ownerId: owner.id,
-        workspaceId: makeWorkspaceObjectId(),
+  let owner = await prisma.owner.findUnique({ where: { userId } });
+  if (!owner) {
+    const ownerIdentifier = await issueSemaIdentifier('OWN', { purpose: 'owner' });
+    owner = await prisma.owner.create({
+      data: {
+        userId,
+        ownerId: ownerIdentifier.id,
+        name: config.localFirst.localOwnerName,
       },
-    },
-    update: {
-      name: config.localFirst.localWorkspaceName,
-    },
-    create: {
-      ownerId: owner.id,
-      workspaceId: makeWorkspaceObjectId(),
-      name: config.localFirst.localWorkspaceName,
-    },
+    });
+  } else if (owner.name !== config.localFirst.localOwnerName) {
+    owner = await prisma.owner.update({
+      where: { id: owner.id },
+      data: { name: config.localFirst.localOwnerName },
+    });
+  }
+
+  let workspace = await prisma.workspace.findFirst({
+    where: { ownerId: owner.id },
+    orderBy: { createdAt: 'asc' },
   });
+  if (!workspace) {
+    const workspaceIdentifier = await issueSemaIdentifier('WSP', { purpose: 'default-workspace' });
+    workspace = await prisma.workspace.create({
+      data: {
+        ownerId: owner.id,
+        workspaceId: workspaceIdentifier.id,
+        name: config.localFirst.localWorkspaceName,
+      },
+    });
+  } else if (workspace.name !== config.localFirst.localWorkspaceName) {
+    workspace = await prisma.workspace.update({
+      where: { id: workspace.id },
+      data: { name: config.localFirst.localWorkspaceName },
+    });
+  }
 
   return { owner, workspace };
 }
@@ -87,24 +75,34 @@ export async function ensureBatchItemSemaContext(input: EnsureBatchItemSemaConte
     },
   });
 
-  const semaItem = await prisma.item.upsert({
-    where: {
-      ownerId_itemId: {
-        ownerId: owner.id,
-        itemId: makeItemObjectId(input.batchItemId),
-      },
-    },
-    update: {
-      title: input.title,
-      workspaceId: workspace.id,
-    },
-    create: {
-      ownerId: owner.id,
-      workspaceId: workspace.id,
-      itemId: makeItemObjectId(input.batchItemId),
-      title: input.title,
-    },
+  const batchItem = await prisma.batchItem.findUnique({
+    where: { id: input.batchItemId },
+    include: { semaItem: true },
   });
+  if (!batchItem || batchItem.batchId !== input.batchId) {
+    throw new Error('Batch item not found for SEMA context');
+  }
+
+  let semaItem = batchItem.semaItem;
+  if (!semaItem) {
+    const itemIdentifier = await issueSemaIdentifier('ITM', {
+      purpose: 'item',
+      batchItemRowKey: input.batchItemId,
+    });
+    semaItem = await prisma.item.create({
+      data: {
+        ownerId: owner.id,
+        workspaceId: workspace.id,
+        itemId: itemIdentifier.id,
+        title: input.title,
+      },
+    });
+  } else {
+    semaItem = await prisma.item.update({
+      where: { id: semaItem.id },
+      data: { title: input.title, workspaceId: workspace.id },
+    });
+  }
 
   await prisma.batchItem.update({
     where: { id: input.batchItemId },
@@ -162,16 +160,13 @@ export async function upsertAssetForBatchItem(input: GeneratedAssetInput) {
     throw new Error('Batch item is missing SEMA context for asset creation');
   }
 
-  const assetId = makeAssetObjectId(input.batchItemId, input.role);
-
-  return prisma.asset.upsert({
-    where: {
-      ownerId_assetId: {
-        ownerId: batchItem.owner.id,
-        assetId,
-      },
-    },
-    update: {
+  const existing = await prisma.asset.findFirst({
+    where: { batchItemId: batchItem.id, role: input.role },
+  });
+  if (existing) {
+    return prisma.asset.update({
+      where: { id: existing.id },
+      data: {
       workspaceId: batchItem.workspace.id,
       itemId: batchItem.semaItem.id,
       artworkId: batchItem.artwork.id,
@@ -179,18 +174,101 @@ export async function upsertAssetForBatchItem(input: GeneratedAssetInput) {
       mimeType: input.mimeType ?? null,
       metadata: input.metadata ?? {},
     },
-    create: {
+    });
+  }
+
+  const assetIdentifier = await issueSemaIdentifier('AST', {
+    purpose: 'asset',
+    role: input.role,
+    batchItemRowKey: input.batchItemId,
+  });
+  return prisma.asset.create({
+    data: {
       ownerId: batchItem.owner.id,
       workspaceId: batchItem.workspace.id,
       itemId: batchItem.semaItem.id,
       artworkId: batchItem.artwork.id,
       batchItemId: batchItem.id,
-      assetId,
+      assetId: assetIdentifier.id,
       role: input.role,
       filePath: input.filePath ?? null,
       mimeType: input.mimeType ?? null,
       metadata: input.metadata ?? {},
     },
+  });
+}
+
+/**
+ * Creates the permanent Foundation context for a newly imported artwork.
+ * This is the artwork-first replacement for the legacy Batch/BatchItem bridge:
+ * each import receives its own Item, Artwork, immutable original Asset, and
+ * mutable working-raster Asset without creating a workflow wrapper record.
+ */
+export async function createArtworkSemaContext(input: {
+  userId: string;
+  title: string;
+  originalFilePath: string;
+  workingFilePath: string;
+  mimeType?: string | null;
+}) {
+  const { owner, workspace } = await ensureOwnerAndWorkspace(input.userId);
+  const [itemIdentifier, artworkIdentifier, originalAssetIdentifier, workingAssetIdentifier] = await Promise.all([
+    issueSemaIdentifier('ITM', { purpose: 'artwork-item', title: input.title }),
+    issueSemaIdentifier('ART', { purpose: 'artwork', title: input.title }),
+    issueSemaIdentifier('AST', { purpose: 'original-raster' }),
+    issueSemaIdentifier('AST', { purpose: 'working-raster' }),
+  ]);
+
+  return prisma.$transaction(async (tx) => {
+    const item = await tx.item.create({
+      data: {
+        id: itemIdentifier.id,
+        itemId: itemIdentifier.id,
+        ownerId: owner.id,
+        workspaceId: workspace.id,
+        title: input.title,
+      },
+    });
+    const artwork = await tx.artwork.create({
+      data: {
+        id: artworkIdentifier.id,
+        artworkNumber: artworkIdentifier.id,
+        numericSequence: 0,
+        userId: input.userId,
+        ownerId: owner.id,
+        workspaceId: workspace.id,
+        itemId: item.id,
+        title: input.title,
+      },
+    });
+    const common = {
+      ownerId: owner.id,
+      workspaceId: workspace.id,
+      itemId: item.id,
+      artworkId: artwork.id,
+      mimeType: input.mimeType ?? null,
+    };
+    const originalAsset = await tx.asset.create({
+      data: {
+        id: originalAssetIdentifier.id,
+        assetId: originalAssetIdentifier.id,
+        ...common,
+        role: 'original-file',
+        filePath: input.originalFilePath,
+        metadata: { immutableSource: true },
+      },
+    });
+    const workingAsset = await tx.asset.create({
+      data: {
+        id: workingAssetIdentifier.id,
+        assetId: workingAssetIdentifier.id,
+        ...common,
+        role: 'source-file',
+        filePath: input.workingFilePath,
+        metadata: { currentWorkingRaster: true, derivedFromAssetId: originalAsset.assetId },
+      },
+    });
+    return { owner, workspace, item, artwork, originalAsset, workingAsset };
   });
 }
 

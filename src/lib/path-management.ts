@@ -1,6 +1,7 @@
 import path from 'path';
 
 export type ManagedPathType =
+  | 'storageRootPath'
   | 'workingPath'
   | 'uploadPath'
   | 'outputPath'
@@ -10,6 +11,7 @@ export type ManagedPathType =
   | 'templatePath';
 
 export const DEFAULT_MANAGED_PATHS: Record<ManagedPathType, string> = {
+  storageRootPath: './vectorforge-storage',
   workingPath: './.vectorforge-work',
   uploadPath: './uploads',
   outputPath: './output',

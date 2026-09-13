@@ -1,0 +1,68 @@
+VectorForge SEMA Core and Controlled Renumbering 0010
+
+This update replaces the rejected fixed-width identity prototype. Do not apply
+any prior 0009 SEMA Core overlay.
+
+This is a one-time, planned migration. Do not start VectorForge or its worker
+between applying the Prisma migration and completing the renumbering program.
+
+1. Stop VectorForge and its worker.
+
+2. Extract this overlay into the VectorForge project directory, preserving the
+   included folders.
+
+3. Make and verify both backups before continuing:
+
+   - a PostgreSQL database backup;
+   - a copy of the active VectorForge managed storage root.
+
+   Once both backups have been checked, create an empty marker file, for
+   example:
+
+   New-Item -ItemType File -Force '.\backups\sema-core-renumber-verified.ok'
+
+4. Apply the final Core database migration:
+
+   npx prisma migrate deploy
+
+   npx prisma generate
+
+5. Produce the deterministic renumbering preview. It creates the root Core
+   installation state `3` but does not issue or replace any object IDs:
+
+   node --import tsx .\src\scripts\renumber-sema-core.ts --dry-run
+
+   Inspect the report. The first migrated object will be `3-3`; all later
+   objects use the same root installation sequence and grow naturally in Base56.
+
+6. Apply the one-time conversion only after the preview and backups are
+   confirmed. Replace the storage root argument if you use a different path:
+
+   node --import tsx .\src\scripts\renumber-sema-core.ts `
+     --apply `
+     --backup-confirmed '.\backups\sema-core-renumber-verified.ok' `
+     --storage-root '.\vectorforge-storage'
+
+   The program updates database primary IDs and foreign-key references, the
+   identity columns, JSON metadata, and managed JSON manifests. It creates no
+   runtime legacy-ID mapping or compatibility alias table.
+
+7. Bootstrap the local capability registry only after the conversion succeeds:
+
+   node --import tsx .\src\scripts\bootstrap-sema-core.ts
+
+8. Validate before starting the application:
+
+   npx prisma validate
+   npm run test:sema-keyid
+   npm run test:foundation-rules
+   npm run test:ingest-layout
+   npx tsc --noEmit --pretty false
+   npm run build -- --no-lint
+
+9. Start VectorForge. New objects and Core workflow records now receive
+   canonical KeyIDs from the local Core installation `3`.
+
+If the apply command reports any failure, leave VectorForge stopped and restore
+the verified database/storage backups before retrying. Do not restart the app
+against a partially converted backup.

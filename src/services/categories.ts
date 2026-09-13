@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { Prisma } from '@prisma/client';
 
 import {
@@ -9,12 +7,9 @@ import {
   validateCategoryName,
 } from '@/lib/category-rules';
 import prisma from '@/lib/prisma';
+import { issueSemaIdentifier } from '@/services/sema-core-identity';
 
 type CategoryScopeTypeValue = 'PROFILE' | 'WORKSPACE' | 'ORGANIZATION' | 'PROJECT';
-
-function makeCategoryId(): string {
-  return `CATEGORY-${randomUUID().toUpperCase()}`;
-}
 
 async function validateCategoryScope(
   client: Prisma.TransactionClient,
@@ -70,6 +65,10 @@ export async function createCategory(input: {
 }) {
   const name = validateCategoryName(input.name);
   const normalizedName = normalizeCategoryName(name);
+  const categoryIdentifier = await issueSemaIdentifier('CAT', {
+    purpose: 'category',
+    name,
+  });
 
   return prisma.$transaction(async (tx) => {
     await validateCategoryScope(tx, input);
@@ -94,7 +93,7 @@ export async function createCategory(input: {
 
     return tx.category.create({
       data: {
-        categoryId: makeCategoryId(),
+        categoryId: categoryIdentifier.id,
         profileId: input.profileId,
         workspaceId: input.workspaceId ?? null,
         scopeType: input.scopeType,
@@ -392,6 +391,53 @@ export async function listCategoryTree(input: {
         },
       },
     },
+  });
+}
+
+export async function deleteCategoryBranch(input: {
+  categoryId: string;
+  profileId: string;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const root = await tx.category.findFirst({
+      where: { id: input.categoryId, profileId: input.profileId, status: 'ACTIVE' },
+    });
+    if (!root) throw new Error('Active Category not found for this profile');
+
+    // Include every descendant regardless of status. A retired child still has a
+    // restrictive parent foreign key and must be removed before its parent.
+    const scoped = await tx.category.findMany({
+      where: {
+        profileId: root.profileId,
+        scopeType: root.scopeType,
+        scopeId: root.scopeId,
+      },
+      select: { id: true, parentId: true },
+    });
+    const depths = new Map<string, number>([[root.id, 0]]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const category of scoped) {
+        if (!category.parentId || depths.has(category.id)) continue;
+        const parentDepth = depths.get(category.parentId);
+        if (parentDepth !== undefined) {
+          depths.set(category.id, parentDepth + 1);
+          changed = true;
+        }
+      }
+    }
+    const ids = [...depths.keys()];
+    const assignments = await tx.itemCategory.deleteMany({ where: { categoryId: { in: ids } } });
+    const relationshipAssignments = await tx.relationshipCategory.deleteMany({ where: { categoryId: { in: ids } } });
+    const deepestFirst = [...depths.entries()].sort((left, right) => right[1] - left[1]);
+    for (const [id] of deepestFirst) {
+      await tx.category.delete({ where: { id } });
+    }
+    return {
+      deletedCategories: ids.length,
+      removedAssignments: assignments.count + relationshipAssignments.count,
+    };
   });
 }
 

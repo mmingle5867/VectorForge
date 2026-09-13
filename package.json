@@ -13,6 +13,14 @@
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "test:foundation-rules": "tsx src/scripts/test-foundation-rules.ts",
+    "test:ingest-layout": "tsx src/scripts/test-ingest-layout.ts",
+    "test:sema-keyid": "tsx src/scripts/test-sema-keyid.ts",
+    "test:graphics-capabilities": "tsx src/scripts/test-graphics-capabilities.ts",
+    "test:direct-artwork-ingest": "tsx src/scripts/test-direct-artwork-ingest-layout.ts",
+    "sema:renumber:dry-run": "tsx src/scripts/renumber-sema-core.ts --dry-run",
+    "sema:core:bootstrap": "tsx src/scripts/bootstrap-sema-core.ts",
+    "test:control-presets": "tsx src/scripts/test-control-presets.ts",
+    "test:artwork-storage": "tsx src/scripts/test-artwork-storage.ts",
     "worker": "tsx src/workers/processing-worker-bootstrap.ts",
     "worker:dev": "tsx watch src/workers/processing-worker-bootstrap.ts"
   },
@@ -46,7 +54,6 @@
     "svix": "^1.15.0",
     "tailwind-merge": "^2.2.1",
     "tailwindcss-animate": "^1.0.7",
-    "uuid": "^9.0.0",
     "wasm_vtracer": "^0.2.0",
     "winston": "^3.11.0",
     "zod": "^3.22.4"
@@ -55,7 +62,6 @@
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "@types/uuid": "^9.0.7",
     "autoprefixer": "^10.4.17",
     "eslint": "^8.56.0",
     "eslint-config-next": "15.0.0",
@@ -66,4 +72,3 @@
     "typescript": "^5.3.3"
   }
 }
-

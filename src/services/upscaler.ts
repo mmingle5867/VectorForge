@@ -22,7 +22,7 @@ export async function upscaleImage(
   options: UpscaleOptions
 ): Promise<UpscaleResult> {
   await resolveLocalGraphicsCapability(GRAPHICS_CAPABILITIES.rasterUpscale);
-  const { factor, threshold, keepOriginal } = options;
+  const { factor, threshold } = options;
 
   // Read image metadata
   const metadata = await sharp(inputPath).metadata();

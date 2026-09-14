@@ -11,19 +11,6 @@ import { logger } from '@/lib/logger';
 import config from '@/lib/config';
 
 // Standard base asset filenames to check for
-const BASE_ASSET_FILES = [
-  'video.mp4',
-  'image1.jpg',
-  'image1.png',
-  'image2.jpg',
-  'image2.png',
-  'image3.jpg',
-  'image3.png',
-  'template.svg',
-  'watermark.png',
-  'logo.png',
-];
-
 /**
  * Check and copy base assets to the output folder.
  * For each expected base asset:

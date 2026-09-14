@@ -12,6 +12,7 @@ import { configureDefaultImportStorageForUser } from '@/services/profile-storage
 import { ensureBatchItemSemaContext } from '@/services/sema-identity';
 import { createCoreCommand } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
+import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
@@ -432,7 +433,7 @@ function directVersionPath(version: { locations: Array<{ storageLocation: { base
 }
 
 export async function listDirectRasterWorkingVersions(input: { userId: string; artworkId: string }) {
-  const { sourceAsset, originalAsset } = await getDirectRasterContext(input.userId, input.artworkId);
+  const { artwork, sourceAsset, originalAsset } = await getDirectRasterContext(input.userId, input.artworkId);
   const savedOutputAssets = await prisma.asset.findMany({
     where: {
       artworkId: input.artworkId,
@@ -459,6 +460,7 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
   }))).filter((version) => Boolean(version.filePath));
   return {
     currentPath,
+    artworkName: artwork.outputBaseName || artwork.title,
     original: originalPath ? { key: 'original', label: 'Untouched original', filePath: originalPath, ...(await dimensions(originalPath)) } : null,
     versions: availableVersions,
     savedOutputs: {
@@ -494,6 +496,10 @@ export async function activateDirectRasterWorkingVersion(input: { userId: string
 }
 
 export async function prepareDirectRasterForEditor(input: { userId: string; artworkId: string; preparation: RasterEditorPreparation; sourceVersionKey?: string | null }) {
+  // The artwork-first workflow always prepares from the persistent working
+  // JPEG.  A non-JPEG intake is converted once before any edit/blur/upscale
+  // action, rather than repeatedly editing its original WEBP or PNG.
+  await ensureDirectWorkingJpeg({ userId: input.userId, artworkId: input.artworkId });
   const context = await getDirectRasterContext(input.userId, input.artworkId);
   // The current asset path is authoritative.  Do not silently use the newest
   // historical version: it may already be an enlarged edit.

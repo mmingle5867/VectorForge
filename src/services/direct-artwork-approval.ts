@@ -41,10 +41,19 @@ function outputRasterSettings(defaultSubstitutions: unknown) {
   };
 }
 
+function outputBaseName(value: string | null | undefined) {
+  const base = path.parse(path.basename(value || '')).name
+    .replace(/-(?:edit|working)-v\d+$/i, '')
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+    .trim();
+  return base || null;
+}
+
 /** Approve one direct artwork. No Batch, package, marketplace, ZIP, or listing records are created. */
 export async function approveDirectArtwork(input: { userId: string; artworkId: string; settings: unknown; upscaleFactor?: number; candidateId: string; reviewStatus?: string }) {
   const artwork = await prisma.artwork.findFirst({ where: { id: input.artworkId, userId: input.userId, status: 'ACTIVE', batchItems: { none: {} } }, include: { assets: true } });
   const working = artwork?.assets.find((asset) => asset.role === 'source-file');
+  const original = artwork?.assets.find((asset) => asset.role === 'original-file' && asset.status === 'ACTIVE');
   const workingPng = artwork?.assets.find((asset) => asset.role === 'working-png' && asset.status === 'ACTIVE');
   if (!artwork || !working?.filePath) throw new Error('Artwork working copy was not found');
   const workingMetadata = working.metadata && typeof working.metadata === 'object' && !Array.isArray(working.metadata)
@@ -72,7 +81,19 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
       readFile(traceSvgPath, 'utf8'),
       readFile(working.filePath),
     ]);
-    const base = path.parse(working.filePath).name; const vectorDir = path.join(directory, 'vectorforge', 'vectorized'); const pngDir = path.join(directory, 'vectorforge', 'png'); const jpgDir = path.join(directory, 'vectorforge', 'jpg'); const manifestPath = path.join(directory, 'vectorforge', 'manifest', 'manifest.json');
+    // Working JPG names are internal version labels. Completed outputs use the
+    // permanent output base, created on intake and updated only by Rename.
+    // The fallback also repairs existing records once, stripping an old edit
+    // suffix instead of ever publishing it.
+    const base = outputBaseName(artwork.outputBaseName)
+      || outputBaseName(artwork.title)
+      || outputBaseName(original?.filePath)
+      || outputBaseName(working.filePath)
+      || 'artwork';
+    if (artwork.outputBaseName !== base) {
+      await prisma.artwork.update({ where: { id: artwork.id }, data: { outputBaseName: base } });
+    }
+    const vectorDir = path.join(directory, 'vectorforge', 'vectorized'); const pngDir = path.join(directory, 'vectorforge', 'png'); const jpgDir = path.join(directory, 'vectorforge', 'jpg'); const manifestPath = path.join(directory, 'vectorforge', 'manifest', 'manifest.json');
     await Promise.all([mkdir(vectorDir, { recursive: true }), mkdir(pngDir, { recursive: true }), mkdir(jpgDir, { recursive: true })]);
     const svgPath = path.join(vectorDir, `${base}.svg`); const pngPath = path.join(pngDir, `${base}.png`); const jpgPath = path.join(jpgDir, `${base}.jpg`);
     await writeFile(svgPath, svg, 'utf8');

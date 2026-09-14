@@ -75,7 +75,7 @@ function categoryDescendants(categories: Category[], roots: Set<string>) {
   return result;
 }
 
-export default function DashboardFileExplorer() {
+export default function DashboardFileExplorer({ scope = 'workspace' }: { scope?: 'workspace' | 'ready' }) {
   const [items, setItems] = useState<ExplorerItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [storage, setStorage] = useState<{
@@ -143,13 +143,13 @@ export default function DashboardFileExplorer() {
   }, []);
 
   const loadFiles = useCallback(async () => {
-    const response = await fetch('/api/dashboard/files', { cache: 'no-store' });
+    const response = await fetch(`/api/dashboard/files?scope=${scope}`, { cache: 'no-store' });
     const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load artwork');
     setItems(data.items);
     setStorage(data.storage);
     setStatusColors(data.statusColors || DEFAULT_STATUS_COLORS);
-  }, []);
+  }, [scope]);
 
   const loadCategories = useCallback(async () => {
     const response = await fetch('/api/categories', { cache: 'no-store' });
@@ -675,17 +675,13 @@ export default function DashboardFileExplorer() {
   return (
     <section className="relative rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <input {...getInputProps()} />
+      <div className="space-y-3 border-b p-4 dark:border-gray-700">
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-semibold">{scope === 'ready' ? 'Completed Vector Artwork' : 'Artwork Files'}</h2><p className="mt-1 text-xs text-gray-500">{scope === 'ready' ? 'Approved vector artwork ready for use by other SEMA applications. Files remain in their managed VectorForge location.' : 'Working copies are shown here; originals remain protected.'}</p></div>{scope === 'workspace' && <div className="flex gap-2"><button type="button" onClick={open} disabled={uploading} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{uploading ? 'Importing…' : 'Open Files'}</button><button type="button" onClick={scanInbox} className="rounded-lg border px-3 py-2 text-sm font-semibold">Scan Folder</button></div>}</div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.4fr)_minmax(150px,.7fr)_minmax(150px,.7fr)_minmax(160px,.7fr)_minmax(250px,1fr)]"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, ID, or category" className="min-w-0 rounded-md border px-3 py-2 text-sm dark:bg-gray-900" /><select value={status} onChange={(event) => setStatus(event.target.value)} className="min-w-0 rounded-md border px-2 py-2 text-sm dark:bg-gray-900"><option value="ALL">All statuses</option>{statuses.map((value) => <option key={value}>{value}</option>)}</select><select value={fileType} onChange={(event) => setFileType(event.target.value)} className="min-w-0 rounded-md border px-2 py-2 text-sm dark:bg-gray-900"><option value="ALL">All file types</option>{fileTypes.map((value) => <option key={value}>{value}</option>)}</select><select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="min-w-0 rounded-md border px-3 py-2 text-sm dark:bg-gray-900"><option value="name">Sort: Name</option><option value="type">Sort: Type</option><option value="status">Sort: Status</option><option value="date">Sort: Updated</option><option value="size">Sort: Size</option></select><div className="grid grid-cols-4 gap-1 rounded-md border p-1">{VIEW_OPTIONS.map((option) => <button key={option.value} type="button" onClick={() => setViewMode(option.value)} className={`rounded px-2 py-1 text-xs ${viewMode === option.value ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : ''}`}>{option.label}</button>)}</div></div>
+        {selected.size > 0 && <div className="flex flex-wrap items-center gap-2 rounded bg-blue-50 p-2 text-sm dark:bg-blue-950"><strong>{selected.size} selected</strong><button type="button" onClick={openCategoryAssignment} className="rounded bg-white px-3 py-1.5 font-semibold shadow">Categories</button><button type="button" onClick={() => renameItem(selectedItems[0])} className="rounded bg-white px-3 py-1.5 font-semibold shadow">Rename</button><button type="button" onClick={() => void deleteSelectedArtwork()} className="rounded bg-red-600 px-3 py-1.5 font-semibold text-white shadow">Delete</button><button type="button" onClick={() => setSelected(new Set())} className="rounded bg-white px-3 py-1.5 font-semibold shadow">Clear</button><button type="button" onClick={() => setSelected(new Set(visibleItems.map((item) => item.id)))} className="rounded bg-white px-3 py-1.5 font-semibold shadow">Select All Visible</button></div>}
+      </div>
       <div className="flex h-[calc(100vh-11rem)] min-h-[580px] overflow-hidden">
         <aside className="flex w-72 shrink-0 flex-col border-r dark:border-gray-700">
-          <div className="space-y-3 border-b p-4 dark:border-gray-700">
-            <div><h2 className="text-lg font-semibold">Artwork Files</h2><p className="mt-1 text-xs text-gray-500">Working copies are shown here; originals remain protected.</p></div>
-            <div className="grid grid-cols-2 gap-2"><button type="button" onClick={open} disabled={uploading} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{uploading ? 'Importing…' : 'Open Files'}</button><button type="button" onClick={scanInbox} className="rounded-lg border px-3 py-2 text-sm font-semibold">Scan Folder</button></div>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, ID, or category" className="w-full rounded-md border px-3 py-2 text-sm dark:bg-gray-900" />
-            <div className="grid grid-cols-2 gap-2"><select value={status} onChange={(event) => setStatus(event.target.value)} className="min-w-0 rounded-md border px-2 py-2 text-sm dark:bg-gray-900"><option value="ALL">All statuses</option>{statuses.map((value) => <option key={value}>{value}</option>)}</select><select value={fileType} onChange={(event) => setFileType(event.target.value)} className="min-w-0 rounded-md border px-2 py-2 text-sm dark:bg-gray-900"><option value="ALL">All file types</option>{fileTypes.map((value) => <option key={value}>{value}</option>)}</select></div>
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="w-full rounded-md border px-3 py-2 text-sm dark:bg-gray-900"><option value="name">Sort: Name</option><option value="type">Sort: Type</option><option value="status">Sort: Status</option><option value="date">Sort: Updated</option><option value="size">Sort: Size</option></select>
-            <div className="grid grid-cols-2 gap-1 rounded-md border p-1">{VIEW_OPTIONS.map((option) => <button key={option.value} type="button" onClick={() => setViewMode(option.value)} className={`rounded px-2 py-1 text-xs ${viewMode === option.value ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900' : ''}`}>{option.label}</button>)}</div>
-            {selected.size > 0 && <div className="space-y-2 rounded bg-blue-50 p-2 text-sm dark:bg-blue-950"><strong>{selected.size} selected</strong><div className="grid grid-cols-2 gap-2"><button type="button" onClick={openCategoryAssignment} className="rounded bg-white px-2 py-1.5 font-semibold shadow">Categories</button><button type="button" onClick={() => renameItem(selectedItems[0])} className="rounded bg-white px-2 py-1.5 font-semibold shadow">Rename</button><button type="button" onClick={() => void deleteSelectedArtwork()} className="rounded bg-red-600 px-2 py-1.5 font-semibold text-white shadow">Delete</button><button type="button" onClick={() => setSelected(new Set())} className="rounded bg-white px-2 py-1.5 font-semibold shadow">Clear</button></div><button type="button" onClick={() => setSelected(new Set(visibleItems.map((item) => item.id)))} className="w-full rounded bg-white px-2 py-1.5 font-semibold shadow">Select All Visible</button></div>}
-          </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-bold">Categories</h3><button type="button" onClick={() => createCategory(null)} className="rounded px-2 py-1 text-xs font-bold text-blue-600 hover:bg-blue-50">+ New</button></div>
             <p className="mb-2 text-xs text-gray-500">Drag artwork here to assign it. Pause over a parent to open its children.</p>

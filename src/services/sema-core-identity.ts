@@ -1,104 +1,33 @@
 import type { Prisma } from '@prisma/client';
+import { SemaCore, parseInstallationId, parseKeyId, type JsonObject } from '@selo/sema-core';
 
 import config from '@/lib/config';
 import prisma from '@/lib/prisma';
-import {
-  encodeBase56,
-  formatSemaKeyId,
-  normalizeTypeCode,
-  parseSemaInstallationId,
-  parseSemaKeyId,
-} from '@/lib/sema-id';
+import { consumeReservedIdentifierInTransaction, PrismaSemaCoreStore, reserveIdentifiersInTransaction } from '@/services/sema-core-prisma-store';
 
-const STATE_KEY = 'PRIMARY';
-
-/** Classification only. It is never embedded in a canonical KeyID. */
 export type SemaIdentifierTypeCode = string;
-
-export interface IssuedSemaIdentifier {
-  id: string;
-  installationId: string;
-  localValue: bigint;
-  localToken: string;
-  typeCode?: string;
-}
-
+export interface IssuedSemaIdentifier { id: string; installationId: string; localValue: bigint; localToken: string; typeCode?: string; }
 type IdentityTransaction = Prisma.TransactionClient;
 
-function configuredInstallationId() {
-  return parseSemaInstallationId(config.sema.installationId);
+const store = new PrismaSemaCoreStore();
+const core = new SemaCore(store, { installationId: parseInstallationId(config.sema.installationId), maxReservationSize: 100 });
+const asIssued = (value: { id: string; installationId: string; localValue: bigint; localCode: string; typeCode?: string }): IssuedSemaIdentifier => ({ id: value.id, installationId: value.installationId, localValue: value.localValue, localToken: value.localCode, typeCode: value.typeCode });
+
+export async function getSemaCoreIdentityState() { return core.initialize(); }
+
+/** Shared SEMA Core issuance. The adapter records reservation and consumption in PostgreSQL. */
+export async function issueSemaIdentifier(typeCode?: SemaIdentifierTypeCode, metadata: Prisma.InputJsonValue = {}): Promise<IssuedSemaIdentifier> {
+  return asIssued(await core.issueIdentifier(typeCode, metadata as JsonObject));
 }
 
-export async function getSemaCoreIdentityState() {
-  const installationId = configuredInstallationId();
-  const state = await prisma.semaCoreIdentityState.upsert({
-    where: { stateKey: STATE_KEY },
-    update: {},
-    create: { stateKey: STATE_KEY, installationId, nextLocalId: BigInt(1) },
-  });
-  if (state.installationId !== installationId) {
-    throw new Error(
-      `Configured SEMA InstallationID ${installationId} does not match initialized Core ${state.installationId}`
-    );
-  }
-  if (state.status !== 'ACTIVE') throw new Error(`SEMA Core installation is ${state.status}`);
-  return state;
+/** Transaction-aware adapter for existing VectorForge writes using the shared reservation ledger. */
+export async function issueSemaIdentifierInTransaction(tx: IdentityTransaction, typeCode?: SemaIdentifierTypeCode, metadata: Prisma.InputJsonValue = {}): Promise<IssuedSemaIdentifier> {
+  await core.initialize();
+  const { reservation, identifiers } = await reserveIdentifiersInTransaction(tx, { count: 1, typeCode, metadata: metadata as JsonObject });
+  return asIssued(await consumeReservedIdentifierInTransaction(tx, reservation.id, identifiers[0]!.id, metadata as JsonObject));
 }
 
-/**
- * Issue one permanent KeyID from this installation's single shared sequence.
- * `typeCode` is retained only as optional display/audit classification metadata.
- */
-export async function issueSemaIdentifier(
-  typeCode?: SemaIdentifierTypeCode,
-  metadata: Prisma.InputJsonValue = {}
-): Promise<IssuedSemaIdentifier> {
-  await getSemaCoreIdentityState();
-  return prisma.$transaction((tx) => issueSemaIdentifierInTransaction(tx, typeCode, metadata));
-}
-
-export async function issueSemaIdentifierInTransaction(
-  tx: IdentityTransaction,
-  typeCode?: SemaIdentifierTypeCode,
-  metadata: Prisma.InputJsonValue = {}
-): Promise<IssuedSemaIdentifier> {
-  const rows = await tx.$queryRaw<Array<{ installationId: string; localValue: bigint }>>`
-    UPDATE "sema_core_identity_state"
-    SET "nextLocalId" = "nextLocalId" + 1,
-        "updatedAt" = NOW()
-    WHERE "stateKey" = ${STATE_KEY}
-      AND "status" = 'ACTIVE'
-    RETURNING "installationId", "nextLocalId" - 1 AS "localValue"
-  `;
-  const issued = rows[0];
-  if (!issued) throw new Error('SEMA Core KeyID allocator is unavailable');
-
-  const id = formatSemaKeyId(issued);
-  const localToken = encodeBase56(issued.localValue);
-  const normalizedTypeCode = typeCode ? normalizeTypeCode(typeCode) : undefined;
-  await tx.semaIssuedIdentifier.create({
-    data: {
-      semaId: id,
-      installationId: issued.installationId,
-      localValue: issued.localValue,
-      localCode: localToken,
-      typeCode: normalizedTypeCode,
-      metadata,
-    },
-  });
-  return { id, installationId: issued.installationId, localValue: issued.localValue, localToken, typeCode: normalizedTypeCode };
-}
-
-/** Allocate a child Core installation by consuming the parent's normal sequence. */
-export async function issueChildInstallationId(metadata: Prisma.InputJsonValue = {}) {
-  const issued = await issueSemaIdentifier('INSTALLATION', metadata);
-  return issued.id;
-}
-
-export async function inspectSemaIdentifier(id: string) {
-  const parts = parseSemaKeyId(id);
-  return {
-    ...parts,
-    issued: await prisma.semaIssuedIdentifier.findUnique({ where: { semaId: id } }),
-  };
-}
+export async function reserveSemaIdentifiers(count: number, typeCode?: SemaIdentifierTypeCode, metadata: Prisma.InputJsonValue = {}) { await core.initialize(); return core.reserveIdentifiers(count, typeCode, metadata as JsonObject); }
+export async function consumeReservedSemaIdentifier(reservationId: string, id: string, metadata: Prisma.InputJsonValue = {}) { return asIssued(await core.consumeReservedIdentifier(id, reservationId, metadata as JsonObject)); }
+export async function issueChildInstallationId(metadata: Prisma.InputJsonValue = {}) { return (await core.issueChildInstallation(metadata as JsonObject)).id; }
+export async function inspectSemaIdentifier(id: string) { return { ...parseKeyId(id), issued: await prisma.semaIssuedIdentifier.findUnique({ where: { semaId: id } }) }; }

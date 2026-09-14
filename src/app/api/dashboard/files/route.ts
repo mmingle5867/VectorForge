@@ -7,6 +7,7 @@ import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 import { normalizeStatusColors } from '@/lib/status-colors';
 import prisma from '@/lib/prisma';
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
+import { readyArtworkWhere, workspaceArtworkWhere } from '@/services/vectorforge-artwork-readiness';
 
 function getStorageRootSetting(settings: { defaultSubstitutions: unknown } | null) {
   const values = settings?.defaultSubstitutions;
@@ -17,19 +18,29 @@ function getStorageRootSetting(settings: { defaultSubstitutions: unknown } | nul
   return undefined;
 }
 
+/**
+ * Working-raster files are versioned for editing (for example,
+ * `duckling-edit-v0002.jpg`).  That is storage history, not the artwork's
+ * user-facing name.  Keep that distinction at the dashboard boundary.
+ */
+function withoutWorkingVersionSuffix(value: string) {
+  return value.replace(/-(?:edit|working)-v\d+$/i, '') || value;
+}
+
 /** Artwork-first dashboard listing. Batch records are not part of this model. */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await requireAuth();
+    const scope = new URL(request.url).searchParams.get('scope') === 'ready' ? 'ready' : 'workspace';
     const storage = await configureDefaultImportStorageForUser({
       userId: user.id,
       storageRootPath: getStorageRootSetting(user.settings),
     });
     const artworks = await prisma.artwork.findMany({
-      where: { userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
+      where: scope === 'ready' ? readyArtworkWhere(user.id) : workspaceArtworkWhere(user.id),
       orderBy: [{ updatedAt: 'desc' }, { title: 'asc' }],
       select: {
-        id: true, artworkNumber: true, title: true, createdAt: true, updatedAt: true,
+        id: true, artworkNumber: true, title: true, outputBaseName: true, createdAt: true, updatedAt: true,
         item: {
           select: {
             id: true, itemId: true,
@@ -66,6 +77,7 @@ export async function GET() {
         user.settings?.defaultSubstitutions && typeof user.settings.defaultSubstitutions === 'object'
           ? (user.settings.defaultSubstitutions as Record<string, unknown>).statusColors : undefined
       ),
+      scope,
       items: [
         ...artworks.map((artwork) => {
         const working = artwork.assets.find((asset) => asset.role === 'source-file');
@@ -74,7 +86,12 @@ export async function GET() {
         const approvedMetadata = approvedVector?.metadata && typeof approvedVector.metadata === 'object' && !Array.isArray(approvedVector.metadata)
           ? approvedVector.metadata as Record<string, unknown> : {};
         const filePath = working?.filePath ?? original?.filePath ?? null;
-        const filename = filePath ? path.basename(filePath) : artwork.title;
+        const workingFilename = filePath ? path.basename(filePath) : null;
+        const workingExtension = workingFilename ? path.extname(workingFilename) : '';
+        const permanentBaseName = artwork.outputBaseName
+          || withoutWorkingVersionSuffix(artwork.title)
+          || (workingFilename ? withoutWorkingVersionSuffix(path.basename(workingFilename, workingExtension)) : artwork.artworkNumber);
+        const filename = `${permanentBaseName}${workingExtension}`;
         const latestVersion = working?.versions[0] ?? original?.versions[0];
         const metadata = latestVersion?.metadata && typeof latestVersion.metadata === 'object' && !Array.isArray(latestVersion.metadata)
           ? latestVersion.metadata as Record<string, unknown> : {};
@@ -85,8 +102,8 @@ export async function GET() {
           artworkId: artwork.artworkNumber,
           workingAssetId: working?.assetId ?? null,
           originalFilename: filename,
-          baseName: path.basename(filename, path.extname(filename)),
-          extension: path.extname(filename).slice(1).toUpperCase(),
+          baseName: permanentBaseName,
+          extension: workingExtension.slice(1).toUpperCase(),
           mimeType: working?.mimeType ?? original?.mimeType ?? null,
           size: latestVersion ? Number(latestVersion.byteLength) : null,
           width: typeof metadata.width === 'number' ? metadata.width : null,

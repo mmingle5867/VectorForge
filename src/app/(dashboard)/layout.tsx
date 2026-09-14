@@ -28,7 +28,7 @@ export default function DashboardLayout({
             </svg>
             <span className="text-lg font-bold text-gray-900">{config.identity.displayName}</span>
           </Link>
-          <p className="mt-1 pl-9 text-xs font-semibold text-gray-500">v0.64.3</p>
+          <p className="mt-1 pl-9 text-xs font-semibold text-gray-500">v0.70.1</p>
         </div>
 
         <nav className="space-y-1">
@@ -40,6 +40,13 @@ export default function DashboardLayout({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
             Dashboard
+          </Link>
+          <Link
+            href="/dashboard/completed"
+            className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 transition-colors"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m5 13 4 4L19 7" /></svg>
+            Completed Vectors
           </Link>
           <Link
             href="/processing-history"

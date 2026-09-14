@@ -109,7 +109,7 @@ export async function renameDirectArtwork(input: { userId: string; artworkId: st
     const remap = (value: string | null) => remapPathWithinDirectory(value, directory, target, relativeRenames);
     try {
       await prisma.$transaction(async (tx) => {
-        await tx.artwork.update({ where: { id: artwork.id }, data: { title: allocated } });
+        await tx.artwork.update({ where: { id: artwork.id }, data: { title: allocated, outputBaseName: allocated } });
         if (artwork.item) await tx.item.update({ where: { id: artwork.item.id }, data: { title: allocated } });
         for (const asset of artwork.assets) {
           const filePath = remap(asset.filePath);

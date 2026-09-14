@@ -1,6 +1,6 @@
 {
   "name": "vectorforge",
-  "version": "1.0.0",
+  "version": "0.70.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -19,13 +19,20 @@
     "test:direct-artwork-ingest": "tsx src/scripts/test-direct-artwork-ingest-layout.ts",
     "sema:renumber:dry-run": "tsx src/scripts/renumber-sema-core.ts --dry-run",
     "sema:core:bootstrap": "tsx src/scripts/bootstrap-sema-core.ts",
+    "sema:core:host:bootstrap": "tsx src/scripts/bootstrap-sema-core-host.ts",
+    "sema:core:host:verify": "tsx src/scripts/verify-sema-core-host.ts",
+    "test:sema-shared": "tsx src/scripts/test-sema-shared-adoption.ts",
     "test:control-presets": "tsx src/scripts/test-control-presets.ts",
     "test:artwork-storage": "tsx src/scripts/test-artwork-storage.ts",
     "worker": "tsx src/workers/processing-worker-bootstrap.ts",
     "worker:dev": "tsx watch src/workers/processing-worker-bootstrap.ts"
   },
   "dependencies": {
-    "@clerk/nextjs": "^6.9.15",
+    "@selo/sema-capabilities": "git+https://github.com/mmingle5867/SEMA-Capabilities.git#v0.1.1",
+    "@selo/sema-core": "git+https://github.com/mmingle5867/SEMA-Core.git#v0.2.1",
+    "@selo/sema-facilities": "git+https://github.com/mmingle5867/SEMA-Facilities.git#v0.1.1",
+    "@selo/sema-foundation": "git+https://github.com/mmingle5867/SEMA-Foundation.git#v0.1.1",
+    "@clerk/nextjs": "6.9.15",
     "@prisma/client": "^5.10.0",
     "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-dialog": "^1.0.5",

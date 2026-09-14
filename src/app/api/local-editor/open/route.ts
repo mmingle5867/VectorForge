@@ -9,6 +9,7 @@ import { configureDefaultImportStorageForUser } from '@/services/profile-storage
 import { normalizeRasterEditorPreparation } from '@/lib/control-presets';
 import { logger } from '@/lib/logger';
 import { prepareDirectRasterForEditor, prepareRasterForEditor } from '@/services/raster-editor-preparation';
+import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 
 type EditableFileType = 'PNG' | 'JPG' | 'SVG';
 type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-working-png';
@@ -221,13 +222,21 @@ export async function POST(req: NextRequest) {
         const source = artwork?.assets[0];
         if (!artwork || !source?.filePath || !isRasterUpload(source.mimeType, source.filePath)) return NextResponse.json({ success: false, error: 'Artwork raster was not found' }, { status: 404 });
         const preparation = normalizeRasterEditorPreparation(body.preparation);
-        const prepared = body.prepare === true
-          ? await prepareDirectRasterForEditor({ userId: user.id, artworkId, preparation, sourceVersionKey: typeof body.sourceVersionKey === 'string' ? body.sourceVersionKey : null })
-          : { filePath: path.resolve(source.filePath), prepared: false };
-        const sourceMetadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
-          ? source.metadata as Record<string, unknown>
+        // Always establish the persistent working JPEG before opening. This is
+        // also the path used by blur/upscale preparation, so both buttons act
+        // on the same selected working image.
+        await ensureDirectWorkingJpeg({ userId: user.id, artworkId });
+        const prepared = await prepareDirectRasterForEditor({
+          userId: user.id,
+          artworkId,
+          preparation: body.prepare === true ? preparation : { blur: 0, upscaleFactor: 1 },
+          sourceVersionKey: typeof body.sourceVersionKey === 'string' ? body.sourceVersionKey : null,
+        });
+        const currentSource = await prisma.asset.findFirst({ where: { artworkId, role: 'source-file', status: 'ACTIVE' } });
+        const sourceMetadata = currentSource?.metadata && typeof currentSource.metadata === 'object' && !Array.isArray(currentSource.metadata)
+          ? currentSource.metadata as Record<string, unknown>
           : {};
-        await prisma.asset.update({ where: { id: source.id }, data: { metadata: { ...sourceMetadata, jpegReadyForVectorizing: false } } });
+        if (currentSource) await prisma.asset.update({ where: { id: currentSource.id }, data: { metadata: { ...sourceMetadata, jpegReadyForVectorizing: false } } });
         await assertExistingPath(prepared.filePath, 'file');
         await launchDetached(await getManualEditorPath(extended), [prepared.filePath]);
         return NextResponse.json({ success: true, prepared: prepared.prepared, filePath: prepared.filePath });

@@ -38,14 +38,50 @@ model SemaIssuedIdentifier {
   localValue      BigInt
   localCode       String
   typeCode        String?
+  reservationId   String?
+  status          String   @default("ISSUED")
+  consumedAt      DateTime?
   issuedAt        DateTime @default(now())
   metadata        Json     @default("{}")
+  reservation     SemaIdentifierReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
 
   @@unique([installationId, localValue])
   @@index([installationId, localCode])
   @@index([typeCode])
   @@index([issuedAt])
+  @@index([reservationId, status])
   @@map("sema_issued_identifiers")
+}
+
+model SemaIdentifierReservation {
+  id              String   @id
+  installationId  String
+  firstLocalValue BigInt
+  count           Int
+  typeCode        String?
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  identifiers     SemaIssuedIdentifier[]
+
+  @@index([installationId, createdAt])
+  @@map("sema_identifier_reservations")
+}
+
+model SemaCoreHostSettings {
+  settingsKey               String   @id @default("PRIMARY")
+  installationId            String   @unique
+  revision                  Int      @default(1)
+  maxReservationSize        Int      @default(100)
+  auditRetentionDays        Int      @default(3650)
+  eventRetentionDays        Int      @default(3650)
+  capabilityAutoFallback    Boolean  @default(true)
+  documentationEnabled      Boolean  @default(true)
+  updatedById               String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("sema_core_host_settings")
 }
 
 model SemaCoreCommand {
@@ -398,6 +434,9 @@ model Artwork {
   artworkNumber   String        @unique
   numericSequence Int
   title           String
+  /// Stable human-facing base used for completed SVG/PNG/JPG filenames.
+  /// Working raster version filenames never change this value.
+  outputBaseName  String?
   sourceItemId    String?
   status          ArtworkStatus @default(ACTIVE)
   createdAt       DateTime      @default(now())

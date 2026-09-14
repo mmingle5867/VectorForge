@@ -72,7 +72,19 @@ The first post-baseline migration adds structures without redirecting the existi
 - `RelationshipCategory` allows Bundles and other Relationships to be categorized without changing their members.
 - `DashboardPreference` stores the user's explorer and Category-tree state by context.
 
-Organization and Project Category scopes are reserved in the schema but remain disabled until their membership and permission foundations are implemented.
+Workspace and Project membership foundations now exist. Single-user local mode bootstraps an Owner, Workspace, active membership, and SEMA Profile through the same context model that later multi-user operation uses. Role enforcement in existing UI/API commands is introduced progressively; new commands must resolve explicit access context before acting.
+
+## Access Context and Multi-User Readiness
+
+Every future command must resolve its context as:
+
+**Device → OS User → SEMA Local Profile → SEMA Identity → Owner/Organization → Workspace → optional Project**
+
+- `WorkspaceMembership` controls active, disabled, and removed access with Owner, Administrator, Member, and Viewer roles.
+- `ProjectMembership` is available for a narrower collaboration boundary without making projects mandatory.
+- `SemaProfile.activeWorkspaceId` records the current workspace for a profile.
+- Background processing jobs carry optional profile/workspace context and verify the persisted Batch user/workspace scope before execution.
+- Central login, invitations, MFA, billing, cloud sync, and detailed permission UI remain Hub responsibilities and are not VectorForge-specific features.
 
 ## Compatibility Boundary
 

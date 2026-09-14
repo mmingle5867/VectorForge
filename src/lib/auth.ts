@@ -144,7 +144,7 @@ export async function getCurrentUser() {
         clerkId,
         email,
       });
-    } catch (error) {
+    } catch {
       // Handle unique constraint violation (webhook fired between check and create)
       user = await prisma.user.findUnique({
         where: { clerkId },
@@ -170,7 +170,7 @@ export async function getCurrentUser() {
       logger.info('Auth: Created default UserSettings for existing user', {
         userId: user.id,
       });
-    } catch (error) {
+    } catch {
       // Settings might have been created concurrently
       const settings = await prisma.userSettings.findUnique({
         where: { userId: user.id },

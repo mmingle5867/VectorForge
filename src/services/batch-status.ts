@@ -78,7 +78,7 @@ export async function recomputeBatchStatus(batchId: string) {
       totalItems,
       completedItems: summary.counts.COMPLETED,
       failedItems: summary.counts.FAILED,
-      status: summary.status as any,
+      status: summary.status as never,
       completedAt: summary.status === 'COMPLETED' || summary.status === 'FAILED' ? new Date() : null,
     },
   });

@@ -10,7 +10,7 @@ import 'dotenv/config';
 import { Worker, Job } from 'bullmq';
 import { mkdir, readFile } from 'fs/promises';
 import path from 'path';
-import { redisConnection, type ProcessingJobData, enqueueZipJob } from '../lib/queue';
+import { redisConnection, type ProcessingJobData } from '../lib/queue';
 import { serializeError } from '../lib/error-utils';
 import prisma from '../lib/prisma';
 import { logger } from '../lib/logger';
@@ -459,7 +459,7 @@ async function updateItemStatus(
 ) {
   await prisma.batchItem.update({
     where: { id: itemId },
-    data: { status: status as any, progress, currentStep },
+    data: { status: status as never, progress, currentStep },
   });
 }
 
@@ -483,7 +483,7 @@ async function updateBatchProgress(batchId: string) {
       failedItems: failed,
       status: allDone
         ? needsManualEdit > 0
-          ? 'NEEDS_MANUAL_EDIT' as any
+          ? 'NEEDS_MANUAL_EDIT' as never
           : failed === total
           ? 'FAILED'
           : 'COMPLETED'

@@ -8,6 +8,7 @@ import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import config from '@/lib/config';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
+import { ensureLocalSemaAccessContext } from '@/services/sema-access-context';
 
 function splitLocalUserName(name: string) {
   const [firstName, ...rest] = name.trim().split(/\s+/);
@@ -15,6 +16,11 @@ function splitLocalUserName(name: string) {
     firstName: firstName || 'Local',
     lastName: rest.join(' ') || 'User',
   };
+}
+
+async function attachSemaAccessContext<T extends { id: string }>(user: T): Promise<T> {
+  await ensureLocalSemaAccessContext(user.id);
+  return user;
 }
 
 export function isLocalAuthEnabled() {
@@ -90,10 +96,10 @@ export async function getCurrentUser() {
       const settings = await prisma.userSettings.create({
         data: { userId: user.id },
       });
-      return { ...user, settings };
+      return attachSemaAccessContext({ ...user, settings });
     }
 
-    return user;
+    return attachSemaAccessContext(user);
   }
 
   const { userId: clerkId } = await auth();
@@ -175,7 +181,7 @@ export async function getCurrentUser() {
     }
   }
 
-  return user;
+  return user ? attachSemaAccessContext(user) : null;
 }
 
 /**

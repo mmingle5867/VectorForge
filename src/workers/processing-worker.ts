@@ -30,6 +30,7 @@ import { getIncrementalFolderName } from '../lib/server-utils';
 import { settingsToConversionOptions } from '../lib/vtracer-presets';
 import { completeCoreExecution, createCoreCommand, startCoreExecution } from '../services/sema-core';
 import config from '../lib/config';
+import { resolveSemaAccessContext } from '../services/sema-access-context';
 
 const PROCESSING_QUEUE_NAME = `${config.identity.slug}-processing`;
 
@@ -51,8 +52,30 @@ const processingWorker = new Worker<ProcessingJobData>(
 
     let coreExecutionId: string | null = null;
     try {
+      // Resolve and verify the job against the same explicit user/workspace
+      // context used by foreground commands. Legacy job producers may omit
+      // scope fields temporarily; the persisted Batch remains authoritative.
+      const batchScope = await prisma.batch.findUniqueOrThrow({
+        where: { id: data.batchId },
+        select: { userId: true, workspaceId: true },
+      });
+      if (batchScope.userId !== data.userId) {
+        throw new Error('Processing job user does not match its batch owner');
+      }
+      const accessContext = await resolveSemaAccessContext({
+        userId: data.userId,
+        profileId: data.profileId,
+        workspaceId: data.workspaceId || batchScope.workspaceId || undefined,
+      });
+      if (batchScope.workspaceId && batchScope.workspaceId !== accessContext.workspaceId) {
+        throw new Error('Processing job workspace does not match its batch scope');
+      }
+
       const coreCommand = await createCoreCommand({
         commandType: 'vectorforge.artwork.process',
+        actorId: accessContext.userId,
+        workspaceId: accessContext.workspaceId,
+        context: { profileId: accessContext.profileId, workspaceMembershipId: accessContext.workspaceMembershipId, role: accessContext.role },
         subjectIds: [data.batchId, data.batchItemId],
         payload: { queueJobId: job.id ?? null, baseName: data.baseName },
       });

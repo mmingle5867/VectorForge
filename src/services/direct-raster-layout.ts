@@ -91,6 +91,17 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
     let image = sharp(source.filePath).resize(input.layout.imageWidth, input.layout.imageHeight, { fit: 'fill', kernel: sharp.kernel.lanczos3 });
     if (input.layout.blur >= 0.3) image = image.blur(input.layout.blur);
     const resized = await image.jpeg({ quality: 95 }).toBuffer();
+    // Sharp composites must start inside the destination canvas. Crop the
+    // resized image explicitly when the requested canvas clips it.
+    const sourceLeft = Math.max(0, -left);
+    const sourceTop = Math.max(0, -top);
+    const compositeLeft = Math.max(0, left);
+    const compositeTop = Math.max(0, top);
+    const compositeWidth = Math.min(input.layout.imageWidth - sourceLeft, input.layout.canvasWidth - compositeLeft);
+    const compositeHeight = Math.min(input.layout.imageHeight - sourceTop, input.layout.canvasHeight - compositeTop);
+    const placed = await sharp(resized)
+      .extract({ left: sourceLeft, top: sourceTop, width: compositeWidth, height: compositeHeight })
+      .toBuffer();
     await sharp({
       create: {
         width: input.layout.canvasWidth,
@@ -99,7 +110,7 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
         background: input.layout.fill === 'BLACK' ? '#000000' : '#ffffff',
       },
     })
-      .composite([{ input: resized, left, top }])
+      .composite([{ input: placed, left: compositeLeft, top: compositeTop }])
       .jpeg({ quality: 95 })
       .withMetadata({ density: input.layout.dpi })
       .toFile(temporary);

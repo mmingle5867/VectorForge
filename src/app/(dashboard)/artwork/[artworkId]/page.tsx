@@ -85,10 +85,6 @@ export default function ArtworkPreviewTunePage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(Date.now());
-  const [outputConstrainBy, setOutputConstrainBy] = useState<'WIDTH' | 'HEIGHT'>('WIDTH');
-  const [outputValue, setOutputValue] = useState(8);
-  const [outputUnit, setOutputUnit] = useState<'IN' | 'MM'>('IN');
-  const [outputDpi, setOutputDpi] = useState(300);
   const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>>(['PDF']);
   const [imageWidth, setImageWidth] = useState(0);
   const [resizePercent, setResizePercent] = useState(100);

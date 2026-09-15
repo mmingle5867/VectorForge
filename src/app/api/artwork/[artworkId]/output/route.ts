@@ -15,7 +15,7 @@ function parseSpecification(value: unknown): RasterOutputSpecification {
     return result;
   };
   const formats = Array.isArray(input.formats)
-    ? [...new Set(input.formats.filter((format): format is 'JPG' | 'PNG' | 'PDF' => format === 'JPG' || format === 'PNG' || format === 'PDF'))]
+    ? [...new Set(input.formats.filter((format): format is 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF' => format === 'JPG' || format === 'PNG' || format === 'PNG_MASK' || format === 'PDF'))]
     : [];
   if (!constrainBy || !unit || formats.length === 0) throw new Error('Choose a dimension, unit, and at least one output format');
   return { constrainBy, unit, value: numeric('value', 0.01, 1000), dpi: numeric('dpi', 1, 2400), formats };

@@ -1,0 +1,20 @@
+'use client';
+
+type Anchor = 'TOP_LEFT' | 'TOP' | 'TOP_RIGHT' | 'LEFT' | 'CENTER' | 'RIGHT' | 'BOTTOM_LEFT' | 'BOTTOM' | 'BOTTOM_RIGHT';
+type Props = {
+  imageWidth: number; imageHeight: number; canvasWidth: number; canvasHeight: number; dpi: number;
+  percent: number; maintainAspect: boolean; fill: 'WHITE' | 'BLACK'; anchor: Anchor;
+  onImageWidth(value: number): void; onImageHeight(value: number): void; onCanvasWidth(value: number): void; onCanvasHeight(value: number): void;
+  onDpi(value: number): void; onPercent(value: number): void; onMaintainAspect(value: boolean): void; onFill(value: 'WHITE' | 'BLACK'): void; onAnchor(value: Anchor): void;
+};
+const numeric = (value: string) => Number(value);
+const inches = (pixels: number, dpi: number) => Number((pixels / dpi).toFixed(3));
+const centimetres = (pixels: number, dpi: number) => Number((pixels / dpi * 2.54).toFixed(3));
+
+export default function RasterLayoutControls(props: Props) {
+  const field = (label: string, value: number, change: (value: number) => void, step = 1) => <label className="text-sm font-semibold">{label}<input type="number" min="0.01" step={step} value={value} onChange={(event) => change(numeric(event.target.value))} className="mt-1 w-full rounded border p-2" /></label>;
+  return <div className="mt-3 space-y-4">
+    <div><h3 className="font-semibold">Upscale / resize image</h3><div className="mt-2 grid grid-cols-2 gap-2">{field('Percent', props.percent, props.onPercent, 0.01)}<label className="mt-6 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={props.maintainAspect} onChange={(event) => props.onMaintainAspect(event.target.checked)} />Maintain aspect ratio</label>{field('Width (pixels)', props.imageWidth, props.onImageWidth)}{field('Height (pixels)', props.imageHeight, props.onImageHeight)}{field('Width (inches)', inches(props.imageWidth, props.dpi), (value) => props.onImageWidth(value * props.dpi), 0.01)}{field('Height (inches)', inches(props.imageHeight, props.dpi), (value) => props.onImageHeight(value * props.dpi), 0.01)}{field('Width (cm)', centimetres(props.imageWidth, props.dpi), (value) => props.onImageWidth(value / 2.54 * props.dpi), 0.01)}{field('Height (cm)', centimetres(props.imageHeight, props.dpi), (value) => props.onImageHeight(value / 2.54 * props.dpi), 0.01)}</div></div>
+    <div className="border-t pt-4"><h3 className="font-semibold">Resize canvas</h3><div className="mt-2 grid grid-cols-2 gap-2">{field('Width (pixels)', props.canvasWidth, props.onCanvasWidth)}{field('Height (pixels)', props.canvasHeight, props.onCanvasHeight)}{field('Width (inches)', inches(props.canvasWidth, props.dpi), (value) => props.onCanvasWidth(value * props.dpi), 0.01)}{field('Height (inches)', inches(props.canvasHeight, props.dpi), (value) => props.onCanvasHeight(value * props.dpi), 0.01)}{field('Width (cm)', centimetres(props.canvasWidth, props.dpi), (value) => props.onCanvasWidth(value / 2.54 * props.dpi), 0.01)}{field('Height (cm)', centimetres(props.canvasHeight, props.dpi), (value) => props.onCanvasHeight(value / 2.54 * props.dpi), 0.01)}{field('Resolution (DPI)', props.dpi, props.onDpi)}<label className="text-sm font-semibold">Fill<select value={props.fill} onChange={(event) => props.onFill(event.target.value as 'WHITE' | 'BLACK')} className="mt-1 w-full rounded border p-2"><option value="WHITE">White</option><option value="BLACK">Black</option></select></label></div><label className="mt-3 block text-sm font-semibold">Anchor<select value={props.anchor} onChange={(event) => props.onAnchor(event.target.value as Anchor)} className="mt-1 w-full rounded border p-2">{(['TOP_LEFT','TOP','TOP_RIGHT','LEFT','CENTER','RIGHT','BOTTOM_LEFT','BOTTOM','BOTTOM_RIGHT'] as const).map((value) => <option key={value} value={value}>{value.replaceAll('_', ' ')}</option>)}</select></label></div>
+  </div>;
+}

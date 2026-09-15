@@ -168,6 +168,10 @@ export default function ArtworkPreviewTunePage() {
 
   async function activate() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/raster-versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionKey: selected }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to select version'); setNotice('Selected working version is now active.'); await refresh(false); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to select version'); } finally { setBusy(false); } }
   async function prepareLayoutAndOpen() {
+    if (canvasWidth < imageWidth || canvasHeight < imageHeight) {
+      const continueWithClip = window.confirm('The canvas is smaller than the resized image, so part of the image will be clipped at the selected anchor. Choose OK to continue with clipping, or Cancel to adjust the canvas.');
+      if (!continueWithClip) return;
+    }
     setActionError(null); setBusy(true);
     try {
       const response = await fetch(`/api/artwork/${artworkId}/prepare-layout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layout: { blur: settings.blur, imageWidth, imageHeight, canvasWidth, canvasHeight, dpi: layoutDpi, fill: canvasFill, anchor: canvasAnchor } }) });

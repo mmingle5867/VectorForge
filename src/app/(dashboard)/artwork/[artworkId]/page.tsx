@@ -90,6 +90,8 @@ export default function ArtworkPreviewTunePage() {
   const [outputDpi, setOutputDpi] = useState(300);
   const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>>(['PDF']);
   const [imageWidth, setImageWidth] = useState(0);
+  const [resizePercent, setResizePercent] = useState(100);
+  const [maintainAspect, setMaintainAspect] = useState(true);
   const [imageHeight, setImageHeight] = useState(0);
   const [canvasWidth, setCanvasWidth] = useState(0);
   const [canvasHeight, setCanvasHeight] = useState(0);
@@ -151,6 +153,8 @@ export default function ArtworkPreviewTunePage() {
   }, [settings, upscaleFactor]);
 
   const choice = useMemo(() => selected === 'original' ? original : versions.find((item) => item.key === selected) ?? null, [original, selected, versions]);
+  const setImageDimension = (axis: 'width' | 'height', value: number) => { if (!Number.isFinite(value) || value <= 0) return; const ratio = width && height ? width / height : imageWidth / imageHeight; if (axis === 'width') { setImageWidth(Math.round(value)); if (maintainAspect && ratio) setImageHeight(Math.max(1, Math.round(value / ratio))); } else { setImageHeight(Math.round(value)); if (maintainAspect && ratio) setImageWidth(Math.max(1, Math.round(value * ratio))); } };
+  const applyPercentResize = (percent: number) => { setResizePercent(percent); if (!width || !height || !Number.isFinite(percent) || percent <= 0) return; setImageWidth(Math.max(1, Math.round(width * percent / 100))); setImageHeight(Math.max(1, Math.round(height * percent / 100))); };
   const selectedFilename = choice?.filePath.split(/[\\/]/).pop() || 'No working image selected';
   const artworkFilename = artworkName || original?.filePath.split(/[\\/]/).pop() || selectedFilename;
   const width = choice?.width ?? 0; const height = choice?.height ?? 0; const outputWidth = width * upscaleFactor; const outputHeight = height * upscaleFactor; const outputPixels = outputWidth * outputHeight;

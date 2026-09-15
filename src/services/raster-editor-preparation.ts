@@ -438,7 +438,7 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
     where: {
       artworkId: input.artworkId,
       status: 'ACTIVE',
-      role: { in: ['approved-svg', 'approved-png', 'approved-jpg'] },
+      role: { in: ['approved-svg', 'approved-png', 'approved-jpg', 'raster-output-jpg', 'raster-output-png', 'raster-output-png_mask', 'raster-output-pdf'] },
     },
     select: { role: true, filePath: true },
   });
@@ -468,6 +468,9 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
       png: savedOutputAssets.some((asset) => asset.role === 'approved-png' && Boolean(asset.filePath)),
       jpg: savedOutputAssets.some((asset) => asset.role === 'approved-jpg' && Boolean(asset.filePath)),
     },
+    rasterOutputs: savedOutputAssets
+      .filter((asset) => asset.role.startsWith('raster-output-') && Boolean(asset.filePath))
+      .map((asset) => ({ format: asset.role.slice('raster-output-'.length).toUpperCase(), filePath: asset.filePath! })),
   };
 }
 

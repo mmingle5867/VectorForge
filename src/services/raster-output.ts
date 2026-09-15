@@ -1,6 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
 import sharp from 'sharp';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 
 export type OutputFormat = 'JPG' | 'PNG' | 'PDF';

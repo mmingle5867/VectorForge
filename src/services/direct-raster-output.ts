@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -49,20 +50,19 @@ export async function exportDirectArtworkRasterOutputs(input: {
     userId: input.userId,
     storageRootPath: typeof configuredRoot === 'string' && configuredRoot.trim() ? configuredRoot : undefined,
   });
+  const auditSpecification: Prisma.InputJsonObject = {
+    constrainBy: input.specification.constrainBy,
+    value: input.specification.value,
+    unit: input.specification.unit,
+    dpi: input.specification.dpi,
+    formats: [...input.specification.formats],
+  };
   const command = await createCoreCommand({
     commandType: 'vectorforge.raster-output.export',
     actorId: input.userId,
     workspaceId: artwork.workspaceId,
     subjectIds: [artwork.id, source.id],
-    payload: {
-      specification: {
-        constrainBy: input.specification.constrainBy,
-        value: input.specification.value,
-        unit: input.specification.unit,
-        dpi: input.specification.dpi,
-        formats: [...input.specification.formats],
-      },
-    },
+    payload: { specification: auditSpecification },
   });
 
   try {
@@ -82,11 +82,11 @@ export async function exportDirectArtworkRasterOutputs(input: {
         filePath: output.path,
       });
       const existing = artwork.assets.find((asset) => asset.role === outputRole(output.format));
-      const metadata = {
+      const metadata: Prisma.InputJsonObject = {
         outputKind: 'RASTER_EXPORT',
         format: output.format,
         completion: 'COMPLETED',
-        specification: input.specification,
+        specification: auditSpecification,
         pixels: { width: result.dimensions.width, height: result.dimensions.height },
         physicalSize: { widthInches: result.dimensions.inchesWide, heightInches: result.dimensions.inchesHigh },
         derivedFromAssetId: source.assetId,

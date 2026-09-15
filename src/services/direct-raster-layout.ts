@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -68,6 +69,11 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
   const user = await prisma.user.findUnique({ where: { id: input.userId }, include: { settings: true } });
   if (!user) throw new Error('User was not found');
 
+  const auditLayout: Prisma.InputJsonObject = {
+    blur: input.layout.blur, imageWidth: input.layout.imageWidth, imageHeight: input.layout.imageHeight,
+    canvasWidth: input.layout.canvasWidth, canvasHeight: input.layout.canvasHeight,
+    anchor: input.layout.anchor, fill: input.layout.fill, dpi: input.layout.dpi,
+  };
   const nextVersion = Math.max(0, ...source.versions.map((version) => version.versionNumber)) + 1;
   const parsed = path.parse(source.filePath);
   const target = path.join(path.dirname(source.filePath), `${parsed.name}-edit-v${String(nextVersion).padStart(4, '0')}.jpg`);
@@ -76,7 +82,7 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
     actorId: input.userId,
     workspaceId: artwork.workspaceId,
     subjectIds: [artwork.id, source.id],
-    payload: { layout: { ...input.layout } },
+    payload: { layout: auditLayout },
   });
   const temporary = path.join(path.dirname(target), `.vf-${semaLocalToken(command.id)}.jpg`);
   const { left, top } = anchorOffsets(input.layout.anchor, input.layout.canvasWidth, input.layout.canvasHeight, input.layout.imageWidth, input.layout.imageHeight);
@@ -102,10 +108,10 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
     const storage = await configureDefaultImportStorageForUser({ userId: input.userId, storageRootPath: storageRoot(user.settings?.defaultSubstitutions) });
     const contents = await readFile(target);
     const location = await getWritableStorageLocationForFile({ profileId: storage.profile.id, workspaceId: artwork.workspaceId, defaultLocation: storage.location, filePath: target });
-    const metadata = {
+    const metadata: Prisma.InputJsonObject = {
       role: 'raster-layout-working-copy',
       derivedFromPath: source.filePath,
-      layout: input.layout,
+      layout: auditLayout,
       imageOffset: { left, top },
     };
     const version = await createAssetVersion({

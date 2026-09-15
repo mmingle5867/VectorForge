@@ -51,6 +51,7 @@ function storageRoot(settings: unknown) {
 function validate(layout: RasterLayout) {
   const sizes = [layout.imageWidth, layout.imageHeight, layout.canvasWidth, layout.canvasHeight];
   if (!sizes.every((value) => Number.isInteger(value) && value > 0)) throw new Error('Image and canvas dimensions must be whole positive pixels');
+  if (layout.imageWidth * layout.imageHeight > MAX_RASTER_EDITOR_PIXELS) throw new Error('Resized image exceeds the 64 MP preparation limit');
   if (layout.canvasWidth * layout.canvasHeight > MAX_RASTER_EDITOR_PIXELS) throw new Error('Canvas exceeds the 64 MP preparation limit');
   if (!Number.isFinite(layout.blur) || layout.blur < 0 || layout.blur > 20) throw new Error('Blur must be between 0 and 20');
   if (!Number.isFinite(layout.dpi) || layout.dpi < 1 || layout.dpi > 2400) throw new Error('DPI must be between 1 and 2400');

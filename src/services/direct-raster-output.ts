@@ -54,7 +54,15 @@ export async function exportDirectArtworkRasterOutputs(input: {
     actorId: input.userId,
     workspaceId: artwork.workspaceId,
     subjectIds: [artwork.id, source.id],
-    payload: { specification: input.specification },
+    payload: {
+      specification: {
+        constrainBy: input.specification.constrainBy,
+        value: input.specification.value,
+        unit: input.specification.unit,
+        dpi: input.specification.dpi,
+        formats: [...input.specification.formats],
+      },
+    },
   });
 
   try {

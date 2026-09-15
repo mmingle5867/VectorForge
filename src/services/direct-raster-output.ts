@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import config from '@/lib/config';
 import prisma from '@/lib/prisma';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 import { createAssetVersion } from '@/services/asset-versions';
@@ -11,9 +12,15 @@ import { exportRasterOutputs, type RasterOutputSpecification } from '@/services/
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
 import { createCoreCommand } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
+import { isHexColor } from '@/lib/tuning-defaults';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function outputMaskColor(defaultSubstitutions: unknown) {
+  const configured = asRecord(defaultSubstitutions).pngExportArtworkColor;
+  return isHexColor(configured) ? configured : config.processing.pngExportArtworkColor;
 }
 
 function outputDirectoryFor(workingPath: string) {
@@ -70,7 +77,7 @@ export async function exportDirectArtworkRasterOutputs(input: {
       sourcePath: source.filePath,
       outputDirectory: outputDirectoryFor(source.filePath),
       baseName: artwork.outputBaseName || artwork.title,
-      spec: input.specification,
+      spec: { ...input.specification, maskColor: outputMaskColor(user.settings?.defaultSubstitutions) },
     });
     const assets = [];
     for (const output of result.outputs) {

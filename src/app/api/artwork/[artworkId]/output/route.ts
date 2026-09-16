@@ -23,16 +23,16 @@ function parseSpecification(value: unknown): RasterOutputSpecification {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ itemId: string }> },
+  { params }: { params: Promise<{ artworkId: string }> },
 ) {
   try {
     const user = await requireAuth();
-    const { itemId } = await params;
+    const { artworkId } = await params;
     const body = await request.json();
     if (body?.action !== 'export-raster') return NextResponse.json({ success: false, error: 'Unsupported action' }, { status: 400 });
     const result = await exportDirectArtworkRasterOutputs({
       userId: user.id,
-      artworkId: itemId,
+      artworkId,
       specification: parseSpecification(body.specification),
     });
     return NextResponse.json({ success: true, result });

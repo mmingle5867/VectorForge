@@ -77,7 +77,6 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
   };
   const nextVersion = Math.max(0, ...source.versions.map((version) => version.versionNumber)) + 1;
   const parsed = path.parse(source.filePath);
-  const target = path.join(path.dirname(source.filePath), `${parsed.name}-edit-v${String(nextVersion).padStart(4, '0')}.jpg`);
   const command = await createCoreCommand({
     commandType: 'vectorforge.raster.prepare-layout',
     actorId: input.userId,
@@ -85,7 +84,12 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
     subjectIds: [artwork.id, source.id],
     payload: { layout: auditLayout },
   });
-  const temporary = path.join(path.dirname(target), `.vf-${semaLocalToken(command.id)}.jpg`);
+  // The asset-location table requires a path to be unique within its storage
+  // location. The command token keeps a retry or interrupted prior attempt
+  // from reusing the same on-disk/database path.
+  const versionToken = semaLocalToken(command.id);
+  const target = path.join(path.dirname(source.filePath), `${parsed.name}-edit-v${String(nextVersion).padStart(4, '0')}-${versionToken}.jpg`);
+  const temporary = path.join(path.dirname(target), `.vf-${versionToken}.jpg`);
   const { left, top } = anchorOffsets(input.layout.anchor, input.layout.canvasWidth, input.layout.canvasHeight, input.layout.imageWidth, input.layout.imageHeight);
 
   try {

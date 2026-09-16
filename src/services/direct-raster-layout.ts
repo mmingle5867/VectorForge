@@ -26,7 +26,8 @@ export type RasterLayout = {
   canvasHeight: number;
   anchor: CanvasAnchor;
   fill: 'WHITE' | 'BLACK';
-  dpi: number;
+  imageDpi: number;
+  canvasDpi: number;
 };
 
 function asRecord(value: unknown) {
@@ -54,7 +55,7 @@ function validate(layout: RasterLayout) {
   if (layout.imageWidth * layout.imageHeight > MAX_RASTER_EDITOR_PIXELS) throw new Error('Resized image exceeds the 64 MP preparation limit');
   if (layout.canvasWidth * layout.canvasHeight > MAX_RASTER_EDITOR_PIXELS) throw new Error('Canvas exceeds the 64 MP preparation limit');
   if (!Number.isFinite(layout.blur) || layout.blur < 0 || layout.blur > 20) throw new Error('Blur must be between 0 and 20');
-  if (!Number.isFinite(layout.dpi) || layout.dpi < 1 || layout.dpi > 2400) throw new Error('DPI must be between 1 and 2400');
+  if (![layout.imageDpi, layout.canvasDpi].every((dpi) => Number.isFinite(dpi) && dpi >= 1 && dpi <= 2400)) throw new Error('Image and canvas DPI must be between 1 and 2400');
 }
 
 /** Creates one immutable working JPG version with image scaling, canvas placement, and optional blur. */
@@ -73,7 +74,7 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
   const auditLayout: Prisma.InputJsonObject = {
     blur: input.layout.blur, imageWidth: input.layout.imageWidth, imageHeight: input.layout.imageHeight,
     canvasWidth: input.layout.canvasWidth, canvasHeight: input.layout.canvasHeight,
-    anchor: input.layout.anchor, fill: input.layout.fill, dpi: input.layout.dpi,
+    anchor: input.layout.anchor, fill: input.layout.fill, imageDpi: input.layout.imageDpi, canvasDpi: input.layout.canvasDpi,
   };
   const nextVersion = Math.max(0, ...source.versions.map((version) => version.versionNumber)) + 1;
   const parsed = path.parse(source.filePath);
@@ -117,7 +118,7 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
     })
       .composite([{ input: placed, left: compositeLeft, top: compositeTop }])
       .jpeg({ quality: 95 })
-      .withMetadata({ density: input.layout.dpi })
+      .withMetadata({ density: input.layout.canvasDpi })
       .toFile(temporary);
     await rename(temporary, target);
 

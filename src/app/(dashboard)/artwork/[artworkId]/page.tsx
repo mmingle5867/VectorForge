@@ -169,7 +169,14 @@ export default function ArtworkPreviewTunePage() {
   const outputPngMaskUrl = `/api/artwork/${artworkId}/preview?variant=output-png-mask&v=${revision}`;
   const vectorSvgUrl = vectorCandidateId ? `/api/artwork/${artworkId}/vector-preview?candidateId=${encodeURIComponent(vectorCandidateId)}&v=${revision}` : null;
 
-  const stageHeader = (stage: 'working' | 'prepare' | 'outputs' | 'vectorizer', title: string) => <div className="flex items-center justify-between gap-3"><h2 className="font-bold">{title}</h2><button type="button" onClick={() => setExpandedStage((current) => current === stage ? null : stage)} aria-label={expandedStage === stage ? `Collapse ${title}` : `Expand ${title}`} className="rounded border px-2 py-1 text-sm font-semibold">{expandedStage === stage ? '▲' : '▼'}</button></div>;
+  function stageHeader(stage: 'working' | 'prepare' | 'outputs' | 'vectorizer', title: string) {
+    return (
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-bold">{title}</h2>
+        <button type="button" onClick={() => setExpandedStage((current) => current === stage ? null : stage)} aria-label={expandedStage === stage ? `Collapse ${title}` : `Expand ${title}`} className="rounded border px-2 py-1 text-sm font-semibold">{expandedStage === stage ? '▲' : '▼'}</button>
+      </div>
+    );
+  }
   async function activate() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/raster-versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionKey: selected }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to select version'); setNotice('Selected working version is now active.'); setExpandedStage('prepare'); await refresh(false); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to select version'); } finally { setBusy(false); } }
   async function prepareLayoutAndOpen() {
     if (canvasWidth < imageWidth || canvasHeight < imageHeight) {

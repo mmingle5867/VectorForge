@@ -22,8 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ artw
     const requestedWorkingPng = requestedVariant === 'working-png';
     const requestedOutputPng = requestedVariant === 'output-png';
     const requestedOutputPngMask = requestedVariant === 'output-png-mask';
+    const requestedOutputPdf = requestedVariant === 'output-pdf';
     const sourceAsset = artwork.assets.find((candidate) => candidate.role === 'source-file');
-    const asset = artwork.assets.find((candidate) => candidate.role === (requestedOriginal ? 'original-file' : requestedWorkingPng ? 'working-png' : requestedOutputPng ? 'raster-output-png' : requestedOutputPngMask ? 'raster-output-png_mask' : 'source-file'));
+    const asset = artwork.assets.find((candidate) => candidate.role === (requestedOriginal ? 'original-file' : requestedWorkingPng ? 'working-png' : requestedOutputPng ? 'raster-output-png' : requestedOutputPngMask ? 'raster-output-png_mask' : requestedOutputPdf ? 'raster-output-pdf' : 'source-file'));
     if (!asset?.filePath) return NextResponse.json({ error: 'No file available' }, { status: 404 });
     let filePath = asset.filePath;
     const versionKey = req.nextUrl.searchParams.get('versionKey');
@@ -37,6 +38,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ artw
       filePath = path.resolve(location.storageLocation.basePath, location.relativePath);
     }
     const file = await readFile(filePath);
+    if (requestedOutputPdf) {
+      return new Response(file as unknown as BodyInit, { headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'private, no-store, max-age=0' } });
+    }
     if (isSvgMimeOrPath(asset.mimeType, filePath)) {
       return new Response(normalizeImportedSvg(file.toString('utf-8')).svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'private, no-store, max-age=0' } });
     }

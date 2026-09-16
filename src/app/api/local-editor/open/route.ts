@@ -12,7 +12,7 @@ import { prepareDirectRasterForEditor, prepareRasterForEditor } from '@/services
 import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 
 type EditableFileType = 'PNG' | 'JPG' | 'SVG';
-type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-working-png';
+type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-output-folder' | 'direct-working-png';
 
 interface GeneratedFileInput {
   type: string;

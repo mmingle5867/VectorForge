@@ -187,6 +187,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, filePath: png.filePath });
     }
 
+    if (action === 'direct-output-folder') {
+      const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
+      const artwork = await prisma.artwork.findFirst({
+        where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
+        include: { assets: { where: { role: { startsWith: 'raster-output-' }, status: 'ACTIVE' }, take: 1 } },
+      });
+      const output = artwork?.assets[0];
+      if (!output?.filePath) return NextResponse.json({ success: false, error: 'Create an output file before opening its folder' }, { status: 404 });
+      const outputFolder = path.dirname(output.filePath);
+      await assertExistingPath(outputFolder, 'directory');
+      await openFolder(outputFolder);
+      return NextResponse.json({ success: true, folderPath: outputFolder });
+    }
+
     if (action === 'direct-output-raster') {
       const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
       const outputType = body.outputType === 'PNG' ? 'raster-output-png' : body.outputType === 'PNG_MASK' ? 'raster-output-png_mask' : body.outputType === 'JPG' ? 'raster-output-jpg' : null;

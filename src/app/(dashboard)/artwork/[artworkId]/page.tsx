@@ -94,7 +94,8 @@ export default function ArtworkPreviewTunePage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(Date.now());
-  const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>>(['PDF']);
+  const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>>([]);
+  const [recreateSvg, setRecreateSvg] = useState(false);
   const [imageWidth, setImageWidth] = useState(0);
   const [resizePercent, setResizePercent] = useState(100);
   const [resizeMode, setResizeMode] = useState<'PERCENT' | 'ABSOLUTE'>('ABSOLUTE');
@@ -178,15 +179,15 @@ export default function ArtworkPreviewTunePage() {
   const outputPngMaskUrl = `/api/artwork/${artworkId}/preview?variant=output-png-mask&v=${revision}`;
   const outputPdfUrl = `/api/artwork/${artworkId}/preview?variant=output-pdf&v=${revision}`;
   const vectorSvgUrl = vectorCandidateId ? `/api/artwork/${artworkId}/vector-preview?candidateId=${encodeURIComponent(vectorCandidateId)}&v=${revision}` : null;
-  const reviewAssets: Array<{ kind: PreviewKind; label: string; exists: boolean; format?: 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF' }> = [
-    { kind: 'svg', label: 'SVG', exists: Boolean(vectorSvgUrl) },
+  const reviewAssets: Array<{ kind: PreviewKind; label: string; exists: boolean; format?: 'SVG' | 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF' }> = [
+    { kind: 'svg', label: 'SVG', exists: Boolean(vectorSvgUrl), format: 'SVG' },
     { kind: 'png', label: 'PNG', exists: availableOutputs.some((output) => output.format === 'PNG'), format: 'PNG' },
     { kind: 'pngMask', label: 'PNG Mask', exists: availableOutputs.some((output) => output.format === 'PNG_MASK'), format: 'PNG_MASK' },
     { kind: 'jpg', label: 'JPG', exists: Boolean(choice?.filePath), format: 'JPG' },
     { kind: 'pdf', label: 'PDF', exists: availableOutputs.some((output) => output.format === 'PDF'), format: 'PDF' },
   ];
   const reviewedAsset = reviewAssets.find((asset) => asset.kind === vectorView) ?? { kind: 'jpg' as const, label: 'JPG', exists: Boolean(choice?.filePath), format: 'JPG' as const };
-  const canCreateSelectedImages = jpegReady && outputFormats.length > 0 && canvasWidth > 0 && canvasHeight > 0 && canvasDpi > 0;
+  const canCreateSelectedImages = jpegReady && (outputFormats.length > 0 || recreateSvg) && canvasWidth > 0 && canvasHeight > 0 && canvasDpi > 0;
 
   async function activate() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/raster-versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionKey: selected }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to select version'); setNotice('Selected working version is now active.'); setExpandedStage('prepare'); await refresh(false); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to select version'); } finally { setBusy(false); } }
   async function prepareLayoutAndOpen() {
@@ -227,24 +228,45 @@ export default function ArtworkPreviewTunePage() {
   async function openVector() { setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-vector', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open vector editor'); setNotice('Opened the saved SVG in the vector editor.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to open vector editor'); } finally { setBusy(false); } }
   async function refreshSavedOutputs() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/sync-output`, { method: 'POST' }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to refresh saved outputs'); setNotice(data.changed.length ? `Recorded edited ${data.changed.map((value: string) => value.replace('approved-', '').toUpperCase()).join(' and ')} output version(s) for review.` : 'Saved PNG and JPG outputs are unchanged.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to refresh saved outputs'); } finally { setBusy(false); } }
   async function exportRasterOutputs() {
+    if (!canCreateSelectedImages) return setNotice('Mark the JPG ready, then check at least one format to create or recreate.');
     setActionError(null);
     setBusy(true);
     try {
-      const response = await fetch(`/api/artwork/${artworkId}/output`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'export-raster',
-          specification: {
-            constrainBy: 'WIDTH', value: canvasWidth / canvasDpi, unit: 'IN',
-            dpi: canvasDpi, formats: outputFormats,
-          },
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to create output files'); await refresh(false); setOutputsCreated(true); setExpandedStage('vectorizer');
-      const pixels = data.result?.dimensions;
-      setNotice(`Created ${data.result.assets.map((asset: { format: string }) => asset.format).join(', ')} output${data.result.assets.length === 1 ? '' : 's'}${pixels ? ` at ${pixels.width.toLocaleString()} × ${pixels.height.toLocaleString()} px` : ''}.`);
+      const created: string[] = [];
+      let dimensions: { width: number; height: number } | undefined;
+      if (outputFormats.length > 0) {
+        const response = await fetch(`/api/artwork/${artworkId}/output`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'export-raster',
+            specification: {
+              constrainBy: 'WIDTH', value: canvasWidth / canvasDpi, unit: 'IN',
+              dpi: canvasDpi, formats: outputFormats,
+            },
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Unable to create output files');
+        dimensions = data.result?.dimensions;
+        created.push(...data.result.assets.map((asset: { format: string }) => asset.format));
+      }
+      if (recreateSvg) {
+        const response = await fetch(`/api/artwork/${artworkId}/vector-preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settings, upscaleFactor }),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Unable to create SVG preview');
+        setVectorCandidateId(data.candidateId);
+        setVectorView('svg');
+        created.push('SVG preview');
+      }
+      if (outputFormats.length > 0) await refresh(false);
+      setOutputsCreated(true);
+      setExpandedStage('vectorizer');
+      setNotice(`Created ${created.join(', ')}${dimensions ? ` at ${dimensions.width.toLocaleString()} × ${dimensions.height.toLocaleString()} px` : ''}.`);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Unable to create output files');
     } finally {
@@ -254,6 +276,7 @@ export default function ArtworkPreviewTunePage() {
   const toggleOutputFormat = (format: 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF') => setOutputFormats((current) =>
     current.includes(format) ? current.filter((value) => value !== format) : [...current, format]
   );
+
   async function savePreset() { if (!presetName.trim()) return setNotice('Enter a preset name.'); setBusy(true); try { const response = await fetch('/api/control-presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save-preset', name: presetName.trim(), description: presetDescription.trim(), settings, rasterPreparation: { blur: settings.blur, upscaleFactor } }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to save preset'); setPresets(data.presets || []); setPresetDialogOpen(false); setPresetName(''); setPresetDescription(''); setNotice('Vectorizer preset saved.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to save preset'); } finally { setBusy(false); } }
   async function applyPreset(id: string) { const preset = presets.find((item) => item.id === id); if (!preset) return; setBusy(true); try { const response = await fetch('/api/control-presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'use-preset', id }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to use preset'); setSettings((current) => ({ ...current, ...preset.settings })); setUpscaleFactor(preset.rasterPreparation.upscaleFactor); setSelectedPresetId(id); invalidateVector(); setNotice(`Applied preset: ${preset.name}.`); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to use preset'); } finally { setBusy(false); } }
 
@@ -264,7 +287,7 @@ export default function ArtworkPreviewTunePage() {
     <main className="grid gap-6 xl:grid-cols-[1fr_380px]"><div className="space-y-6">
       <section className="rounded-xl border bg-white p-4"><div className="mb-3 flex items-center justify-between gap-3"><strong>Selected working image: {width && height ? `${width.toLocaleString()} × ${height.toLocaleString()} px` : 'Dimensions unavailable'}</strong><button onClick={() => void refresh()} disabled={busy} className="rounded border px-3 py-1 text-sm">Refresh image</button></div>
         <div className="rounded-xl border border-emerald-300 p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold">Image Review — {reviewedAsset.label}</h2><div className="flex flex-wrap gap-2"><button type="button" disabled={busy || (vectorView === 'svg' && !savedOutputs.svg)} onClick={() => void editReviewedImage()} title={vectorView === 'svg' && !savedOutputs.svg ? 'Save the vector result before opening its editor.' : vectorView === 'pdf' ? 'Open the reviewed PDF in a new browser tab.' : 'Open the currently reviewed image in its assigned editor.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Edit</button><button type="button" disabled={busy || !canCreateSelectedImages} onClick={() => void exportRasterOutputs()} title={canCreateSelectedImages ? 'Create new versions of the selected raster image formats using the prepared canvas size and DPI.' : 'Mark the JPG ready, then select at least one missing raster format.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Create Selected Images</button></div></div>
-          <div className="mb-5 flex flex-wrap gap-2">{reviewAssets.map((asset) => { const selectedReview = asset.kind === vectorView; const selectedForCreation = asset.format ? outputFormats.includes(asset.format) : false; const className = selectedReview && asset.exists ? 'bg-blue-500 text-white border-blue-500' : asset.exists ? 'bg-gray-400 text-gray-950 border-gray-400' : 'bg-white text-gray-950 border-gray-300'; const selectOrView = () => { if (asset.exists) setVectorView(asset.kind); else if (asset.format) toggleOutputFormat(asset.format); }; return <div key={asset.kind} className={`flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-semibold ${className}`}><input type="checkbox" aria-label={asset.exists ? `${asset.label} exists` : `Create ${asset.label}`} checked={asset.exists || selectedForCreation} disabled={asset.exists || !asset.format} onChange={() => asset.format && toggleOutputFormat(asset.format)} /><button type="button" disabled={!asset.exists && !asset.format} onClick={selectOrView} className="disabled:cursor-default">{asset.label}</button></div>; })}</div>
+          <div className="mb-5 flex flex-wrap gap-2">{reviewAssets.map((asset) => { const selectedReview = asset.kind === vectorView; const selectedForCreation = asset.format === 'SVG' ? recreateSvg : asset.format ? outputFormats.includes(asset.format) : false; const className = selectedReview && asset.exists ? 'bg-blue-500 text-white border-blue-500' : asset.exists ? 'bg-gray-400 text-gray-950 border-gray-400' : 'bg-white text-gray-950 border-gray-300'; const toggleCreation = () => { if (asset.format === 'SVG') setRecreateSvg((current) => !current); else if (asset.format) toggleOutputFormat(asset.format); }; const selectOrView = () => { if (asset.exists) setVectorView(asset.kind); else toggleCreation(); }; return <div key={asset.kind} className={`flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-semibold ${className}`}><input type="checkbox" aria-label={asset.exists ? `Recreate ${asset.label}` : `Create ${asset.label}`} checked={selectedForCreation} disabled={!asset.format} onChange={toggleCreation} /><button type="button" disabled={!asset.exists && !asset.format} onClick={selectOrView} className="disabled:cursor-default">{asset.label}</button></div>; })}</div>
           {(vectorView === 'png' || vectorView === 'pngMask') && <label className="mb-3 flex items-center gap-2 text-sm font-semibold">Review background <input type="color" value={pngBackground} onChange={(event) => setPngBackground(event.target.value)} className="h-8 w-12 rounded border p-1" /></label>}
           {vectorView === 'svg' && vectorSvgUrl ? <PreviewSurface key={`${vectorCandidateId}-svg`} src={vectorSvgUrl} alt="Vector preview" checkerboard /> : vectorView === 'png' ? <PreviewSurface key={`${revision}-output-png`} src={outputPngUrl} alt="Generated PNG" background={pngBackground} /> : vectorView === 'pngMask' ? <PreviewSurface key={`${revision}-output-png-mask`} src={outputPngMaskUrl} alt="Generated PNG mask" background={pngBackground} /> : vectorView === 'pdf' ? <iframe key={`${revision}-output-pdf`} src={outputPdfUrl} title="Generated PDF" className="h-[min(65vh,650px)] min-h-[360px] w-full rounded border" /> : <PreviewSurface key={`${revision}-jpg`} src={workingJpegUrl} alt="Working JPG" />}
           <p className="mt-3 text-xs text-gray-500">Gray buttons are existing images; blue is the image being viewed. White buttons are not created yet; their checkboxes select them for creation. PNG review backgrounds are never saved into the image.</p>

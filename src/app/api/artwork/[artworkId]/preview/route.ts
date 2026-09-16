@@ -20,8 +20,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ artw
     const requestedVariant = req.nextUrl.searchParams.get('variant');
     const requestedOriginal = requestedVariant === 'original';
     const requestedWorkingPng = requestedVariant === 'working-png';
+    const requestedOutputPng = requestedVariant === 'output-png';
+    const requestedOutputPngMask = requestedVariant === 'output-png-mask';
     const sourceAsset = artwork.assets.find((candidate) => candidate.role === 'source-file');
-    const asset = artwork.assets.find((candidate) => candidate.role === (requestedOriginal ? 'original-file' : requestedWorkingPng ? 'working-png' : 'source-file'));
+    const asset = artwork.assets.find((candidate) => candidate.role === (requestedOriginal ? 'original-file' : requestedWorkingPng ? 'working-png' : requestedOutputPng ? 'raster-output-png' : requestedOutputPngMask ? 'raster-output-png_mask' : 'source-file'));
     if (!asset?.filePath) return NextResponse.json({ error: 'No file available' }, { status: 404 });
     let filePath = asset.filePath;
     const versionKey = req.nextUrl.searchParams.get('versionKey');
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ artw
     if (isSvgMimeOrPath(asset.mimeType, filePath)) {
       return new Response(normalizeImportedSvg(file.toString('utf-8')).svg, { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'private, no-store, max-age=0' } });
     }
-    if (requestedWorkingPng) {
+    if (requestedWorkingPng || requestedOutputPng || requestedOutputPngMask) {
       const preview = await sharp(file).resize(1200, 1200, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
       return new Response(preview as unknown as BodyInit, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, no-store, max-age=0' } });
     }

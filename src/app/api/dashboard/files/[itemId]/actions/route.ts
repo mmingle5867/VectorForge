@@ -124,7 +124,7 @@ export async function POST(
       const workingPath = artwork.assets.find((asset) => asset.role === 'source-file')?.filePath;
       const managedDirectory = workingPath ? getManagedArtworkDirectory(workingPath) : null;
       if (!managedDirectory) return NextResponse.json({ success: false, error: 'Artwork has no managed directory' }, { status: 404 });
-      launchFolder(managedDirectory);
+      launchFolder(path.dirname(workingPath));
       return NextResponse.json({ success: true });
     }
     if (artwork) {
@@ -156,7 +156,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    launchFolder(managedDirectory);
+    launchFolder(path.dirname(item.uploadPath));
     return NextResponse.json({ success: true });
   } catch (error) {
     logger.error('Dashboard file mutation failed', {

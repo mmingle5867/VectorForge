@@ -14,13 +14,14 @@ function layoutFrom(value: unknown): RasterLayout {
     return number;
   };
   const blur = Number(input.blur);
-  const dpi = Number(input.dpi);
+  const imageDpi = Number(input.imageDpi);
+  const canvasDpi = Number(input.canvasDpi);
   const anchor = typeof input.anchor === 'string' && ANCHORS.has(input.anchor as CanvasAnchor) ? input.anchor as CanvasAnchor : null;
   const fill = input.fill === 'BLACK' ? 'BLACK' : input.fill === 'WHITE' ? 'WHITE' : null;
-  if (!Number.isFinite(blur) || blur < 0 || blur > 20 || !Number.isFinite(dpi) || dpi < 1 || dpi > 2400 || !anchor || !fill) {
+  if (!Number.isFinite(blur) || blur < 0 || blur > 20 || ![imageDpi, canvasDpi].every((dpi) => Number.isFinite(dpi) && dpi >= 1 && dpi <= 2400) || !anchor || !fill) {
     throw new Error('Invalid raster preparation settings');
   }
-  return { blur, dpi, anchor, fill, imageWidth: integer('imageWidth'), imageHeight: integer('imageHeight'), canvasWidth: integer('canvasWidth'), canvasHeight: integer('canvasHeight') };
+  return { blur, imageDpi, canvasDpi, anchor, fill, imageWidth: integer('imageWidth'), imageHeight: integer('imageHeight'), canvasWidth: integer('canvasWidth'), canvasHeight: integer('canvasHeight') };
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ artworkId: string }> }) {

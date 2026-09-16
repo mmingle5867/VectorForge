@@ -53,13 +53,13 @@ async function createPngMask(image: sharp.Sharp, target: string, dpi: number, co
     .toFile(target);
 }
 
-export async function exportRasterOutputs(input: { sourcePath: string; outputDirectory: string; baseName: string; spec: RasterOutputSpecification }) {
+export async function exportRasterOutputs(input: { sourcePath: string; outputDirectory: string; baseName: string; outputToken: string; spec: RasterOutputSpecification }) {
   const meta = await sharp(input.sourcePath).metadata();
   if (!meta.width || !meta.height) throw new Error('Unable to determine source image dimensions.');
   const dimensions = resolveRasterOutputSize({ width: meta.width, height: meta.height }, input.spec);
   await mkdir(input.outputDirectory, { recursive: true });
   const outputs: Array<{ format: OutputFormat; path: string; mimeType: string }> = [];
-  const outputName = `${input.baseName}-${dimensions.width}x${dimensions.height}-${input.spec.dpi}dpi`;
+  const outputName = `${input.baseName}-${dimensions.width}x${dimensions.height}-${input.spec.dpi}dpi-${input.outputToken}`;
   const image = sharp(input.sourcePath).resize(dimensions.width, dimensions.height, { fit: 'fill' }).withMetadata({ density: input.spec.dpi });
   if (input.spec.formats.includes('JPG')) { const target = path.join(input.outputDirectory, `${outputName}.jpg`); await image.clone().jpeg().toFile(target); outputs.push({ format: 'JPG', path: target, mimeType: 'image/jpeg' }); }
   if (input.spec.formats.includes('PNG')) {

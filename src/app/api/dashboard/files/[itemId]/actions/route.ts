@@ -123,7 +123,7 @@ export async function POST(
     if (artwork && body.action === 'open-folder') {
       const workingPath = artwork.assets.find((asset) => asset.role === 'source-file')?.filePath;
       const managedDirectory = workingPath ? getManagedArtworkDirectory(workingPath) : null;
-      if (!managedDirectory) return NextResponse.json({ success: false, error: 'Artwork has no managed directory' }, { status: 404 });
+      if (!workingPath || !managedDirectory) return NextResponse.json({ success: false, error: 'Artwork has no managed directory' }, { status: 404 });
       launchFolder(path.dirname(workingPath));
       return NextResponse.json({ success: true });
     }

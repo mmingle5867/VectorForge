@@ -178,7 +178,7 @@ export default function ArtworkPreviewTunePage() {
   const outputPngMaskUrl = `/api/artwork/${artworkId}/preview?variant=output-png-mask&v=${revision}`;
   const outputPdfUrl = `/api/artwork/${artworkId}/preview?variant=output-pdf&v=${revision}`;
   const vectorSvgUrl = vectorCandidateId ? `/api/artwork/${artworkId}/vector-preview?candidateId=${encodeURIComponent(vectorCandidateId)}&v=${revision}` : null;
-  const reviewAssets: Array<{ kind: PreviewKind; label: string; exists: boolean; format?: 'JPG' | 'PNG' | 'PNG_MASK' }> = [
+  const reviewAssets: Array<{ kind: PreviewKind; label: string; exists: boolean; format?: 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF' }> = [
     { kind: 'svg', label: 'SVG', exists: Boolean(vectorSvgUrl) },
     { kind: 'png', label: 'PNG', exists: availableOutputs.some((output) => output.format === 'PNG'), format: 'PNG' },
     { kind: 'pngMask', label: 'PNG Mask', exists: availableOutputs.some((output) => output.format === 'PNG_MASK'), format: 'PNG_MASK' },

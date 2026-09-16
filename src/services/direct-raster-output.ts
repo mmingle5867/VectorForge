@@ -12,6 +12,7 @@ import { exportRasterOutputs, type RasterOutputSpecification } from '@/services/
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
 import { createCoreCommand } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
+import { semaLocalToken } from '@/lib/sema-id';
 import { isHexColor } from '@/lib/tuning-defaults';
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -77,6 +78,7 @@ export async function exportDirectArtworkRasterOutputs(input: {
       sourcePath: source.filePath,
       outputDirectory: outputDirectoryFor(source.filePath),
       baseName: artwork.outputBaseName || artwork.title,
+      outputToken: semaLocalToken(command.id),
       spec: { ...input.specification, maskColor: outputMaskColor(user.settings?.defaultSubstitutions) },
     });
     const assets = [];

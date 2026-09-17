@@ -56,10 +56,6 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
   const original = artwork?.assets.find((asset) => asset.role === 'original-file' && asset.status === 'ACTIVE');
   const workingPng = artwork?.assets.find((asset) => asset.role === 'working-png' && asset.status === 'ACTIVE');
   if (!artwork || !working?.filePath) throw new Error('Artwork working copy was not found');
-  const workingMetadata = working.metadata && typeof working.metadata === 'object' && !Array.isArray(working.metadata)
-    ? working.metadata as Record<string, unknown>
-    : {};
-  if (workingMetadata.jpegReadyForVectorizing !== true) throw new Error('Mark the working JPG ready before saving vector outputs');
   const directory = getManagedArtworkDirectory(working.filePath);
   if (!directory) throw new Error('Artwork has no managed directory');
   const profile = await prisma.semaProfile.findFirst({ where: { userId: input.userId, status: 'ACTIVE' } });

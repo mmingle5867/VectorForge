@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
-import { readFile, rename, rm } from 'node:fs/promises';
+import { access, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import sharp from 'sharp';
@@ -89,8 +89,21 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
   // location. The command token keeps a retry or interrupted prior attempt
   // from reusing the same on-disk/database path.
   const versionToken = semaLocalToken(command.id);
-  const target = path.join(path.dirname(source.filePath), `${parsed.name}-edit-v${String(nextVersion).padStart(4, '0')}-${versionToken}.jpg`);
+  const baseName = artwork.outputBaseName || artwork.title || parsed.name;
+  // The current working JPG always uses the dashboard artwork name. Historical
+  // versions are moved aside to versioned filenames before that stable name is reused.
+  const target = path.join(path.dirname(source.filePath), `${baseName}.jpg`);
   const temporary = path.join(path.dirname(target), `.vf-${versionToken}.jpg`);
+  const storage = await configureDefaultImportStorageForUser({ userId: input.userId, storageRootPath: storageRoot(user.settings?.defaultSubstitutions) });
+  const location = await getWritableStorageLocationForFile({ profileId: storage.profile.id, workspaceId: artwork.workspaceId, defaultLocation: storage.location, filePath: target });
+  const targetRelativePath = path.relative(location.basePath, target).split(path.sep).join('/');
+  const occupiedTarget = await prisma.assetLocation.findFirst({
+    where: { storageLocationId: location.id, relativePath: targetRelativePath, assetVersion: { assetId: source.id } },
+    include: { assetVersion: { select: { versionNumber: true } } },
+  });
+  const archivedTarget = occupiedTarget
+    ? path.join(path.dirname(target), `${baseName}-working-v${String(occupiedTarget.assetVersion.versionNumber).padStart(4, '0')}-${versionToken}.jpg`)
+    : null;
   const { left, top } = anchorOffsets(input.layout.anchor, input.layout.canvasWidth, input.layout.canvasHeight, input.layout.imageWidth, input.layout.imageHeight);
 
   try {
@@ -120,11 +133,23 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
       .jpeg({ quality: 95 })
       .withMetadata({ density: input.layout.canvasDpi })
       .toFile(temporary);
+    if (occupiedTarget && archivedTarget) {
+      await rename(target, archivedTarget);
+      await prisma.assetLocation.update({
+        where: { id: occupiedTarget.id },
+        data: { relativePath: path.relative(location.basePath, archivedTarget).split(path.sep).join('/') },
+      });
+    } else {
+      try {
+        await access(target);
+        throw new Error(`Cannot replace ${path.basename(target)} because it is not a tracked working version.`);
+      } catch (error) {
+        if (error instanceof Error && !('code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT')) throw error;
+      }
+    }
     await rename(temporary, target);
 
-    const storage = await configureDefaultImportStorageForUser({ userId: input.userId, storageRootPath: storageRoot(user.settings?.defaultSubstitutions) });
     const contents = await readFile(target);
-    const location = await getWritableStorageLocationForFile({ profileId: storage.profile.id, workspaceId: artwork.workspaceId, defaultLocation: storage.location, filePath: target });
     const metadata: Prisma.InputJsonObject = {
       role: 'raster-layout-working-copy',
       derivedFromPath: source.filePath,

@@ -92,6 +92,7 @@ export default function ArtworkPreviewTunePage() {
   const [busy, setBusy] = useState(false);
   const [vectorGenerating, setVectorGenerating] = useState(false);
   const [revision, setRevision] = useState(Date.now());
+  const [exportDirectory, setExportDirectory] = useState<string | null>(null);
   const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>>([]);
   const [recreateSvg, setRecreateSvg] = useState(false);
   const [imageWidth, setImageWidth] = useState(0);
@@ -234,14 +235,38 @@ export default function ArtworkPreviewTunePage() {
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Unable to export files');
-      if (data.cancelled) setNotice('Export cancelled.');
-      else setNotice(`Exported ${data.files.length} file${data.files.length === 1 ? '' : 's'} to ${data.directory}.`);
+      if (data.cancelled) {
+        setNotice('Export cancelled.');
+      } else {
+        setExportDirectory(data.directory);
+        setNotice(`Exported ${data.files.length} file${data.files.length === 1 ? '' : 's'} to ${data.directory}.`);
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Unable to export files');
     } finally {
       setBusy(false);
     }
   }
+  async function openExportFolder() {
+    if (!exportDirectory) return;
+    setActionError(null);
+    setBusy(true);
+    try {
+      const response = await fetch('/api/local-editor/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'export-folder', outputFolderPath: exportDirectory }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open the export folder');
+      setNotice('Opened the export folder.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to open the export folder');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openOutputFolder() { setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-output-folder', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open output folder'); setNotice('Opened the output folder.'); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to open output folder'); } finally { setBusy(false); } }
 
   async function openVector() { setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-vector', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open vector editor'); setNotice('Opened the saved SVG in the vector editor.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to open vector editor'); } finally { setBusy(false); } }
@@ -288,7 +313,7 @@ export default function ArtworkPreviewTunePage() {
     {actionError && <div role="alert" className="mb-4 rounded border-2 border-red-400 bg-red-50 p-3 text-sm font-semibold text-red-900">Artwork action failed: {actionError}</div>}
     <main className="grid gap-6 xl:grid-cols-[1fr_380px]"><div className="space-y-6">
       <section className="rounded-xl border bg-white p-4"><div className="mb-3 flex items-center justify-between gap-3"><strong>Selected working image: {width && height ? `${width.toLocaleString()} × ${height.toLocaleString()} px` : 'Dimensions unavailable'}</strong><button onClick={() => void refresh()} disabled={busy} className="rounded border px-3 py-1 text-sm">Refresh image</button></div>
-        <div className="rounded-xl border border-emerald-300 p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold">Image Review — {reviewedAsset.label}</h2><div className="flex flex-wrap gap-2"><button type="button" disabled={busy || (vectorView === 'svg' && !savedOutputs.svg)} onClick={() => void editReviewedImage()} title={vectorView === 'svg' && !savedOutputs.svg ? 'Save the vector result before opening its editor.' : vectorView === 'pdf' ? 'Open the reviewed PDF in a new browser tab.' : 'Open the currently reviewed image in its assigned editor.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Edit</button><button type="button" disabled={busy} onClick={() => void exportRasterOutputs()} title={canCreateSelectedImages ? 'Create new versions of the checked formats. Raster formats use the prepared canvas size and DPI; SVG uses the current vectorizer controls.' : 'Click to see what is still required before selected images can be created.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Create Selected Images</button><button type="button" disabled={busy} onClick={() => void exportSelectedFormats()} title="Open a folder selector and copy the checked, available file formats to that folder. The last selected folder is remembered." className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Export Selected</button><button type="button" disabled={busy || availableOutputs.length === 0} onClick={() => void openOutputFolder()} title={availableOutputs.length === 0 ? 'Create at least one raster output file first.' : 'Open this artwork’s VectorForge output folder in Windows Explorer.'} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Open Output Folder</button></div></div>
+        <div className="rounded-xl border border-emerald-300 p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold">Image Review — {reviewedAsset.label}</h2><div className="flex flex-wrap gap-2"><button type="button" disabled={busy || (vectorView === 'svg' && !savedOutputs.svg)} onClick={() => void editReviewedImage()} title={vectorView === 'svg' && !savedOutputs.svg ? 'Save the vector result before opening its editor.' : vectorView === 'pdf' ? 'Open the reviewed PDF in a new browser tab.' : 'Open the currently reviewed image in its assigned editor.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Edit</button><button type="button" disabled={busy} onClick={() => void exportRasterOutputs()} title={canCreateSelectedImages ? 'Create new versions of the checked formats. Raster formats use the prepared canvas size and DPI; SVG uses the current vectorizer controls.' : 'Click to see what is still required before selected images can be created.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Create Selected Images</button><button type="button" disabled={busy} onClick={() => void exportSelectedFormats()} title="Open a folder selector and copy the checked, available file formats to that folder. The last selected folder is remembered." className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Export Selected</button><button type="button" disabled={busy || !exportDirectory} onClick={() => void openExportFolder()} title={exportDirectory ? 'Open the folder used by the most recent export.' : 'Export files first.'} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Open Export Folder</button><button type="button" disabled={busy || availableOutputs.length === 0} onClick={() => void openOutputFolder()} title={availableOutputs.length === 0 ? 'Create at least one raster output file first.' : 'Open this artwork’s VectorForge output folder in Windows Explorer.'} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Open Output Folder</button></div></div>
           <div className="mb-5 flex flex-wrap gap-2">{reviewAssets.map((asset) => { const selectedReview = asset.kind === vectorView; const selectedForCreation = asset.format === 'SVG' ? recreateSvg : asset.format ? outputFormats.includes(asset.format) : false; const className = selectedReview && asset.exists ? 'bg-blue-500 text-white border-blue-500' : asset.exists ? 'bg-gray-400 text-gray-950 border-gray-400' : 'bg-white text-gray-950 border-gray-300'; const toggleCreation = () => { if (asset.format === 'SVG') setRecreateSvg((current) => !current); else if (asset.format) toggleOutputFormat(asset.format); }; const selectOrView = () => { if (asset.exists) setVectorView(asset.kind); else toggleCreation(); }; return <div key={asset.kind} className={`relative flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-semibold ${className}`}><input type="checkbox" aria-label={asset.exists ? `Recreate ${asset.label}` : `Create ${asset.label}`} checked={selectedForCreation} disabled={!asset.format || vectorGenerating} onChange={toggleCreation} /><button type="button" disabled={(!asset.exists && !asset.format) || vectorGenerating} onClick={selectOrView} className="disabled:cursor-default">{asset.label}</button>{asset.kind === 'svg' && vectorGenerating && <span aria-label="Generating SVG" title="Generating SVG preview…" className="absolute inset-0 flex items-center justify-center rounded bg-blue-600/90 text-white"><span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Generating…</span>}</div>; })}</div>
           {(vectorView === 'png' || vectorView === 'pngMask') && <label className="mb-3 flex items-center gap-2 text-sm font-semibold">Review background <input type="color" value={pngBackground} onChange={(event) => setPngBackground(event.target.value)} className="h-8 w-12 rounded border p-1" /></label>}
           {vectorView === 'svg' && vectorSvgUrl ? <PreviewSurface key={`${vectorCandidateId}-svg`} src={vectorSvgUrl} alt="Vector preview" checkerboard /> : vectorView === 'png' ? <PreviewSurface key={`${revision}-output-png`} src={outputPngUrl} alt="Generated PNG" background={pngBackground} /> : vectorView === 'pngMask' ? <PreviewSurface key={`${revision}-output-png-mask`} src={outputPngMaskUrl} alt="Generated PNG mask" background={pngBackground} /> : vectorView === 'pdf' ? <iframe key={`${revision}-output-pdf`} src={outputPdfUrl} title="Generated PDF" className="h-[min(65vh,650px)] min-h-[360px] w-full rounded border" /> : <PreviewSurface key={`${revision}-jpg`} src={workingJpegUrl} alt="Working JPG" />}

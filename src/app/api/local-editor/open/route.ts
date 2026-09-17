@@ -12,7 +12,7 @@ import { prepareDirectRasterForEditor, prepareRasterForEditor } from '@/services
 import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 
 type EditableFileType = 'PNG' | 'JPG' | 'SVG';
-type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-output-folder' | 'direct-working-png';
+type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-output-folder' | 'direct-working-png' | 'export-folder';
 
 interface GeneratedFileInput {
   type: string;
@@ -173,6 +173,16 @@ export async function POST(req: NextRequest) {
     const outputFolderPath = typeof body.outputFolderPath === 'string' ? body.outputFolderPath : '';
     const requestedFileType = typeof body.fileType === 'string' ? body.fileType.toUpperCase() : '';
     const extended = getExtendedSettings(user.settings?.defaultSubstitutions);
+
+    if (action === 'export-folder') {
+      const configuredExportFolder = getExtendedPath(user.settings?.defaultSubstitutions, 'lastExportDirectory', '');
+      if (!outputFolderPath || !configuredExportFolder || path.resolve(outputFolderPath) !== path.resolve(configuredExportFolder)) {
+        return NextResponse.json({ success: false, error: 'The export folder does not match your most recently selected export location' }, { status: 403 });
+      }
+      await assertExistingPath(configuredExportFolder, 'directory');
+      await openFolder(configuredExportFolder);
+      return NextResponse.json({ success: true, folderPath: configuredExportFolder });
+    }
 
     if (action === 'direct-working-png') {
       const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';

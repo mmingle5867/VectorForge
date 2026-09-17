@@ -230,7 +230,7 @@ export default function ArtworkPreviewTunePage() {
       const response = await fetch(`/api/artwork/${artworkId}/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ formats }),
+        body: JSON.stringify({ formats, candidateId: vectorCandidateId }),
       });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Unable to export files');

@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
-import { readFile } from 'node:fs/promises';
+import { readFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 
+import config from '@/lib/config';
 import prisma from '@/lib/prisma';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 import { createAssetVersion } from '@/services/asset-versions';
@@ -11,9 +12,16 @@ import { exportRasterOutputs, type RasterOutputSpecification } from '@/services/
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
 import { createCoreCommand } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
+import { semaLocalToken } from '@/lib/sema-id';
+import { isHexColor } from '@/lib/tuning-defaults';
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function outputMaskColor(defaultSubstitutions: unknown) {
+  const configured = asRecord(defaultSubstitutions).pngExportArtworkColor;
+  return isHexColor(configured) ? configured : config.processing.pngExportArtworkColor;
 }
 
 function outputDirectoryFor(workingPath: string) {
@@ -24,6 +32,48 @@ function outputDirectoryFor(workingPath: string) {
 
 function outputRole(format: string) {
   return `raster-output-${format.toLowerCase()}`;
+}
+
+function outputExtension(format: 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF') {
+  return format === 'JPG' ? '.jpg' : format === 'PNG_MASK' ? '-mask.png' : format === 'PNG' ? '.png' : '.pdf';
+}
+
+async function archiveCurrentOutputPaths(input: {
+  artwork: { assets: Array<{ id: string; role: string }> };
+  formats: Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>;
+  outputDirectory: string;
+  baseName: string;
+  outputToken: string;
+  profileId: string;
+  workspaceId: string | null;
+  defaultLocation: { id: string; basePath: string };
+}) {
+  for (const format of input.formats) {
+    const asset = input.artwork.assets.find((candidate) => candidate.role === outputRole(format));
+    if (!asset) continue;
+    const currentPath = path.join(input.outputDirectory, `${input.baseName}${outputExtension(format)}`);
+    const location = await getWritableStorageLocationForFile({
+      profileId: input.profileId,
+      workspaceId: input.workspaceId,
+      defaultLocation: input.defaultLocation,
+      filePath: currentPath,
+    });
+    const relativePath = path.relative(location.basePath, currentPath).split(path.sep).join('/');
+    const occupied = await prisma.assetLocation.findFirst({
+      where: { storageLocationId: location.id, relativePath, assetVersion: { assetId: asset.id } },
+      include: { assetVersion: { select: { versionNumber: true } } },
+    });
+    if (!occupied) continue;
+    const archivePath = path.join(
+      input.outputDirectory,
+      `${input.baseName}-${format.toLowerCase().replace('_', '-')}-v${String(occupied.assetVersion.versionNumber).padStart(4, '0')}-${input.outputToken}${outputExtension(format)}`,
+    );
+    await rename(currentPath, archivePath);
+    await prisma.assetLocation.update({
+      where: { id: occupied.id },
+      data: { relativePath: path.relative(location.basePath, archivePath).split(path.sep).join('/') },
+    });
+  }
 }
 
 /**
@@ -66,11 +116,24 @@ export async function exportDirectArtworkRasterOutputs(input: {
   });
 
   try {
+    const outputDirectory = outputDirectoryFor(source.filePath);
+    const outputBaseName = artwork.outputBaseName || artwork.title;
+    const outputToken = semaLocalToken(command.id);
+    await archiveCurrentOutputPaths({
+      artwork,
+      formats: input.specification.formats,
+      outputDirectory,
+      baseName: outputBaseName,
+      outputToken,
+      profileId: storage.profile.id,
+      workspaceId: artwork.workspaceId,
+      defaultLocation: storage.location,
+    });
     const result = await exportRasterOutputs({
       sourcePath: source.filePath,
-      outputDirectory: outputDirectoryFor(source.filePath),
-      baseName: artwork.outputBaseName || artwork.title,
-      spec: input.specification,
+      outputDirectory,
+      baseName: outputBaseName,
+      spec: { ...input.specification, maskColor: outputMaskColor(user.settings?.defaultSubstitutions) },
     });
     const assets = [];
     for (const output of result.outputs) {

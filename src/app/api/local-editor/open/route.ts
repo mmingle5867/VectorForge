@@ -12,7 +12,7 @@ import { prepareDirectRasterForEditor, prepareRasterForEditor } from '@/services
 import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 
 type EditableFileType = 'PNG' | 'JPG' | 'SVG';
-type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-working-png';
+type EditorAction = 'file' | 'folder' | 'editable' | 'original-raster' | 'direct-vector' | 'direct-output-raster' | 'direct-output-folder' | 'direct-working-png' | 'export-folder';
 
 interface GeneratedFileInput {
   type: string;
@@ -174,6 +174,16 @@ export async function POST(req: NextRequest) {
     const requestedFileType = typeof body.fileType === 'string' ? body.fileType.toUpperCase() : '';
     const extended = getExtendedSettings(user.settings?.defaultSubstitutions);
 
+    if (action === 'export-folder') {
+      const configuredExportFolder = getExtendedPath(user.settings?.defaultSubstitutions, 'lastExportDirectory', '');
+      if (!outputFolderPath || !configuredExportFolder || path.resolve(outputFolderPath) !== path.resolve(configuredExportFolder)) {
+        return NextResponse.json({ success: false, error: 'The export folder does not match your most recently selected export location' }, { status: 403 });
+      }
+      await assertExistingPath(configuredExportFolder, 'directory');
+      await openFolder(configuredExportFolder);
+      return NextResponse.json({ success: true, folderPath: configuredExportFolder });
+    }
+
     if (action === 'direct-working-png') {
       const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
       const artwork = await prisma.artwork.findFirst({
@@ -187,10 +197,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, filePath: png.filePath });
     }
 
+    if (action === 'direct-output-folder') {
+      const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
+      const artwork = await prisma.artwork.findFirst({
+        where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
+        include: { assets: { where: { role: { startsWith: 'raster-output-' }, status: 'ACTIVE' }, take: 1 } },
+      });
+      const output = artwork?.assets[0];
+      if (!output?.filePath) return NextResponse.json({ success: false, error: 'Create an output file before opening its folder' }, { status: 404 });
+      const outputFolder = path.dirname(output.filePath);
+      await assertExistingPath(outputFolder, 'directory');
+      await openFolder(outputFolder);
+      return NextResponse.json({ success: true, folderPath: outputFolder });
+    }
+
     if (action === 'direct-output-raster') {
       const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
-      const outputType = body.outputType === 'PNG' ? 'approved-png' : body.outputType === 'JPG' ? 'approved-jpg' : null;
-      if (!artworkId || !outputType) return NextResponse.json({ success: false, error: 'Choose a saved PNG or JPG output' }, { status: 400 });
+      const outputType = body.outputType === 'PNG' ? 'raster-output-png' : body.outputType === 'PNG_MASK' ? 'raster-output-png_mask' : body.outputType === 'JPG' ? 'raster-output-jpg' : null;
+      if (!artworkId || !outputType) return NextResponse.json({ success: false, error: 'Choose a saved JPG, PNG, or PNG Mask output' }, { status: 400 });
       const artwork = await prisma.artwork.findFirst({ where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } }, include: { assets: { where: { role: outputType, status: 'ACTIVE' }, take: 1 } } });
       const output = artwork?.assets[0];
       if (!output?.filePath) return NextResponse.json({ success: false, error: 'Save this output before opening it in the raster editor' }, { status: 404 });

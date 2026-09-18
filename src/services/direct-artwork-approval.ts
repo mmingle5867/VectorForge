@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { Prisma } from '@prisma/client';
@@ -7,6 +7,7 @@ import prisma from '@/lib/prisma';
 import config from '@/lib/config';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 import { isHexColor } from '@/lib/tuning-defaults';
+import { semaLocalToken } from '@/lib/sema-id';
 import { createAssetVersion } from '@/services/asset-versions';
 import { getWritableStorageLocationForFile } from '@/services/raster-editor-preparation';
 import { createCoreCommand } from '@/services/sema-core';
@@ -24,6 +25,41 @@ async function recordApprovedOutput(input: { artwork: { id: string; ownerId: str
   const contents = await readFile(input.filePath);
   const version = await createAssetVersion({ assetId: asset.id, createdByProfileId: input.profileId, storageLocationId: input.storageLocationId, relativePath: path.relative(input.storageBasePath, input.filePath).split(path.sep).join('/'), sha256: createHash('sha256').update(contents).digest('hex'), byteLength: contents.byteLength, mimeType: input.mimeType, status: 'APPROVED', verifiedAt: new Date(), metadata: { approvedOutput: true, role: input.role } });
   return { asset, version };
+}
+
+async function archiveApprovedOutputPaths(input: {
+  assets: Array<{ id: string; role: string }>;
+  paths: Array<{ role: string; filePath: string }>;
+  storageLocationId: string;
+  storageBasePath: string;
+  outputToken: string;
+}) {
+  for (const output of input.paths) {
+    const asset = input.assets.find((candidate) => candidate.role === output.role);
+    if (!asset) continue;
+    const relativePath = path.relative(input.storageBasePath, output.filePath).split(path.sep).join('/');
+    const occupied = await prisma.assetLocation.findFirst({
+      where: { storageLocationId: input.storageLocationId, relativePath, assetVersion: { assetId: asset.id } },
+      include: { assetVersion: { select: { versionNumber: true } } },
+    });
+    if (!occupied) continue;
+
+    const parsed = path.parse(output.filePath);
+    const archivePath = path.join(
+      parsed.dir,
+      parsed.name + '-' + output.role.replace(/^approved-/, '') + '-v'
+        + String(occupied.assetVersion.versionNumber).padStart(4, '0') + '-' + input.outputToken + parsed.ext,
+    );
+    try {
+      await rename(output.filePath, archivePath);
+    } catch (error) {
+      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+    await prisma.assetLocation.update({
+      where: { id: occupied.id },
+      data: { relativePath: path.relative(input.storageBasePath, archivePath).split(path.sep).join('/') },
+    });
+  }
 }
 
 function outputRasterSettings(defaultSubstitutions: unknown) {
@@ -56,10 +92,6 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
   const original = artwork?.assets.find((asset) => asset.role === 'original-file' && asset.status === 'ACTIVE');
   const workingPng = artwork?.assets.find((asset) => asset.role === 'working-png' && asset.status === 'ACTIVE');
   if (!artwork || !working?.filePath) throw new Error('Artwork working copy was not found');
-  const workingMetadata = working.metadata && typeof working.metadata === 'object' && !Array.isArray(working.metadata)
-    ? working.metadata as Record<string, unknown>
-    : {};
-  if (workingMetadata.jpegReadyForVectorizing !== true) throw new Error('Mark the working JPG ready before saving vector outputs');
   const directory = getManagedArtworkDirectory(working.filePath);
   if (!directory) throw new Error('Artwork has no managed directory');
   const profile = await prisma.semaProfile.findFirst({ where: { userId: input.userId, status: 'ACTIVE' } });
@@ -96,6 +128,18 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
     const vectorDir = path.join(directory, 'vectorforge', 'vectorized'); const pngDir = path.join(directory, 'vectorforge', 'png'); const jpgDir = path.join(directory, 'vectorforge', 'jpg'); const manifestPath = path.join(directory, 'vectorforge', 'manifest', 'manifest.json');
     await Promise.all([mkdir(vectorDir, { recursive: true }), mkdir(pngDir, { recursive: true }), mkdir(jpgDir, { recursive: true })]);
     const svgPath = path.join(vectorDir, `${base}.svg`); const pngPath = path.join(pngDir, `${base}.png`); const jpgPath = path.join(jpgDir, `${base}.jpg`);
+    const outputLocation = await getWritableStorageLocationForFile({ profileId: profile.id, workspaceId: artwork.workspaceId, defaultLocation, filePath: svgPath });
+    await archiveApprovedOutputPaths({
+      assets: artwork.assets,
+      paths: [
+        { role: 'approved-svg', filePath: svgPath },
+        { role: 'approved-png', filePath: pngPath },
+        { role: 'approved-jpg', filePath: jpgPath },
+      ],
+      storageLocationId: outputLocation.id,
+      storageBasePath: outputLocation.basePath,
+      outputToken: semaLocalToken(command.id),
+    });
     await writeFile(svgPath, svg, 'utf8');
     // The working raster is the approved/editable artwork.  It is the source
     // for the delivered PNG and JPG; the SVG is a separate trace of that same
@@ -120,7 +164,6 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
       canvasPaddingPx: settings.exportCanvasPaddingPx,
       preserveRasterPixels: true,
     });
-    const outputLocation = await getWritableStorageLocationForFile({ profileId: profile.id, workspaceId: artwork.workspaceId, defaultLocation, filePath: svgPath });
     const outputs = await Promise.all([
       recordApprovedOutput({ artwork, role: 'approved-svg', filePath: svgPath, mimeType: 'image/svg+xml', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus }),
       recordApprovedOutput({ artwork, role: 'approved-png', filePath: pngPath, mimeType: 'image/png', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus }),

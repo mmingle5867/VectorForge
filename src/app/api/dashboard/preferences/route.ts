@@ -45,6 +45,9 @@ export async function PUT(req: NextRequest) {
       profileId: profile.id,
       workspaceId: workspace.id,
       viewMode: body.viewMode,
+      expandedCategoryIds: Array.isArray(body.expandedCategoryIds) ? body.expandedCategoryIds.filter((id): id is string => typeof id === 'string') : undefined,
+      selectedCategoryIds: Array.isArray(body.selectedCategoryIds) ? body.selectedCategoryIds.filter((id): id is string => typeof id === 'string') : undefined,
+      includeDescendants: typeof body.includeDescendants === 'boolean' ? body.includeDescendants : undefined,
       filters: body.filters,
       sorting: body.sorting,
     });

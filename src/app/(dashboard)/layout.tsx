@@ -28,7 +28,7 @@ export default function DashboardLayout({
             </svg>
             <span className="text-lg font-bold text-gray-900">{config.identity.displayName}</span>
           </Link>
-          <p className="mt-1 pl-9 text-xs font-semibold text-gray-500">v0.70.1</p>
+          <p className="mt-1 pl-9 text-xs font-semibold text-gray-500">v0.70.2</p>
         </div>
 
         <nav className="space-y-1">

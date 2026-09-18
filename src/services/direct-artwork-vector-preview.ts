@@ -35,10 +35,6 @@ export async function generateDirectArtworkVectorPreview(input: {
   upscaleFactor?: number;
 }) {
   const { artwork, working, directory } = await ownedWorkingArtwork(input.userId, input.artworkId);
-  const workingMetadata = working.metadata && typeof working.metadata === 'object' && !Array.isArray(working.metadata)
-    ? working.metadata as Record<string, unknown>
-    : {};
-  if (workingMetadata.jpegReadyForVectorizing !== true) throw new Error('Mark the working JPG ready before vectorizing');
   const settings = previewTuneSchema.parse(input.settings);
   const upscaleFactor = input.upscaleFactor ?? 1;
   if (!Number.isInteger(upscaleFactor) || upscaleFactor < 1 || upscaleFactor > 10) throw new Error('Upscale factor must be a whole number from 1× through 10×');

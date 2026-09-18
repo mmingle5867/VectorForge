@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import RasterLayoutControls from '@/components/raster-layout-controls';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 
 type RasterChoice = { key: string; label?: string; versionNumber?: number; filePath: string; isCurrent?: boolean; width?: number | null; height?: number | null };
 type TuneSettings = { colorMode: 'color' | 'binary'; binaryTraceColor: string; traceThicknessPx: number; preUpscaleBlur: number; blur: number; blurPasses: number; rasterSourcePaddingPx: number; svgCanvasPaddingPx: number; exportCanvasPaddingPx: number; pathPrecision: number; cornerThreshold: number; filterSpeckle: number; lengthThreshold: number; spliceThreshold: number; colorPrecision: number; layerDifference: number };
 type NumericSetting = Exclude<keyof TuneSettings, 'colorMode' | 'binaryTraceColor'>;
-type PreviewKind = 'svg' | 'png' | 'jpg';
+type PreviewKind = 'svg' | 'png' | 'pngMask' | 'jpg' | 'pdf';
 type SavedOutputs = { svg: boolean; png: boolean; jpg: boolean };
 type ControlPreset = { id: string; name: string; description: string; settings: Partial<TuneSettings>; rasterPreparation: { blur: number; upscaleFactor: number } };
 
@@ -64,31 +65,51 @@ function PreviewSurface({ src, alt, checkerboard = false, background }: { src: s
   </>;
 }
 
+function StageHeader({ title, expanded, onToggle }: { title: string; expanded: boolean; onToggle(): void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="font-bold">{title}</h2>
+      <button type="button" onClick={onToggle} aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`} className="rounded border px-2 py-1 text-sm font-semibold">{expanded ? '▲' : '▼'}</button>
+    </div>
+  );
+}
+
 export default function ArtworkPreviewTunePage() {
   const artworkId = useParams<{ artworkId: string }>().artworkId;
-  const router = useRouter();
   const [versions, setVersions] = useState<RasterChoice[]>([]);
   const [selected, setSelected] = useState('');
   const [original, setOriginal] = useState<RasterChoice | null>(null);
   const [artworkName, setArtworkName] = useState('');
-  const [jpegReady, setJpegReady] = useState(false);
-  const [hasWorkingPng, setHasWorkingPng] = useState(false);
   const [settings, setSettings] = useState<TuneSettings>(DEFAULT_SETTINGS);
   const [upscaleFactor, setUpscaleFactor] = useState(1);
   const [reviewStatus, setReviewStatus] = useState<'APPROVED' | 'NEEDS_VECTOR_EDIT'>('APPROVED');
   const [vectorCandidateId, setVectorCandidateId] = useState<string | null>(null);
-  const [vectorView, setVectorView] = useState<PreviewKind>('svg');
+  const [vectorView, setVectorView] = useState<PreviewKind>('jpg');
   const [pngBackground, setPngBackground] = useState('#ffffff');
   const [savedOutputs, setSavedOutputs] = useState<SavedOutputs>({ svg: false, png: false, jpg: false });
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [vectorGenerating, setVectorGenerating] = useState(false);
   const [revision, setRevision] = useState(Date.now());
-  const [outputConstrainBy, setOutputConstrainBy] = useState<'WIDTH' | 'HEIGHT'>('WIDTH');
-  const [outputValue, setOutputValue] = useState(8);
-  const [outputUnit, setOutputUnit] = useState<'IN' | 'MM'>('IN');
-  const [outputDpi, setOutputDpi] = useState(300);
-  const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PDF'>>(['PDF']);
+  const [exportDirectory, setExportDirectory] = useState<string | null>(null);
+  const [outputFormats, setOutputFormats] = useState<Array<'JPG' | 'PNG' | 'PNG_MASK' | 'PDF'>>([]);
+  const [recreateSvg, setRecreateSvg] = useState(false);
+  const [imageWidth, setImageWidth] = useState(0);
+  const [resizePercent, setResizePercent] = useState(100);
+  const [resizeMode, setResizeMode] = useState<'PERCENT' | 'ABSOLUTE'>('ABSOLUTE');
+  const [maintainAspect, setMaintainAspect] = useState(true);
+  const [imageUnit, setImageUnit] = useState<'IN' | 'CM'>('IN');
+  const [canvasUnit, setCanvasUnit] = useState<'IN' | 'CM'>('IN');
+  const [imageHeight, setImageHeight] = useState(0);
+  const [canvasWidth, setCanvasWidth] = useState(0);
+  const [canvasHeight, setCanvasHeight] = useState(0);
+  const [imageDpi, setImageDpi] = useState(300);
+  const [canvasDpi, setCanvasDpi] = useState(300);
+  const [expandedStage, setExpandedStage] = useState<'working' | 'prepare' | 'outputs' | 'vectorizer' | null>('working');
+  const [canvasFill, setCanvasFill] = useState<'WHITE' | 'BLACK'>('WHITE');
+  const [canvasAnchor, setCanvasAnchor] = useState<'TOP_LEFT' | 'TOP' | 'TOP_RIGHT' | 'LEFT' | 'CENTER' | 'RIGHT' | 'BOTTOM_LEFT' | 'BOTTOM' | 'BOTTOM_RIGHT'>('CENTER');
+  const [availableOutputs, setAvailableOutputs] = useState<Array<{ format: string; filePath: string }>>([]);
   const [presets, setPresets] = useState<ControlPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
@@ -102,7 +123,7 @@ export default function ArtworkPreviewTunePage() {
     const response = await fetch(`/api/artwork/${artworkId}/raster-versions`, { cache: 'no-store' }); const data = await response.json();
     if (!response.ok || !data.success) throw new Error(data.error || 'Unable to load working versions');
     const available = data.versions || []; setVersions(available); setOriginal(data.original || null); setArtworkName(typeof data.artworkName === 'string' ? data.artworkName : ''); setSavedOutputs(data.savedOutputs || { svg: false, png: false, jpg: false });
-    setJpegReady(data.jpegReady === true); setHasWorkingPng(Boolean(data.workingPng?.filePath));
+    setAvailableOutputs(data.rasterOutputs || []);
     if (!preserve || ![data.original?.key, ...available.map((item: RasterChoice) => item.key)].includes(selected)) setSelected(available.find((item: RasterChoice) => item.isCurrent)?.key || data.original?.key || '');
   }
   const refresh = async (announce = true) => { try { await loadVersions(true); setRevision(Date.now()); if (announce) setNotice('Working image refreshed from disk.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to refresh image'); } };
@@ -142,79 +163,168 @@ export default function ArtworkPreviewTunePage() {
   }, [settings, upscaleFactor]);
 
   const choice = useMemo(() => selected === 'original' ? original : versions.find((item) => item.key === selected) ?? null, [original, selected, versions]);
+  const setImageDimension = (axis: 'width' | 'height', value: number) => { if (!Number.isFinite(value) || value <= 0) return; const ratio = width && height ? width / height : imageWidth / imageHeight; const rounded = Math.max(1, Math.round(value)); if (axis === 'width') { setImageWidth(rounded); if (maintainAspect && ratio) setImageHeight(Math.max(1, Math.round(rounded / ratio))); } else { setImageHeight(rounded); if (maintainAspect && ratio) setImageWidth(Math.max(1, Math.round(rounded * ratio))); } };
+  const applyPercentResize = (percent: number) => { setResizePercent(percent); if (!width || !height || !Number.isFinite(percent) || percent <= 0) return; setImageWidth(Math.max(1, Math.round(width * percent / 100))); setImageHeight(Math.max(1, Math.round(height * percent / 100))); };
   const selectedFilename = choice?.filePath.split(/[\\/]/).pop() || 'No working image selected';
   const artworkFilename = artworkName || original?.filePath.split(/[\\/]/).pop() || selectedFilename;
-  const width = choice?.width ?? 0; const height = choice?.height ?? 0; const outputWidth = width * upscaleFactor; const outputHeight = height * upscaleFactor; const outputPixels = outputWidth * outputHeight;
+  const width = choice?.width ?? 0; const height = choice?.height ?? 0; const outputWidth = imageWidth; const outputHeight = imageHeight; const outputPixels = outputWidth * outputHeight;
   const tooLarge = outputPixels > MAX_PIXELS; const blocked = busy || !selected || tooLarge;
+  useEffect(() => { if (width && height) { setImageWidth(width); setImageHeight(height); setCanvasWidth(width); setCanvasHeight(height); setImageDpi(300); setCanvasDpi(300); setImageUnit('IN'); setCanvasUnit('IN'); setResizePercent(100); setResizeMode('ABSOLUTE'); } }, [width, height]);
   const rasterUrl = selected === 'original' ? `/api/artwork/${artworkId}/preview?variant=original&v=${revision}` : `/api/artwork/${artworkId}/preview?versionKey=${encodeURIComponent(selected)}&v=${revision}`;
   const workingJpegUrl = `/api/artwork/${artworkId}/preview?v=${revision}`;
   const workingPngUrl = `/api/artwork/${artworkId}/preview?variant=working-png&v=${revision}`;
+  const outputPngUrl = `/api/artwork/${artworkId}/preview?variant=output-png&v=${revision}`;
+  const outputPngMaskUrl = `/api/artwork/${artworkId}/preview?variant=output-png-mask&v=${revision}`;
+  const outputPdfUrl = `/api/artwork/${artworkId}/preview?variant=output-pdf&v=${revision}`;
   const vectorSvgUrl = vectorCandidateId ? `/api/artwork/${artworkId}/vector-preview?candidateId=${encodeURIComponent(vectorCandidateId)}&v=${revision}` : null;
+  const reviewAssets: Array<{ kind: PreviewKind; label: string; exists: boolean; format?: 'SVG' | 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF' }> = [
+    { kind: 'svg', label: 'SVG', exists: Boolean(vectorSvgUrl), format: 'SVG' },
+    { kind: 'png', label: 'PNG', exists: availableOutputs.some((output) => output.format === 'PNG'), format: 'PNG' },
+    { kind: 'pngMask', label: 'PNG Mask', exists: availableOutputs.some((output) => output.format === 'PNG_MASK'), format: 'PNG_MASK' },
+    { kind: 'jpg', label: 'JPG', exists: Boolean(choice?.filePath), format: 'JPG' },
+    { kind: 'pdf', label: 'PDF', exists: availableOutputs.some((output) => output.format === 'PDF'), format: 'PDF' },
+  ];
+  const reviewedAsset = reviewAssets.find((asset) => asset.kind === vectorView) ?? { kind: 'jpg' as const, label: 'JPG', exists: Boolean(choice?.filePath), format: 'JPG' as const };
+  const hasSelectedImageFormats = outputFormats.length > 0 || recreateSvg;
+  const rasterOutputDimensionsValid = canvasWidth > 0 && canvasHeight > 0 && canvasDpi > 0;
+  const canCreateSelectedImages = hasSelectedImageFormats && (recreateSvg || rasterOutputDimensionsValid);
 
-  async function activate() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/raster-versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionKey: selected }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to select version'); setNotice('Selected working version is now active.'); await refresh(false); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to select version'); } finally { setBusy(false); } }
-  async function openRaster(prepare: boolean) { if (tooLarge) return; setActionError(null); setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'original-raster', artworkId, prepare, sourceVersionKey: selected, preparation: { blur: settings.blur, upscaleFactor } }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open raster editor'); setJpegReady(false); setNotice(data.prepared ? 'Prepared a new working JPG and opened the raster editor. Mark it ready again after editing.' : 'Opened the current working JPG. Mark it ready again after editing.'); await refresh(false); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to open raster editor'); } finally { setBusy(false); } }
-  async function createWorkingPng() { setActionError(null); setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/working-png`, { method: 'POST' }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to create working PNG'); setHasWorkingPng(true); setRevision(Date.now()); setNotice('Created the working PNG from the current working JPG.'); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to create working PNG'); } finally { setBusy(false); } }
-  async function openWorkingPng() { setActionError(null); setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-working-png', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open working PNG'); setNotice('Opened the working PNG in the raster editor. Use Refresh image after saving your edit.'); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to open working PNG'); } finally { setBusy(false); } }
-  async function markJpegReady() { setActionError(null); setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/working-jpg/ready`, { method: 'POST' }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to mark JPG ready'); setJpegReady(true); setHasWorkingPng(true); setRevision(Date.now()); setNotice(data.pngCreated ? 'Working JPG is ready for vectorizing. A working PNG was created, and vectorizer controls are now available.' : 'Working JPG is ready for vectorizing. Vectorizer controls are now available.'); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to mark JPG ready'); } finally { setBusy(false); } }
-  async function generateVector() { if (!jpegReady) return setNotice('Mark the working JPG ready before vectorizing.'); if (tooLarge) return; setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/vector-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings, upscaleFactor }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to generate vector preview'); setVectorCandidateId(data.candidateId); setVectorView('svg'); setNotice(`Vector preview generated with ${data.diagnostics?.pathCount ?? 'the'} traced path${data.diagnostics?.pathCount === 1 ? '' : 's'}.`); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to generate vector preview'); } finally { setBusy(false); } }
-  async function approve() { if (!vectorCandidateId) return setNotice('Generate a vector preview first.'); setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings, upscaleFactor, candidateId: vectorCandidateId, reviewStatus }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to save vector output'); router.push('/dashboard'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to save vector output'); } finally { setBusy(false); } }
-  async function openVector() { setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-vector', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open vector editor'); setNotice('Opened the saved SVG in the vector editor.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to open vector editor'); } finally { setBusy(false); } }
-  async function refreshSavedOutputs() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/sync-output`, { method: 'POST' }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to refresh saved outputs'); setNotice(data.changed.length ? `Recorded edited ${data.changed.map((value: string) => value.replace('approved-', '').toUpperCase()).join(' and ')} output version(s) for review.` : 'Saved PNG and JPG outputs are unchanged.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to refresh saved outputs'); } finally { setBusy(false); } }
-  async function exportRasterOutputs() {
+  async function activate() { setBusy(true); try { const response = await fetch(`/api/artwork/${artworkId}/raster-versions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versionKey: selected }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to select version'); setNotice('Selected working version is now active.'); setExpandedStage('prepare'); await refresh(false); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to select version'); } finally { setBusy(false); } }
+  async function prepareWorkingJpeg() {
+    if (canvasWidth < imageWidth || canvasHeight < imageHeight) {
+      const continueWithClip = window.confirm('The canvas is smaller than the resized image, so part of the image will be clipped at the selected anchor. Choose OK to continue with clipping, or Cancel to adjust the canvas.');
+      if (!continueWithClip) return false;
+    }
+    const response = await fetch(`/api/artwork/${artworkId}/prepare-layout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layout: { blur: settings.blur, imageWidth, imageHeight, canvasWidth, canvasHeight, imageDpi, canvasDpi, fill: canvasFill, anchor: canvasAnchor } }) });
+    const data = await response.json();
+    if (!response.ok || !data.success) throw new Error(data.error || 'Unable to prepare the working JPG');
+    await refresh(false);
+    return true;
+  }
+  async function openWorkingJpg() {
+    setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'original-raster', artworkId, prepare: false }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open JPG'); setNotice('Opened the currently viewed JPG in the assigned editor.'); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to open JPG'); } finally { setBusy(false); }
+  }
+  async function openGeneratedOutput(outputType: 'JPG' | 'PNG' | 'PNG_MASK') {
+    setBusy(true); try {
+      const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-output-raster', artworkId, outputType }) });
+      const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open output');
+      setNotice(`Opened ${outputType === 'PNG_MASK' ? 'PNG Mask' : outputType} output in the raster editor.`);
+    } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to open output'); } finally { setBusy(false); }
+  }
+  async function editReviewedImage() {
+    if (vectorView === 'jpg') return openWorkingJpg();
+    if (vectorView === 'png') return openGeneratedOutput('PNG');
+    if (vectorView === 'pngMask') return openGeneratedOutput('PNG_MASK');
+    if (vectorView === 'pdf') { window.open(outputPdfUrl, '_blank', 'noopener,noreferrer'); return; }
+    if (vectorView === 'svg' && savedOutputs.svg) return openVector();
+    setNotice('Save the vector result before opening the SVG in the assigned editor.');
+  }
+  async function exportSelectedFormats() {
+    const formats = [...outputFormats, ...(recreateSvg ? ['SVG'] : [])];
+    if (formats.length === 0) {
+      setActionError('Check at least one image format to export.');
+      return;
+    }
     setActionError(null);
     setBusy(true);
     try {
-      const response = await fetch(`/api/artwork/${artworkId}/output`, {
+      const response = await fetch(`/api/artwork/${artworkId}/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'export-raster',
-          specification: {
-            constrainBy: outputConstrainBy, value: outputValue, unit: outputUnit,
-            dpi: outputDpi, formats: outputFormats,
-          },
-        }),
+        body: JSON.stringify({ formats, candidateId: vectorCandidateId }),
       });
       const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to create output files');
-      const pixels = data.result?.dimensions;
-      setNotice(`Created ${data.result.assets.map((asset: { format: string }) => asset.format).join(', ')} output${data.result.assets.length === 1 ? '' : 's'}${pixels ? ` at ${pixels.width.toLocaleString()} × ${pixels.height.toLocaleString()} px` : ''}.`);
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to export files');
+      if (data.cancelled) {
+        setNotice('Export cancelled.');
+      } else {
+        setExportDirectory(data.directory);
+        setNotice(`Exported ${data.files.length} file${data.files.length === 1 ? '' : 's'} to ${data.directory}.`);
+      }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Unable to create output files');
+      setActionError(error instanceof Error ? error.message : 'Unable to export files');
     } finally {
       setBusy(false);
     }
   }
-  const toggleOutputFormat = (format: 'JPG' | 'PNG' | 'PDF') => setOutputFormats((current) =>
-    current.includes(format) ? current.filter((value) => value !== format) : [...current, format]
-  );
+  async function openExportFolder() {
+    if (!exportDirectory) return;
+    setActionError(null);
+    setBusy(true);
+    try {
+      const response = await fetch('/api/local-editor/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'export-folder', outputFolderPath: exportDirectory }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open the export folder');
+      setNotice('Opened the export folder.');
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to open the export folder');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openOutputFolder() { setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-output-folder', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open output folder'); setNotice('Opened the output folder.'); } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to open output folder'); } finally { setBusy(false); } }
+
+  async function openVector() { setBusy(true); try { const response = await fetch('/api/local-editor/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'direct-vector', artworkId }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to open vector editor'); setNotice('Opened the saved SVG in the vector editor.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to open vector editor'); } finally { setBusy(false); } }
+
+  async function exportRasterOutputs() {
+    setActionError(null);
+    if (!hasSelectedImageFormats) { setActionError('Check at least one image format first. A checked box means create or recreate that format.'); return; }
+    if (outputFormats.length > 0 && !rasterOutputDimensionsValid) { setActionError('Enter valid canvas width, height, and resolution before creating JPG, PNG, PNG Mask, or PDF output.'); return; }
+    if (tooLarge) { setActionError('The resized image exceeds the 64 MP limit. Choose smaller image dimensions before creating output.'); return; }
+    setNotice('Preparing the working JPG and creating the checked image formats…'); setBusy(true);
+    try {
+      const prepared = await prepareWorkingJpeg(); if (!prepared) return;
+      const created: string[] = []; let dimensions: { width: number; height: number } | undefined;
+      if (outputFormats.length > 0) {
+        const response = await fetch(`/api/artwork/${artworkId}/output`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'export-raster', specification: { constrainBy: 'WIDTH', value: canvasWidth / canvasDpi, unit: 'IN', dpi: canvasDpi, formats: outputFormats } }) });
+        const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to create output files');
+        dimensions = data.result?.dimensions; created.push(...data.result.assets.map((asset: { format: string }) => asset.format));
+      }
+      if (recreateSvg) {
+        setVectorGenerating(true);
+        try {
+          const previewResponse = await fetch(`/api/artwork/${artworkId}/vector-preview`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings, upscaleFactor }) });
+          const preview = await previewResponse.json(); if (!previewResponse.ok || !preview.success) throw new Error(preview.error || 'Unable to create SVG');
+          setVectorCandidateId(preview.candidateId); setVectorView('svg');
+          const saveResponse = await fetch(`/api/artwork/${artworkId}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings, upscaleFactor, candidateId: preview.candidateId, reviewStatus }) });
+          const saved = await saveResponse.json(); if (!saveResponse.ok || !saved.success) throw new Error(saved.error || 'Unable to save SVG');
+          created.push(reviewStatus === 'NEEDS_VECTOR_EDIT' ? 'SVG (needs vector edit)' : 'SVG');
+        } finally {
+          setVectorGenerating(false);
+        }
+      }
+      await refresh(false); setExpandedStage('vectorizer');
+      setNotice(`Created ${created.join(', ')}${dimensions ? ` at ${dimensions.width.toLocaleString()} × ${dimensions.height.toLocaleString()} px` : ''}.`);
+    } catch (error) { setActionError(error instanceof Error ? error.message : 'Unable to create output files'); } finally { setBusy(false); }
+  }
+  const toggleOutputFormat = (format: 'JPG' | 'PNG' | 'PNG_MASK' | 'PDF') => setOutputFormats((current) => current.includes(format) ? current.filter((value) => value !== format) : [...current, format]);
+
   async function savePreset() { if (!presetName.trim()) return setNotice('Enter a preset name.'); setBusy(true); try { const response = await fetch('/api/control-presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save-preset', name: presetName.trim(), description: presetDescription.trim(), settings, rasterPreparation: { blur: settings.blur, upscaleFactor } }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to save preset'); setPresets(data.presets || []); setPresetDialogOpen(false); setPresetName(''); setPresetDescription(''); setNotice('Vectorizer preset saved.'); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to save preset'); } finally { setBusy(false); } }
   async function applyPreset(id: string) { const preset = presets.find((item) => item.id === id); if (!preset) return; setBusy(true); try { const response = await fetch('/api/control-presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'use-preset', id }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.error || 'Unable to use preset'); setSettings((current) => ({ ...current, ...preset.settings })); setUpscaleFactor(preset.rasterPreparation.upscaleFactor); setSelectedPresetId(id); invalidateVector(); setNotice(`Applied preset: ${preset.name}.`); } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to use preset'); } finally { setBusy(false); } }
 
   return <div className="mx-auto max-w-7xl">
-    <header className="mb-5 flex items-center justify-between"><div><h1 className="text-2xl font-bold">Prepare / Vectorize Artwork</h1><p className="mt-1 text-sm text-gray-700"><strong>Artwork name:</strong> {artworkFilename}</p><p className="text-sm text-gray-600"><strong>Editing now:</strong> {selectedFilename}</p><p className="mt-1 text-sm text-gray-600">Prepare a persistent working JPG, optionally create/edit its PNG, then trace the ready JPG.</p></div><Link href="/dashboard" className="rounded border px-3 py-2 text-sm font-semibold">Back to Dashboard</Link></header>
+    <header className="mb-5 flex items-center justify-between"><div><h1 className="text-2xl font-bold">Prepare / Vectorize Artwork</h1><p className="mt-1 text-sm text-gray-700"><strong>Artwork name:</strong> {artworkFilename}</p><p className="text-sm text-gray-600"><strong>Editing now:</strong> {selectedFilename}</p><p className="mt-1 text-sm text-gray-600">Set the resize, canvas, and vectorizer controls; then create or recreate the checked image formats from a fresh prepared working JPG.</p></div><Link href="/dashboard" className="rounded border px-3 py-2 text-sm font-semibold">Back to Dashboard</Link></header>
     {notice && <div className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{notice}</div>}
     {actionError && <div role="alert" className="mb-4 rounded border-2 border-red-400 bg-red-50 p-3 text-sm font-semibold text-red-900">Artwork action failed: {actionError}</div>}
     <main className="grid gap-6 xl:grid-cols-[1fr_380px]"><div className="space-y-6">
-      <section className="rounded-xl border bg-white p-4"><div className="mb-3 flex justify-between"><strong>Selected working image: {width && height ? `${width.toLocaleString()} × ${height.toLocaleString()} px` : 'Dimensions unavailable'}</strong><button onClick={() => void refresh()} disabled={busy} className="rounded border px-3 py-1 text-sm">Refresh image</button></div><PreviewSurface src={rasterUrl} alt="Selected working image" /></section>
-      {vectorSvgUrl && <section className="rounded-xl border border-emerald-300 bg-white p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="font-bold">Vector review — {vectorView.toUpperCase()}</h2><div className="flex gap-2"><button onClick={() => setVectorView('svg')} className={`rounded border px-3 py-1 text-sm font-semibold ${vectorView === 'svg' ? 'bg-gray-200' : ''}`}>View SVG</button><button onClick={() => setVectorView('png')} className={`rounded border px-3 py-1 text-sm font-semibold ${vectorView === 'png' ? 'bg-gray-200' : ''}`}>View PNG</button><button onClick={() => setVectorView('jpg')} className={`rounded border px-3 py-1 text-sm font-semibold ${vectorView === 'jpg' ? 'bg-gray-200' : ''}`}>View JPG</button></div></div>{vectorView === 'png' && <label className="mb-3 flex items-center gap-2 text-sm font-semibold">PNG background <input type="color" value={pngBackground} onChange={(event) => setPngBackground(event.target.value)} className="h-8 w-12 rounded border p-1" /></label>}{vectorView === 'svg' ? <PreviewSurface key={`${vectorCandidateId}-svg`} src={vectorSvgUrl} alt="Provisional SVG trace" checkerboard /> : vectorView === 'png' && hasWorkingPng ? <PreviewSurface key={`${revision}-png`} src={workingPngUrl} alt="Working PNG" background={pngBackground} /> : vectorView === 'jpg' ? <PreviewSurface key={`${revision}-jpg`} src={workingJpegUrl} alt="Working JPG" /> : <p className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Create the working PNG from the ready JPG to review it here.</p>}<p className="mt-2 text-xs text-gray-500">SVG is traced from the ready working JPG. The JPG and PNG tabs show the actual prepared working files.</p></section>}
-    </div><aside className="space-y-4 rounded-xl border bg-white p-4">
-      <section title="Choose which saved raster version is the current working JPG."><h2 className="font-bold">1. Working JPG</h2><select value={selected} onChange={(event) => { setSelected(event.target.value); invalidateVector(); setRevision(Date.now()); }} title="Select an existing working version or the protected original to start a new JPG." className="mt-2 w-full rounded border p-2">{original && <option value={original.key}>{original.label} · starts a fresh JPG</option>}{versions.map((item) => <option key={item.key} value={item.key}>Working JPG version {item.versionNumber}{item.isCurrent ? ' (current)' : ''} · {item.width} × {item.height}</option>)}</select><button disabled={busy || !selected} onClick={activate} title="Make this version the persistent current working image." className="mt-2 w-full rounded border px-3 py-2 font-semibold disabled:opacity-50">Use Selected Working Image</button></section>
-      <section className="border-t pt-4"><div className="flex items-center justify-between"><h2 className="font-bold">Control presets</h2><button type="button" onClick={() => setPresetDialogOpen(true)} title="Save the current vectorizer and raster preparation settings with a name and description." className="rounded border px-2 py-1 text-xs font-semibold">Save Set</button></div><select value={selectedPresetId} onChange={(event) => void applyPreset(event.target.value)} title={presets.find((preset) => preset.id === selectedPresetId)?.description || 'Select a named set of vectorizer and raster preparation controls.'} className="mt-2 w-full rounded border p-2 text-sm"><option value="">Choose a saved preset…</option>{presets.map((preset) => <option key={preset.id} value={preset.id} title={preset.description}>{preset.name}{preset.description ? ` — ${preset.description}` : ''}</option>)}</select>{presets.length === 0 ? <p className="mt-2 text-xs text-gray-500">Save a set after adjusting the controls below. Include a description of the artwork it works best for.</p> : <div className="mt-2 space-y-1">{presets.map((preset) => <button key={preset.id} type="button" title={preset.description || 'No description supplied.'} onClick={() => void applyPreset(preset.id)} className={`block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-gray-100 ${selectedPresetId === preset.id ? 'bg-blue-50 font-semibold' : ''}`}>{preset.name}<span className="ml-1 text-gray-500">{preset.description || 'No description'}</span></button>)}</div>}</section>
-      <section className="border-t pt-4"><h2 className="mb-3 font-bold">Edit current JPG</h2><label title="Applies a softening filter before the selected JPG opens. Use a small amount to reduce scan noise; too much can erase fine lines." className="block text-sm font-semibold">Smooth raster: {settings.blur}<input type="range" min="0" max="20" step="0.1" value={settings.blur} onChange={(event) => update('blur', Number(event.target.value))} className="mt-1 w-full" /></label><label title="Creates a larger working JPG before opening the editor. Doubling width and height uses four times as many pixels, and VectorForge blocks sizes over 64 MP." className="mt-3 block text-sm font-semibold">Upscale: {upscaleFactor}×<input type="range" min="1" max="10" step="1" value={upscaleFactor} onChange={(event) => { setUpscaleFactor(Number(event.target.value)); invalidateVector(); }} className="mt-1 w-full" /></label><p className="mt-1 text-xs text-gray-600">Projected size: {width && height ? `${outputWidth.toLocaleString()} × ${outputHeight.toLocaleString()} px · ${(outputPixels / 1_000_000).toFixed(1)} MP` : 'Select a raster version to calculate size'}</p>{tooLarge && <p className="mt-2 text-sm font-semibold text-red-700">This upscale exceeds the 64 MP limit. Choose a smaller factor before continuing.</p>}<div className="mt-3 grid gap-2"><button disabled={blocked} onClick={() => openRaster(false)} title="Opens the selected current JPG exactly as it is. It does not blur, upscale, or create another working version." className="rounded border px-3 py-2 font-semibold disabled:opacity-50">Open Current JPG in Editor</button><button disabled={blocked} onClick={() => openRaster(true)} title="Creates one new version using the Smooth Raster and Upscale settings, then opens that new JPG. The previous version and original remain available." className="rounded bg-blue-600 px-3 py-2 font-semibold text-white disabled:opacity-50">Blur/Upscale and Open Editor</button></div><button disabled={busy} onClick={() => void createWorkingPng()} title="Creates or replaces the editable working PNG from the current JPG. It applies the configured PNG color and changes white pixels to transparent." className="mt-3 w-full rounded border px-3 py-2 font-semibold disabled:opacity-50">Create / Refresh PNG from Current JPG</button><button disabled={busy || !hasWorkingPng} onClick={() => void openWorkingPng()} title="Opens the editable working PNG. This is useful for transparency or color edits; use Refresh Image after saving externally." className="mt-2 w-full rounded border px-3 py-2 font-semibold disabled:opacity-50">Open Working PNG in Raster Editor</button><button disabled={busy} onClick={() => void markJpegReady()} title="Locks the currently selected JPG as the exact raster input for tracing and creates a PNG if one does not exist. Changing or selecting a different JPG requires marking it ready again." className="mt-2 w-full rounded bg-emerald-600 px-3 py-2 font-semibold text-white disabled:opacity-50">{jpegReady ? 'JPG Ready for Vectorizing' : 'Mark JPG Ready for Vectorizing'}</button></section>
-      <section className="border-t pt-4">
-        <h2 className="font-bold">Generic raster output</h2>
-        <p className="mt-1 text-xs text-gray-600">Creates completed JPG, PNG, or PDF output assets. This does not change the artwork’s vector-review status.</p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="text-sm font-semibold">Constrain<select value={outputConstrainBy} onChange={(event) => setOutputConstrainBy(event.target.value as 'WIDTH' | 'HEIGHT')} className="mt-1 w-full rounded border p-2"><option value="WIDTH">Width</option><option value="HEIGHT">Height</option></select></label>
-          <label className="text-sm font-semibold">Size<input type="number" min="0.01" step="0.01" value={outputValue} onChange={(event) => setOutputValue(Number(event.target.value))} className="mt-1 w-full rounded border p-2" /></label>
-          <label className="text-sm font-semibold">Unit<select value={outputUnit} onChange={(event) => setOutputUnit(event.target.value as 'IN' | 'MM')} className="mt-1 w-full rounded border p-2"><option value="IN">Inches</option><option value="MM">Millimeters</option></select></label>
-          <label className="text-sm font-semibold">DPI<input type="number" min="1" max="2400" step="1" value={outputDpi} onChange={(event) => setOutputDpi(Number(event.target.value))} className="mt-1 w-full rounded border p-2" /></label>
+      <section className="rounded-xl border bg-white p-4"><div className="mb-3 flex items-center justify-between gap-3"><strong>Selected working image: {width && height ? `${width.toLocaleString()} × ${height.toLocaleString()} px` : 'Dimensions unavailable'}</strong><button onClick={() => void refresh()} disabled={busy} className="rounded border px-3 py-1 text-sm">Refresh image</button></div>
+        <div className="rounded-xl border border-emerald-300 p-4"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="font-bold">Image Review — {reviewedAsset.label}</h2><div className="flex flex-wrap gap-2"><button type="button" disabled={busy || (vectorView === 'svg' && !savedOutputs.svg)} onClick={() => void editReviewedImage()} title={vectorView === 'svg' && !savedOutputs.svg ? 'Save the vector result before opening its editor.' : vectorView === 'pdf' ? 'Open the reviewed PDF in a new browser tab.' : 'Open the currently reviewed image in its assigned editor.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Edit</button><button type="button" disabled={busy} onClick={() => void exportRasterOutputs()} title={canCreateSelectedImages ? 'Create new versions of the checked formats. Raster formats use the prepared canvas size and DPI; SVG uses the current vectorizer controls.' : 'Click to see what is still required before selected images can be created.'} className="rounded bg-sky-700 px-4 py-2 font-semibold text-white disabled:opacity-50">Create Selected Images</button><button type="button" disabled={busy} onClick={() => void exportSelectedFormats()} title="Open a folder selector and copy the checked, available file formats to that folder. The last selected folder is remembered." className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Export Selected</button><button type="button" disabled={busy || !exportDirectory} onClick={() => void openExportFolder()} title={exportDirectory ? 'Open the folder used by the most recent export.' : 'Export files first.'} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Open Export Folder</button><button type="button" disabled={busy || availableOutputs.length === 0} onClick={() => void openOutputFolder()} title={availableOutputs.length === 0 ? 'Create at least one raster output file first.' : 'Open this artwork’s VectorForge output folder in Windows Explorer.'} className="rounded border px-4 py-2 font-semibold disabled:opacity-50">Open Output Folder</button></div></div>
+          <div className="mb-5 flex flex-wrap gap-2">{reviewAssets.map((asset) => { const selectedReview = asset.kind === vectorView; const selectedForCreation = asset.format === 'SVG' ? recreateSvg : asset.format ? outputFormats.includes(asset.format) : false; const className = selectedReview && asset.exists ? 'bg-blue-500 text-white border-blue-500' : asset.exists ? 'bg-gray-400 text-gray-950 border-gray-400' : 'bg-white text-gray-950 border-gray-300'; const toggleCreation = () => { if (asset.format === 'SVG') setRecreateSvg((current) => !current); else if (asset.format) toggleOutputFormat(asset.format); }; const selectOrView = () => { if (asset.exists) setVectorView(asset.kind); else toggleCreation(); }; return <div key={asset.kind} className={`relative flex items-center gap-2 rounded border px-3 py-1.5 text-sm font-semibold ${className}`}><input type="checkbox" aria-label={asset.exists ? `Recreate ${asset.label}` : `Create ${asset.label}`} checked={selectedForCreation} disabled={!asset.format || vectorGenerating} onChange={toggleCreation} /><button type="button" disabled={(!asset.exists && !asset.format) || vectorGenerating} onClick={selectOrView} className="disabled:cursor-default">{asset.label}</button>{asset.kind === 'svg' && vectorGenerating && <span aria-label="Generating SVG" title="Generating SVG preview…" className="absolute inset-0 flex items-center justify-center rounded bg-blue-600/90 text-white"><span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Generating…</span>}</div>; })}</div>
+          {(vectorView === 'png' || vectorView === 'pngMask') && <label className="mb-3 flex items-center gap-2 text-sm font-semibold">Review background <input type="color" value={pngBackground} onChange={(event) => setPngBackground(event.target.value)} className="h-8 w-12 rounded border p-1" /></label>}
+          {vectorView === 'svg' && vectorSvgUrl ? <PreviewSurface key={`${vectorCandidateId}-svg`} src={vectorSvgUrl} alt="Vector preview" checkerboard /> : vectorView === 'png' ? <PreviewSurface key={`${revision}-output-png`} src={outputPngUrl} alt="Generated PNG" background={pngBackground} /> : vectorView === 'pngMask' ? <PreviewSurface key={`${revision}-output-png-mask`} src={outputPngMaskUrl} alt="Generated PNG mask" background={pngBackground} /> : vectorView === 'pdf' ? <iframe key={`${revision}-output-pdf`} src={outputPdfUrl} title="Generated PDF" className="h-[min(65vh,650px)] min-h-[360px] w-full rounded border" /> : <PreviewSurface key={`${revision}-jpg`} src={workingJpegUrl} alt="Working JPG" />}
+          <p className="mt-3 text-xs text-gray-500">Gray buttons are existing images; blue is the image being viewed. White buttons are not created yet; their checkboxes select them for creation. PNG review backgrounds are never saved into the image.</p>
         </div>
-        <div className="mt-3 flex gap-3 text-sm font-semibold">{(['JPG', 'PNG', 'PDF'] as const).map((format) => <label key={format} className="flex items-center gap-1"><input type="checkbox" checked={outputFormats.includes(format)} onChange={() => toggleOutputFormat(format)} />{format}</label>)}</div>
-        <button disabled={busy || outputFormats.length === 0 || !Number.isFinite(outputValue) || outputValue <= 0 || !Number.isFinite(outputDpi) || outputDpi <= 0} onClick={() => void exportRasterOutputs()} className="mt-3 w-full rounded bg-sky-700 px-3 py-2 font-semibold text-white disabled:opacity-50">Create selected output files</button>
       </section>
-      {!jpegReady ? <section className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">Finish the current JPG, then choose <strong>Mark JPG Ready for Vectorizing</strong>. Vectorizer controls remain hidden until then.</section> : <><section className="border-t pt-4"><h2 className="mb-3 font-bold">2. Vectorizer tuning</h2><label title="Single color produces one clean color and is usually best for line art. Color mode retains multiple source colors but can create many more paths." className="block text-sm font-semibold">Color mode<select value={settings.colorMode} onChange={(event) => update('colorMode', event.target.value as TuneSettings['colorMode'])} className="mt-1 w-full rounded border p-2"><option value="binary">Single color</option><option value="color">Color</option></select></label>{settings.colorMode === 'binary' && <><label title="Sets the fill and stroke color of a single-color vector trace. It changes the SVG appearance, not the JPG used for tracing." className="mt-3 flex items-center justify-between text-sm font-semibold">Trace color<input type="color" value={settings.binaryTraceColor} onChange={(event) => update('binaryTraceColor', event.target.value)} className="h-9 w-14 rounded border p-1" /></label><label title="Adds visible width to the single-color vector paths. Use a small value to make thin traced lines easier to see; too much can close small gaps." className="mt-3 block text-sm font-semibold">Trace thickness: {settings.traceThicknessPx}px<input type="range" min="0" max="20" step="0.5" value={settings.traceThicknessPx} onChange={(event) => update('traceThicknessPx', Number(event.target.value))} className="mt-1 w-full" /></label></>}<div className="mt-3 space-y-3">{TUNERS.map((tuner) => <label key={tuner.key} title={tuner.help} className="block text-sm font-semibold">{tuner.label}: {settings[tuner.key]}<input type="range" min={tuner.min} max={tuner.max} step={tuner.step ?? 1} value={settings[tuner.key]} onChange={(event) => update(tuner.key, Number(event.target.value))} className="mt-1 w-full" /></label>)}</div></section><button disabled={blocked} onClick={generateVector} title="Traces the JPG you marked ready using the current controls. It creates a review preview only; it does not save approved outputs yet." className="w-full rounded bg-violet-600 px-3 py-2 font-semibold text-white disabled:opacity-50">Generate Vector Preview from Ready JPG</button><section className="border-t pt-4"><label title="Approved makes the saved SVG/PNG/JPG available in Completed Vector Artwork for other applications. Needs Vector Edit saves the outputs but keeps the artwork in the active workspace for further SVG work." className="block text-sm font-semibold">Vector result<select value={reviewStatus} onChange={(event) => setReviewStatus(event.target.value as 'APPROVED' | 'NEEDS_VECTOR_EDIT')} className="mt-1 w-full rounded border p-2"><option value="APPROVED">Good — Save Vector Outputs</option><option value="NEEDS_VECTOR_EDIT">Needs Vector Edit</option></select></label><button disabled={busy || !vectorCandidateId} onClick={approve} title="Saves the reviewed SVG and the current JPG/PNG under the original artwork name, then returns to the dashboard. The working version name is never used for final output names." className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 font-semibold text-white disabled:opacity-50">Save / Mark Vector Result</button><p className="mt-3 text-xs text-gray-600">Saved outputs: SVG {savedOutputs.svg ? 'available' : 'not saved'} · PNG {savedOutputs.png ? 'available' : 'not saved'} · JPG {savedOutputs.jpg ? 'available' : 'not saved'}</p><button disabled={busy} onClick={openVector} title="Opens the saved SVG in the configured vector editor for inspection or manual finishing." className="mt-2 w-full rounded border px-3 py-2 font-semibold disabled:opacity-50">Open Saved SVG in Vector Editor</button><button disabled={busy} onClick={() => void refreshSavedOutputs()} title="Checks whether the saved JPG or PNG was changed externally and records a new output version if needed." className="mt-2 w-full rounded border px-3 py-2 font-semibold disabled:opacity-50">Refresh Edited PNG / JPG</button></section></>}
+    </div><aside className="space-y-4 rounded-xl border bg-white p-4">
+      <section title="Choose which saved raster version is the current working JPG."><StageHeader title="1. Working JPG" expanded={expandedStage === 'working'} onToggle={() => setExpandedStage((current) => current === 'working' ? null : 'working')} />{expandedStage === 'working' && <><select value={selected} onChange={(event) => { setSelected(event.target.value); invalidateVector(); setRevision(Date.now()); }} title="Select an existing working version or the protected original to start a new JPG." className="mt-2 w-full rounded border p-2">{original && <option value={original.key}>{original.label} · starts a fresh JPG</option>}{versions.map((item) => <option key={item.key} value={item.key}>Working JPG version {item.versionNumber}{item.isCurrent ? ' (current)' : ''} · {item.width} × {item.height}</option>)}</select><button disabled={busy || !selected} onClick={activate} title="Make this version the persistent current working image." className="mt-2 w-full rounded border px-3 py-2 font-semibold disabled:opacity-50">Use Selected Working Image</button></>}</section>
+      <section className="border-t pt-4"><StageHeader title="2. Prepare working JPG" expanded={expandedStage === 'prepare'} onToggle={() => setExpandedStage((current) => current === 'prepare' ? null : 'prepare')} />{expandedStage === 'prepare' && <><p className="text-xs text-gray-600">Resize the image itself, then set the final canvas. These settings are applied automatically when you choose Create Selected Images.</p><label title="Softens raster noise before resizing. Use a low value for scans; a high value can erase small details." className="mt-3 block text-sm font-semibold">Smooth raster: {settings.blur}<input type="range" min="0" max="20" step="0.1" value={settings.blur} onChange={(event) => update('blur', Number(event.target.value))} className="mt-1 w-full" /></label><RasterLayoutControls resizeMode={resizeMode} imageUnit={imageUnit} canvasUnit={canvasUnit} imageWidth={imageWidth} imageHeight={imageHeight} imageDpi={imageDpi} canvasWidth={canvasWidth} canvasHeight={canvasHeight} canvasDpi={canvasDpi} percent={resizePercent} maintainAspect={maintainAspect} fill={canvasFill} anchor={canvasAnchor} onResizeMode={setResizeMode} onImageUnit={setImageUnit} onCanvasUnit={setCanvasUnit} onImageWidth={(value) => setImageDimension('width', value)} onImageHeight={(value) => setImageDimension('height', value)} onImageDpi={(value) => setImageDpi(Math.max(1, Math.round(value)))} onCanvasWidth={(value) => setCanvasWidth(Math.max(1, Math.round(value)))} onCanvasHeight={(value) => setCanvasHeight(Math.max(1, Math.round(value)))} onCanvasDpi={(value) => setCanvasDpi(Math.max(1, Math.round(value)))} onPercent={applyPercentResize} onMaintainAspect={setMaintainAspect} onFill={setCanvasFill} onAnchor={setCanvasAnchor} /><p className="mt-3 text-xs text-gray-600">Prepared JPG canvas: {canvasWidth && canvasHeight ? `${canvasWidth.toLocaleString()} × ${canvasHeight.toLocaleString()} px at ${canvasDpi} DPI` : 'Select a raster version to calculate size'}</p>{tooLarge && <p className="mt-2 text-sm font-semibold text-red-700">This resized image exceeds the 64 MP limit. Choose smaller image dimensions before creating output.</p>}</>}</section>
+      <section className="border-t pt-4"><StageHeader title="3. Output files" expanded={expandedStage === 'outputs'} onToggle={() => setExpandedStage((current) => current === 'outputs' ? null : 'outputs')} />{expandedStage === 'outputs' && <p className="mt-1 text-xs text-gray-600">Check the image formats to create or recreate in the Image Review panel, then choose <strong>Create Selected Images</strong>. The Output Folder button appears above the preview.</p>}</section>
+      <section className="border-t pt-4"><StageHeader title="4. Vectorizer tuning" expanded={expandedStage === 'vectorizer'} onToggle={() => setExpandedStage((current) => current === 'vectorizer' ? null : 'vectorizer')} />{expandedStage === 'vectorizer' && <><section className="mb-4 rounded border bg-gray-50 p-3"><div className="flex items-center justify-between"><h3 className="font-semibold">Control presets</h3><button type="button" onClick={() => setPresetDialogOpen(true)} title="Save the current vectorizer controls with a name and description." className="rounded border bg-white px-2 py-1 text-xs font-semibold">Save Set</button></div><select value={selectedPresetId} onChange={(event) => void applyPreset(event.target.value)} title={presets.find((preset) => preset.id === selectedPresetId)?.description || 'Select a named set of vectorizer controls.'} className="mt-2 w-full rounded border p-2 text-sm"><option value="">Choose a saved preset…</option>{presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}{preset.description ? ` — ${preset.description}` : ''}</option>)}</select>{presets.length === 0 ? <p className="mt-2 text-xs text-gray-500">Save a set after adjusting the vectorizer controls below.</p> : <div className="mt-2 space-y-1">{presets.map((preset) => <button key={preset.id} type="button" title={preset.description || 'No description supplied.'} onClick={() => void applyPreset(preset.id)} className={`block w-full truncate rounded px-2 py-1 text-left text-xs hover:bg-white ${selectedPresetId === preset.id ? 'bg-blue-50 font-semibold' : ''}`}>{preset.name}<span className="ml-1 text-gray-500">{preset.description || 'No description'}</span></button>)}</div>}</section><label title="Single color produces one clean color and is usually best for line art. Color mode retains multiple source colors but can create many more paths." className="block text-sm font-semibold">Color mode<select value={settings.colorMode} onChange={(event) => update('colorMode', event.target.value as TuneSettings['colorMode'])} className="mt-1 w-full rounded border p-2"><option value="binary">Single color</option><option value="color">Color</option></select></label>{settings.colorMode === 'binary' && <><label title="Sets the fill and stroke color of a single-color vector trace. It changes the SVG appearance, not the JPG used for tracing." className="mt-3 flex items-center justify-between text-sm font-semibold">Trace color<input type="color" value={settings.binaryTraceColor} onChange={(event) => update('binaryTraceColor', event.target.value)} className="h-9 w-14 rounded border p-1" /></label><label title="Adds visible width to the single-color vector paths. Use a small value to make thin traced lines easier to see; too much can close small gaps." className="mt-3 block text-sm font-semibold">Trace thickness: {settings.traceThicknessPx}px<input type="range" min="0" max="20" step="0.5" value={settings.traceThicknessPx} onChange={(event) => update('traceThicknessPx', Number(event.target.value))} className="mt-1 w-full" /></label></>}<div className="mt-3 space-y-3">{TUNERS.map((tuner) => <label key={tuner.key} title={tuner.help} className="block text-sm font-semibold">{tuner.label}: {settings[tuner.key]}<input type="range" min={tuner.min} max={tuner.max} step={tuner.step ?? 1} value={settings[tuner.key]} onChange={(event) => update(tuner.key, Number(event.target.value))} className="mt-1 w-full" /></label>)}</div><section className="border-t pt-4"><label title="This status is recorded automatically when SVG is checked and you choose Create Selected Images. Needs Vector Edit keeps the saved SVG available for later finishing." className="block text-sm font-semibold">Vector result<select value={reviewStatus} onChange={(event) => setReviewStatus(event.target.value as 'APPROVED' | 'NEEDS_VECTOR_EDIT')} className="mt-1 w-full rounded border p-2"><option value="APPROVED">Good — Vector result</option><option value="NEEDS_VECTOR_EDIT">Needs Vector Edit</option></select></label><p className="mt-3 text-xs text-gray-600">Check SVG above, then choose <strong>Create Selected Images</strong> to generate and save the vector result automatically. Saved SVG: {savedOutputs.svg ? 'available' : 'not saved'}.</p></section></>}</section>
     </aside></main>
     {presetDialogOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl"><h2 className="font-bold">Save control setting preset</h2><p className="mt-1 text-sm text-gray-600">Save the current raster preparation and vectorizer settings with a name and description.</p><label className="mt-4 block text-sm font-semibold">Name<input autoFocus value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="For example: Clean black line art" className="mt-1 w-full rounded border p-2" /></label><label className="mt-3 block text-sm font-semibold">Description<textarea value={presetDescription} onChange={(event) => setPresetDescription(event.target.value)} placeholder="What images this works best for and why" className="mt-1 min-h-24 w-full rounded border p-2" /></label><div className="mt-5 flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => setPresetDialogOpen(false)} className="rounded border px-3 py-2">Cancel</button><button type="button" disabled={busy || !presetName.trim()} onClick={() => void savePreset()} className="rounded bg-blue-600 px-3 py-2 font-semibold text-white disabled:opacity-50">Save Set</button></div></div></div>}
   </div>;

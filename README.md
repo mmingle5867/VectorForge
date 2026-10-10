@@ -46,6 +46,8 @@ Edit `.env.local` with your actual values:
 |----------|-------------|
 | `DATABASE_URL` | Local or managed PostgreSQL connection string |
 | `SEMA_CORE_URL` | Shared local SEMA Core Host URL (default: `http://127.0.0.1:4310`) |
+| `SEMA_CORE_APPLICATION_KEY` | Registered Foundation application key (default: `vectorforge`) |
+| `SEMA_APPLICATION_SECRET` | Private VectorForge service credential; set during the SEMA policy cutover |
 | `LOCAL_AUTH_ENABLED` | Set `true` for local desktop use without Clerk |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Optional, from Clerk dashboard |
 | `CLERK_SECRET_KEY` | Optional, from Clerk dashboard |

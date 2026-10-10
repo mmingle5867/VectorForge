@@ -83,7 +83,11 @@ function outputBaseName(value: string | null | undefined) {
     .replace(/-(?:edit|working)-v\d+$/i, '')
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
     .trim();
-  return base || null;
+  // Preview is an internal/generated name, never an appropriate durable
+  // customer output name. Existing artwork that inherited it will fall back
+  // to its artwork title on the next approved output.
+  if (!base || /^(preview|image|output|untitled)$/i.test(base)) return null;
+  return base;
 }
 
 /** Approve one direct artwork. No Batch, package, marketplace, ZIP, or listing records are created. */

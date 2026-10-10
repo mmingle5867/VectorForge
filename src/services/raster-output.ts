@@ -33,7 +33,7 @@ function parseMaskColor(value: string | undefined) {
   return { r: Number.parseInt(normalized.slice(0, 2), 16), g: Number.parseInt(normalized.slice(2, 4), 16), b: Number.parseInt(normalized.slice(4, 6), 16) };
 }
 
-async function createPngMask(image: sharp.Sharp, target: string, dpi: number, color: string | undefined) {
+async function createPngMask(image: ReturnType<typeof sharp>, target: string, dpi: number, color: string | undefined) {
   const { data, info } = await image.clone().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const mask = parseMaskColor(color);
   for (let index = 0; index < data.length; index += info.channels) {

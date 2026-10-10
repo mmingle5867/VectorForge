@@ -10,7 +10,7 @@ type TuneSettings = { colorMode: 'color' | 'binary'; binaryTraceColor: string; t
 type NumericSetting = Exclude<keyof TuneSettings, 'colorMode' | 'binaryTraceColor'>;
 type PreviewKind = 'svg' | 'png' | 'pngMask' | 'jpg' | 'pdf';
 type SavedOutputs = { svg: boolean; png: boolean; jpg: boolean };
-type OutputFile = { format: string; filePath: string; kind: string; sourceWorkingFile: string | null; assetVersionId: string };
+type OutputFile = { format: string; filePath: string; kind: string; displayName?: string; physicalFilename?: string; sourceWorkingFile: string | null; assetVersionId: string };
 type ControlPreset = { id: string; name: string; description: string; settings: Partial<TuneSettings>; rasterPreparation: { blur: number; upscaleFactor: number } };
 
 const DEFAULT_SETTINGS: TuneSettings = { colorMode: 'binary', binaryTraceColor: '#000000', traceThicknessPx: 0, preUpscaleBlur: 0, blur: 0, blurPasses: 1, rasterSourcePaddingPx: 20, svgCanvasPaddingPx: 20, exportCanvasPaddingPx: 0, pathPrecision: 3, cornerThreshold: 70, filterSpeckle: 6, lengthThreshold: 4, spliceThreshold: 45, colorPrecision: 6, layerDifference: 16 };

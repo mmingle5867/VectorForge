@@ -10,10 +10,11 @@ export interface CoreExecution { id: string; commandId: string; providerId: stri
 function deserializeIdentifier(value: Omit<CoreIdentifier, 'localValue'> & { localValue: string | number | bigint }): CoreIdentifier { return { ...value, localValue: BigInt(value.localValue) }; }
 
 export async function callSemaCoreHost<T>(path: string, init: { method?: 'GET' | 'POST'; body?: unknown; actorId?: string | null } = {}): Promise<T> {
-  // The current loopback Host authorizes its local application transport.
-  // Keep the VectorForge user in the command/audit body, but do not present it
-  // as the Host administrator until per-application Core credentials exist.
-  const response = await fetch(`${config.sema.hostUrl}${path}`, { method: init.method ?? 'GET', headers: { accept: 'application/json', ...(init.body === undefined ? {} : { 'content-type': 'application/json' }) }, body: init.body === undefined ? undefined : JSON.stringify(init.body), cache: 'no-store' });
+  // An empty credential preserves the current Core only during the one-time
+  // staged upgrade. Core policy mode rejects it, so this is never a fallback.
+  // This credential represents the registered VectorForge service. The local
+  // user remains the actor recorded inside each command or audit payload.
+  const response = await fetch(`${config.sema.hostUrl}${path}`, { method: init.method ?? 'GET', headers: { accept: 'application/json', ...(config.sema.applicationSecret ? { 'x-sema-application-key': config.sema.applicationKey, 'x-sema-application-secret': config.sema.applicationSecret } : {}), ...(init.body === undefined ? {} : { 'content-type': 'application/json' }) }, body: init.body === undefined ? undefined : JSON.stringify(init.body), cache: 'no-store' });
   const payload = await response.json().catch(() => null) as T | { error?: { message?: string } } | null;
   if (!response.ok) { const message = payload && typeof payload === 'object' && 'error' in payload ? payload.error?.message : undefined; throw new Error(message || `SEMA Core request failed (${response.status})`); }
   return payload as T;

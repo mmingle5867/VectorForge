@@ -1,6 +1,6 @@
 {
   "name": "vectorforge",
-  "version": "0.71.2",
+  "version": "0.71.6",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -29,7 +29,7 @@
     "worker:dev": "tsx watch src/workers/processing-worker-bootstrap.ts"
   },
   "dependencies": {
-    "@clerk/nextjs": "6.9.15",
+    "@clerk/nextjs": "^6.39.7",
     "@prisma/client": "^5.10.0",
     "@radix-ui/react-alert-dialog": "^1.0.5",
     "@radix-ui/react-dialog": "^1.0.5",
@@ -53,13 +53,13 @@
     "ioredis": "^5.3.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.344.0",
-    "next": "15.0.0",
+    "next": "^15.5.27",
     "pdf-lib": "^1.17.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-dropzone": "^14.2.3",
-    "sharp": "^0.33.2",
-    "svgo": "^3.2.0",
+    "sharp": "^0.35.5",
+    "svgo": "^4.1.0",
     "svix": "^1.15.0",
     "tailwind-merge": "^2.2.1",
     "tailwindcss-animate": "^1.0.7",

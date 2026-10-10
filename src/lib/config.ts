@@ -14,6 +14,8 @@ export const config = {
     // SEMA_INSTALLATION_CODE name is accepted only as a configuration alias.
     installationId: process.env.SEMA_INSTALLATION_ID || process.env.SEMA_INSTALLATION_CODE || '3',
     hostUrl: (process.env.SEMA_CORE_URL || 'http://127.0.0.1:4310').replace(/\/$/, ''),
+    applicationKey: process.env.SEMA_APPLICATION_KEY || process.env.SEMA_CORE_APPLICATION_KEY || 'vectorforge',
+    applicationSecret: process.env.SEMA_APPLICATION_SECRET || process.env.SEMA_CORE_APPLICATION_SECRET || '',
   },
 
   identity: {

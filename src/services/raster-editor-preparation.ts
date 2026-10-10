@@ -473,6 +473,11 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
     catch { return { width: null, height: null }; }
   };
   const originalPath = originalAsset?.filePath ?? null;
+  const logicalOutputBaseName = (() => {
+    const candidate = artwork.outputBaseName || artwork.title || 'artwork';
+    const base = path.parse(path.basename(candidate)).name.trim();
+    return /^(preview|image|output|untitled)$/i.test(base) ? (artwork.title || 'artwork') : base;
+  })();
   const availableVersions = (await Promise.all(versions.map(async (version) => {
     const filePath = directVersionPath(version);
     return {
@@ -497,7 +502,9 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
     outputFiles: savedOutputAssets
       .filter((asset) => Boolean(asset.filePath) && Boolean(asset.versions[0]?.assetVersionId))
       .map((asset) => ({
-        format: directOutputFormat(asset.role), filePath: asset.filePath!, kind: directOutputKind(asset.role),
+        format: directOutputFormat(asset.role), filePath: `${logicalOutputBaseName}${path.extname(asset.filePath!)}${path.basename(asset.filePath!) === `${logicalOutputBaseName}${path.extname(asset.filePath!)}` ? '' : ` (stored as ${path.basename(asset.filePath!)})`}`, kind: directOutputKind(asset.role),
+        displayName: `${logicalOutputBaseName}${path.extname(asset.filePath!)}`,
+        physicalFilename: path.basename(asset.filePath!),
         sourceWorkingFile: metadataValue(asset.metadata, 'sourceWorkingFile'),
         assetVersionId: asset.versions[0].assetVersionId,
       })),

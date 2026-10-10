@@ -170,11 +170,14 @@ export interface TunedSvgInput {
   sourcePath?: string | null;
 }
 
+type SharpInstance = ReturnType<typeof sharp>;
+type SharpMetadata = Awaited<ReturnType<SharpInstance['metadata']>>;
+
 function getTraceInputDiagnostics(
   rgbaData: Buffer,
   width: number,
   height: number,
-  sourceMetadata: sharp.Metadata,
+  sourceMetadata: SharpMetadata,
   alphaMatteApplied: boolean,
   alphaDiagnostics?: {
     alphaThreshold: number;
@@ -278,8 +281,8 @@ function getAlphaDiagnosticsBeforeMatte(
 }
 
 async function prepareTraceRgbaData(
-  sharpImage: sharp.Sharp,
-  sourceMetadata: sharp.Metadata
+  sharpImage: SharpInstance,
+  sourceMetadata: SharpMetadata
 ) {
   if (!sourceMetadata.hasAlpha) {
     const extended = sharpImage.extend({

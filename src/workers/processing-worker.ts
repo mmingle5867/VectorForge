@@ -10,7 +10,7 @@ import 'dotenv/config';
 import { Worker, Job } from 'bullmq';
 import { mkdir, readFile } from 'fs/promises';
 import path from 'path';
-import { redisConnection, type ProcessingJobData, enqueueZipJob } from '../lib/queue';
+import { redisConnection, type ProcessingJobData } from '../lib/queue';
 import { serializeError } from '../lib/error-utils';
 import prisma from '../lib/prisma';
 import { logger } from '../lib/logger';
@@ -28,8 +28,9 @@ import { exportImportedSvgPackage } from '../services/svg-import-export';
 import { upsertGeneratedAssetsForBatchItem } from '../services/sema-identity';
 import { getIncrementalFolderName } from '../lib/server-utils';
 import { settingsToConversionOptions } from '../lib/vtracer-presets';
-import { completeCoreExecution, createCoreCommand, startCoreExecution } from '../services/sema-core';
+import { completeCoreExecution, createCoreCommand, startCoreExecution, type CoreExecution } from '../services/sema-core';
 import config from '../lib/config';
+import { resolveSemaAccessContext } from '../services/sema-access-context';
 
 const PROCESSING_QUEUE_NAME = `${config.identity.slug}-processing`;
 
@@ -49,18 +50,39 @@ const processingWorker = new Worker<ProcessingJobData>(
       baseName: data.baseName,
     });
 
-    let coreExecutionId: string | null = null;
+    let coreExecution: CoreExecution | null = null;
     try {
+      // Resolve and verify the job against the same explicit user/workspace
+      // context used by foreground commands. Legacy job producers may omit
+      // scope fields temporarily; the persisted Batch remains authoritative.
+      const batchScope = await prisma.batch.findUniqueOrThrow({
+        where: { id: data.batchId },
+        select: { userId: true, workspaceId: true },
+      });
+      if (batchScope.userId !== data.userId) {
+        throw new Error('Processing job user does not match its batch owner');
+      }
+      const accessContext = await resolveSemaAccessContext({
+        userId: data.userId,
+        profileId: data.profileId,
+        workspaceId: data.workspaceId || batchScope.workspaceId || undefined,
+      });
+      if (batchScope.workspaceId && batchScope.workspaceId !== accessContext.workspaceId) {
+        throw new Error('Processing job workspace does not match its batch scope');
+      }
+
       const coreCommand = await createCoreCommand({
         commandType: 'vectorforge.artwork.process',
+        actorId: accessContext.userId,
+        workspaceId: accessContext.workspaceId,
+        context: { profileId: accessContext.profileId, workspaceMembershipId: accessContext.workspaceMembershipId, role: accessContext.role },
         subjectIds: [data.batchId, data.batchItemId],
         payload: { queueJobId: job.id ?? null, baseName: data.baseName },
       });
-      const coreExecution = await startCoreExecution({
+      coreExecution = await startCoreExecution({
         commandId: coreCommand.id,
         providerId: 'vectorforge.local.processing-worker',
       });
-      coreExecutionId = coreExecution.id;
       // ====================================================================
       // Step 1: Update status to UPSCALING
       // ====================================================================
@@ -159,7 +181,7 @@ const processingWorker = new Worker<ProcessingJobData>(
         });
 
         await completeCoreExecution({
-          executionId: coreExecutionId,
+          execution: coreExecution,
           status: 'SUCCESS',
           resultType: 'vectorforge.processing.completed',
           subjectIds: [data.batchId, data.batchItemId],
@@ -356,7 +378,7 @@ const processingWorker = new Worker<ProcessingJobData>(
       });
 
       await completeCoreExecution({
-        executionId: coreExecutionId,
+        execution: coreExecution,
         status: 'SUCCESS',
         resultType: 'vectorforge.processing.completed',
         subjectIds: [data.batchId, data.batchItemId],
@@ -401,9 +423,9 @@ const processingWorker = new Worker<ProcessingJobData>(
         processingTimeMs: processingTime,
       });
 
-      if (coreExecutionId) {
+      if (coreExecution) {
         await completeCoreExecution({
-          executionId: coreExecutionId,
+          execution: coreExecution,
           status: 'FAILED',
           resultType: 'vectorforge.processing.failed',
           subjectIds: [data.batchId, data.batchItemId],
@@ -436,7 +458,7 @@ async function updateItemStatus(
 ) {
   await prisma.batchItem.update({
     where: { id: itemId },
-    data: { status: status as any, progress, currentStep },
+    data: { status: status as never, progress, currentStep },
   });
 }
 
@@ -460,7 +482,7 @@ async function updateBatchProgress(batchId: string) {
       failedItems: failed,
       status: allDone
         ? needsManualEdit > 0
-          ? 'NEEDS_MANUAL_EDIT' as any
+          ? 'NEEDS_MANUAL_EDIT' as never
           : failed === total
           ? 'FAILED'
           : 'COMPLETED'

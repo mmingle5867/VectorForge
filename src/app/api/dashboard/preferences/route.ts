@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 
 import { requireAuth } from '@/lib/auth';
 import { ensureOwnerAndWorkspace } from '@/services/sema-identity';
@@ -36,17 +37,20 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const user = await requireAuth();
-    const body = await req.json();
-    if (body.viewMode && !VIEW_MODES.includes(body.viewMode)) {
+    const body: { viewMode?: unknown; expandedCategoryIds?: unknown; selectedCategoryIds?: unknown; includeDescendants?: unknown; filters?: unknown; sorting?: unknown } = await req.json();
+    if (body.viewMode !== undefined && (typeof body.viewMode !== 'string' || !VIEW_MODES.includes(body.viewMode as typeof VIEW_MODES[number]))) {
       return NextResponse.json({ success: false, error: 'Invalid view mode' }, { status: 400 });
     }
     const { profile, workspace } = await context(user.id);
     const preference = await saveDashboardPreference({
       profileId: profile.id,
       workspaceId: workspace.id,
-      viewMode: body.viewMode,
-      filters: body.filters,
-      sorting: body.sorting,
+      viewMode: body.viewMode as typeof VIEW_MODES[number] | undefined,
+      expandedCategoryIds: Array.isArray(body.expandedCategoryIds) ? body.expandedCategoryIds.filter((id: unknown): id is string => typeof id === 'string') : undefined,
+      selectedCategoryIds: Array.isArray(body.selectedCategoryIds) ? body.selectedCategoryIds.filter((id: unknown): id is string => typeof id === 'string') : undefined,
+      includeDescendants: typeof body.includeDescendants === 'boolean' ? body.includeDescendants : undefined,
+      filters: body.filters as Prisma.InputJsonValue | undefined,
+      sorting: body.sorting as Prisma.InputJsonValue | undefined,
     });
     return NextResponse.json({ success: true, preference });
   } catch (error) {

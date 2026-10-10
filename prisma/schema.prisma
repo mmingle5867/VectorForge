@@ -38,14 +38,50 @@ model SemaIssuedIdentifier {
   localValue      BigInt
   localCode       String
   typeCode        String?
+  reservationId   String?
+  status          String   @default("ISSUED")
+  consumedAt      DateTime?
   issuedAt        DateTime @default(now())
   metadata        Json     @default("{}")
+  reservation     SemaIdentifierReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
 
   @@unique([installationId, localValue])
   @@index([installationId, localCode])
   @@index([typeCode])
   @@index([issuedAt])
+  @@index([reservationId, status])
   @@map("sema_issued_identifiers")
+}
+
+model SemaIdentifierReservation {
+  id              String   @id
+  installationId  String
+  firstLocalValue BigInt
+  count           Int
+  typeCode        String?
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now())
+
+  identifiers     SemaIssuedIdentifier[]
+
+  @@index([installationId, createdAt])
+  @@map("sema_identifier_reservations")
+}
+
+model SemaCoreHostSettings {
+  settingsKey               String   @id @default("PRIMARY")
+  installationId            String   @unique
+  revision                  Int      @default(1)
+  maxReservationSize        Int      @default(100)
+  auditRetentionDays        Int      @default(3650)
+  eventRetentionDays        Int      @default(3650)
+  capabilityAutoFallback    Boolean  @default(true)
+  documentationEnabled      Boolean  @default(true)
+  updatedById               String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("sema_core_host_settings")
 }
 
 model SemaCoreCommand {
@@ -176,7 +212,9 @@ model User {
   settings UserSettings?
   artworks Artwork[]
   owner    Owner?
-  profiles SemaProfile[]
+  profiles             SemaProfile[]
+  workspaceMemberships WorkspaceMembership[]
+  projectMemberships   ProjectMembership[]
 
   @@map("users")
 }
@@ -398,6 +436,9 @@ model Artwork {
   artworkNumber   String        @unique
   numericSequence Int
   title           String
+  /// Stable human-facing base used for completed SVG/PNG/JPG filenames.
+  /// Working raster version filenames never change this value.
+  outputBaseName  String?
   sourceItemId    String?
   status          ArtworkStatus @default(ACTIVE)
   createdAt       DateTime      @default(now())
@@ -456,6 +497,65 @@ model ProductVariant {
 }
 
 // =============================================================================
+// Multi-user access foundation
+// =============================================================================
+
+model WorkspaceMembership {
+  id          String                  @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole           @default(MEMBER)
+  status      WorkspaceMemberStatus   @default(ACTIVE)
+  grantedById String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId, status])
+  @@index([workspaceId, status])
+  @@map("workspace_memberships")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  projectId   String
+  workspaceId String
+  name        String
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   ProjectMembership[]
+
+  @@unique([workspaceId, projectId])
+  @@index([workspaceId, status])
+  @@map("projects")
+}
+
+model ProjectMembership {
+  id          String                  @id @default(cuid())
+  projectId   String
+  userId      String
+  role        WorkspaceRole           @default(MEMBER)
+  status      WorkspaceMemberStatus   @default(ACTIVE)
+  grantedById String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId, status])
+  @@index([projectId, status])
+  @@map("project_memberships")
+}
+
+// =============================================================================
 // SEMA Foundation Models
 // =============================================================================
 
@@ -499,6 +599,8 @@ model Workspace {
   storageLocations     StorageLocation[]
   categories           Category[]
   dashboardPreferences DashboardPreference[]
+  memberships          WorkspaceMembership[]
+  projects             Project[]
 
   @@unique([ownerId, workspaceId])
   @@index([ownerId])
@@ -646,8 +748,9 @@ model SemaProfile {
   profileId   String            @unique
   userId      String
   displayName String
-  isDefault   Boolean           @default(false)
-  status      SemaProfileStatus @default(ACTIVE)
+  isDefault         Boolean           @default(false)
+  activeWorkspaceId String?
+  status            SemaProfileStatus @default(ACTIVE)
   metadata    Json              @default("{}")
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -920,6 +1023,19 @@ enum DocumentStatus {
   ACTIVE
   RETIRED
   VOIDED
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMINISTRATOR
+  MEMBER
+  VIEWER
+}
+
+enum WorkspaceMemberStatus {
+  ACTIVE
+  DISABLED
+  REMOVED
 }
 
 enum SemaProfileStatus {

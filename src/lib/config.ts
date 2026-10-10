@@ -13,6 +13,7 @@ export const config = {
     // The permanent root InstallationID for this initial local Core. The old
     // SEMA_INSTALLATION_CODE name is accepted only as a configuration alias.
     installationId: process.env.SEMA_INSTALLATION_ID || process.env.SEMA_INSTALLATION_CODE || '3',
+    hostUrl: (process.env.SEMA_CORE_URL || 'http://127.0.0.1:4310').replace(/\/$/, ''),
   },
 
   identity: {

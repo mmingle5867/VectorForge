@@ -239,6 +239,7 @@ export async function createArtworkSemaContext(input: {
         workspaceId: workspace.id,
         itemId: item.id,
         title: input.title,
+        outputBaseName: input.title,
       },
     });
     const common = {

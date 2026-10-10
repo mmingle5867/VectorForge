@@ -6,7 +6,7 @@ import { withArtworkMutationLock } from '@/lib/artwork-mutation-lock';
 import prisma from '@/lib/prisma';
 import { semaLocalToken } from '@/lib/sema-id';
 import { reserveAvailableDirectoryName, reserveAvailableNumberedDirectoryName } from '@/services/artwork-ingest';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 
 function safeBaseName(value: string) {
   const result = value.trim().replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-').replace(/[. ]+$/g, '').slice(0, 160);
@@ -109,7 +109,7 @@ export async function renameDirectArtwork(input: { userId: string; artworkId: st
     const remap = (value: string | null) => remapPathWithinDirectory(value, directory, target, relativeRenames);
     try {
       await prisma.$transaction(async (tx) => {
-        await tx.artwork.update({ where: { id: artwork.id }, data: { title: allocated } });
+        await tx.artwork.update({ where: { id: artwork.id }, data: { title: allocated, outputBaseName: allocated } });
         if (artwork.item) await tx.item.update({ where: { id: artwork.item.id }, data: { title: allocated } });
         for (const asset of artwork.assets) {
           const filePath = remap(asset.filePath);
@@ -120,11 +120,11 @@ export async function renameDirectArtwork(input: { userId: string; artworkId: st
             if (next && next !== absolute) await tx.assetLocation.update({ where: { id: location.id }, data: { relativePath: path.relative(location.storageLocation.basePath, next).split(path.sep).join('/') } });
           }
         }
-        await tx.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+        await setCoreCommandStatus(command.id, 'SUCCESS');
       });
     } catch (error) {
       await rm(target, { recursive: true, force: true });
-      await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+      await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
       throw error;
     }
     await rm(directory, { recursive: true, force: true });
@@ -206,11 +206,11 @@ export async function deleteDirectArtwork(input: { userId: string; artworkId: st
         }
         if (artwork.item) { await tx.itemCategory.deleteMany({ where: { itemId: artwork.item.id } }); await tx.item.update({ where: { id: artwork.item.id }, data: { status: 'RETIRED' } }); }
         await tx.artwork.update({ where: { id: artwork.id }, data: { status: 'RETIRED' } });
-        await tx.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+        await setCoreCommandStatus(command.id, 'SUCCESS');
       });
     } catch (error) {
       await rename(trash, directory).catch(() => undefined);
-      await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+      await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
       throw error;
     }
     return { recoverableTrashPath: trash };

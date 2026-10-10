@@ -45,6 +45,7 @@ Edit `.env.local` with your actual values:
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | Local or managed PostgreSQL connection string |
+| `SEMA_CORE_URL` | Shared local SEMA Core Host URL (default: `http://127.0.0.1:4310`) |
 | `LOCAL_AUTH_ENABLED` | Set `true` for local desktop use without Clerk |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Optional, from Clerk dashboard |
 | `CLERK_SECRET_KEY` | Optional, from Clerk dashboard |
@@ -105,6 +106,16 @@ On Windows, you can also use the desktop launcher:
 - `Start VectorForge.bat`
 
 Local-first and SEMA identity rules are documented in [docs/SEMA_FOUNDATION.md](docs/SEMA_FOUNDATION.md).
+
+## Resource Facility publishing
+
+After finalizing approved artwork outputs, use **View Files and/or Publish to Resource Facility** on the artwork review page. Only approved outputs are copied to the Foundation Resource Facility; originals, working images, private paths, and the VectorForge database remain private. Publishing intentionally creates no ListingForge, user, group, or workspace grant until those SEMA identities and access rules have been defined.
+
+## Output folders and approved-file history
+
+- **Open Output Folder** remains available whenever this artwork has a current approved or completed output, including SVG, JPG, PNG, PNG Mask, and PDF.
+- **Open Export Folder** remembers the last export destination across restarts.
+- **View Files and/or Publish to Resource Facility** lists the current approved or completed output files, lets you select any combination, and publishes only those selections to the Resource Facility. It includes Select All/Deselect All and shows the working-file version that produced each output. Outputs created by earlier VectorForge releases remain listed; their source working file is shown as not recorded when that information was not available.
 
 ## Background Jobs (BullMQ + Redis)
 

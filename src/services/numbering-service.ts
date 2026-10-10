@@ -1,8 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
-import {
-  issueSemaIdentifierInTransaction,
-} from '@/services/sema-core-identity';
+import { consumeReservedSemaIdentifier, reserveSemaIdentifiers } from '@/services/sema-core-identity';
 
 const DEFAULT_SEQUENCES = [
   { sequenceKey: 'artwork', label: 'Artwork', prefix: 'ART', paddingLength: 6, startingNumber: 1 },
@@ -179,7 +177,19 @@ export async function ensureArtworkIdentityForBatchItem(input: {
   // artwork/digital friendly-number sequences are deliberately not consulted.
   // `numericSequence` remains a compatibility column for existing records and
   // is not an identity or allocator for newly created records.
-  return prisma.$transaction(async (tx) => {
+  // Core cannot participate in VectorForge's private PostgreSQL transaction.
+  // Reserve only the IDs that the current state may need, then consume those
+  // actually used after the VectorForge write commits. A concurrent caller may
+  // leave an unused Core reservation, which is permanent by design and never
+  // re-enters the allocator.
+  const preflight = await prisma.batchItem.findUnique({ where: { id: input.itemId }, include: { artwork: true, assetProfile: true } });
+  if (!preflight || preflight.batchId !== input.batchId) throw new Error('Batch item not found for artwork identity assignment');
+  const artworkReservation = preflight.artwork ? null : await reserveSemaIdentifiers(1, 'ART', { purpose: 'artwork' });
+  const profileReservation = preflight.assetProfile ? null : await reserveSemaIdentifiers(1, 'PRF', { purpose: 'digital-asset-profile' });
+  let consumedArtwork: { reservationId: string; id: string } | null = null;
+  let consumedProfile: { reservationId: string; id: string } | null = null;
+
+  const outcome = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`
       SELECT id FROM "batch_items"
       WHERE id = ${input.itemId}
@@ -205,19 +215,17 @@ export async function ensureArtworkIdentityForBatchItem(input: {
       item.profileNumber
     ) {
       return {
-        artworkId: item.artworkId,
-        assetProfileId: item.assetProfileId,
-        artworkNumber: item.artworkNumber,
-        profileNumber: item.profileNumber,
+        result: { artworkId: item.artworkId, assetProfileId: item.assetProfileId, artworkNumber: item.artworkNumber, profileNumber: item.profileNumber },
+        consumption: { artwork: null, profile: null },
       };
     }
 
     let artwork = item.artwork;
 
     if (!artwork) {
-      const artworkIdentifier = await issueSemaIdentifierInTransaction(tx, 'ART', {
-        purpose: 'artwork',
-      });
+      const artworkIdentifier = artworkReservation?.identifiers[0];
+      if (!artworkIdentifier) throw new Error('Artwork ID reservation is unavailable; retry the operation');
+      consumedArtwork = { reservationId: artworkReservation!.reservation.id, id: artworkIdentifier.id };
 
       artwork = await tx.artwork.create({
         data: {
@@ -260,9 +268,9 @@ export async function ensureArtworkIdentityForBatchItem(input: {
     }
 
     if (!digitalProfile) {
-      const profileIdentifier = await issueSemaIdentifierInTransaction(tx, 'PRF', {
-        purpose: 'digital-asset-profile',
-      });
+      const profileIdentifier = profileReservation?.identifiers[0];
+      if (!profileIdentifier) throw new Error('Asset profile ID reservation is unavailable; retry the operation');
+      consumedProfile = { reservationId: profileReservation!.reservation.id, id: profileIdentifier.id };
 
       digitalProfile = await tx.assetProfile.create({
         data: {
@@ -285,11 +293,13 @@ export async function ensureArtworkIdentityForBatchItem(input: {
     });
 
     return {
-      artworkId: artwork.id,
-      assetProfileId: digitalProfile.id,
-      artworkNumber: artwork.artworkNumber,
-      profileNumber: digitalProfile.profileNumber,
-      semaItemId: input.semaItemId ?? null,
+      result: { artworkId: artwork.id, assetProfileId: digitalProfile.id, artworkNumber: artwork.artworkNumber, profileNumber: digitalProfile.profileNumber, semaItemId: input.semaItemId ?? null },
+      consumption: { artwork: consumedArtwork, profile: consumedProfile },
     };
   });
+  await Promise.all([
+    outcome.consumption.artwork ? consumeReservedSemaIdentifier(outcome.consumption.artwork.reservationId, outcome.consumption.artwork.id, { purpose: 'artwork' }) : undefined,
+    outcome.consumption.profile ? consumeReservedSemaIdentifier(outcome.consumption.profile.reservationId, outcome.consumption.profile.id, { purpose: 'digital-asset-profile' }) : undefined,
+  ]);
+  return outcome.result;
 }

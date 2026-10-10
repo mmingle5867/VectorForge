@@ -248,6 +248,9 @@ export interface ProcessingJobData {
   batchId: string;
   batchItemId: string;
   userId: string;
+  /** Explicit context fields are optional only while legacy producers are migrated. */
+  profileId?: string;
+  workspaceId?: string;
   originalFilename: string;
   baseName: string;
   uploadPath: string;
@@ -273,6 +276,8 @@ export interface ProcessingJobData {
 export interface ZipJobData {
   batchId: string;
   userId: string;
+  profileId?: string;
+  workspaceId?: string;
   outputBasePath: string;
   batchItemIds: string[];
 }

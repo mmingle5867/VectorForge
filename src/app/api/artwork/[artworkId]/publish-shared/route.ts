@@ -12,6 +12,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ? body.assetVersionIds as string[] : undefined;
     return NextResponse.json({ success: true, ...(await publishArtworkToSharedResources({ artworkId, userId: user.id, assetVersionIds })) });
   } catch (error) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Unable to publish resources to the Facility' }, { status: 400 });
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Unable to publish resources to Foundation Resource' }, { status: 400 });
   }
 }

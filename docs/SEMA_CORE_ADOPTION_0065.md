@@ -1,3 +1,5 @@
+> **Naming update (October 2026).** The layer names were corrected after this note was written. "Foundation" now means widely used *functions* (`sema-foundation`), "Objects" means shared object contracts (`sema-objects`), and the package formerly called Facilities is now `sema-foundation`. Read "Foundation, Facilities" below as "Objects, Foundation" in the original order.
+
 # VectorForge SEMA Core Adoption v0.65.0
 
 ## Purpose

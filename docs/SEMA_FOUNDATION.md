@@ -1,3 +1,5 @@
+> **Naming update (October 2026).** This document uses "Foundation" in its original sense: the shared object model (Owner, Workspace, Item, Artwork, Asset, AssetVersion, StorageLocation, Category). In the current layer names those definitions belong to **SEMA Objects** (`sema-objects`); "Foundation" now means widely used functions. The content is otherwise unchanged and will be reconciled when VectorForge adopts the shared Objects types.
+
 # SEMA Foundation
 
 VectorForge is local-first and SEMA-aligned before further feature development.

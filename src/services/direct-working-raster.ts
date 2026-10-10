@@ -11,7 +11,7 @@ import { createAssetVersion } from '@/services/asset-versions';
 import { createFixedCanvasRaster } from '@/services/raster-export';
 import { getWritableStorageLocationForFile } from '@/services/raster-editor-preparation';
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
 
 type JsonRecord = Record<string, unknown>;
@@ -114,16 +114,14 @@ export async function ensureDirectWorkingJpeg(input: { userId: string; artworkId
       status: 'DRAFT',
       metadata: { role: 'working-jpeg', convertedFrom: sourcePath, jpegReadyForVectorizing: false },
     });
-    await prisma.$transaction([
-      prisma.asset.update({
-        where: { id: workingJpeg.id },
-        data: { filePath: outputPath, mimeType: 'image/jpeg', metadata: { ...metadata, workingFormat: 'JPEG', jpegReadyForVectorizing: false } },
-      }),
-      prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } }),
-    ]);
+    await prisma.asset.update({
+      where: { id: workingJpeg.id },
+      data: { filePath: outputPath, mimeType: 'image/jpeg', metadata: { ...metadata, workingFormat: 'JPEG', jpegReadyForVectorizing: false } },
+    });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { created: true, filePath: outputPath, jpegReady: false };
   } catch (error) {
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+    await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }
@@ -138,7 +136,7 @@ export async function markDirectWorkingJpegReady(input: { userId: string; artwor
   const metadata = asRecord(workingJpeg.metadata);
   await prisma.asset.update({ where: { id: workingJpeg.id }, data: { metadata: { ...metadata, workingFormat: 'JPEG', jpegReadyForVectorizing: true } } });
   const command = await createCoreCommand({ commandType: 'vectorforge.working-jpeg.ready', actorId: input.userId, workspaceId: artwork.workspaceId, subjectIds: [artwork.id, workingJpeg.id] });
-  await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+  await setCoreCommandStatus(command.id, 'SUCCESS');
   return { jpegReady: true, filePath: workingJpeg.filePath, pngCreated: !workingPngExists };
 }
 
@@ -171,10 +169,10 @@ export async function createDirectWorkingPng(input: { userId: string; artworkId:
       relativePath: path.relative(location.basePath, outputPath).split(path.sep).join('/'), sha256: createHash('sha256').update(contents).digest('hex'), byteLength: contents.byteLength,
       mimeType: 'image/png', status: 'DRAFT', metadata: { role: 'working-png', derivedFromWorkingJpeg: workingJpeg.filePath },
     });
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { filePath: outputPath };
   } catch (error) {
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+    await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }

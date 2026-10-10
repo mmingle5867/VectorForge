@@ -10,20 +10,21 @@ import { isHexColor } from '@/lib/tuning-defaults';
 import { semaLocalToken } from '@/lib/sema-id';
 import { createAssetVersion } from '@/services/asset-versions';
 import { getWritableStorageLocationForFile } from '@/services/raster-editor-preparation';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, getCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
 import { createFixedCanvasRaster } from '@/services/raster-export';
 import { previewTuneSchema, type PreviewTuneSettings } from '@/services/tuned-svg';
 
-async function recordApprovedOutput(input: { artwork: { id: string; ownerId: string | null; workspaceId: string | null; itemId: string | null }; role: string; filePath: string; mimeType: string; profileId: string; storageLocationId: string; storageBasePath: string; reviewStatus: 'APPROVED' | 'NEEDS_VECTOR_EDIT' }) {
+async function recordApprovedOutput(input: { artwork: { id: string; ownerId: string | null; workspaceId: string | null; itemId: string | null }; role: string; filePath: string; mimeType: string; profileId: string; storageLocationId: string; storageBasePath: string; reviewStatus: 'APPROVED' | 'NEEDS_VECTOR_EDIT'; sourceWorkingFile: string }) {
   if (!input.artwork.ownerId || !input.artwork.workspaceId || !input.artwork.itemId) throw new Error('Artwork Foundation context is incomplete');
+  const metadata = { approved: true, reviewStatus: input.reviewStatus, sourceWorkingFile: input.sourceWorkingFile };
   let asset = await prisma.asset.findFirst({ where: { artworkId: input.artwork.id, role: input.role, status: 'ACTIVE' } });
   if (!asset) {
     const issued = await issueSemaIdentifier('AST', { purpose: 'approved-artwork-output', role: input.role });
-    asset = await prisma.asset.create({ data: { id: issued.id, assetId: issued.id, ownerId: input.artwork.ownerId, workspaceId: input.artwork.workspaceId, itemId: input.artwork.itemId, artworkId: input.artwork.id, role: input.role, filePath: input.filePath, mimeType: input.mimeType, metadata: { approved: true, reviewStatus: input.reviewStatus } } });
-  } else asset = await prisma.asset.update({ where: { id: asset.id }, data: { filePath: input.filePath, mimeType: input.mimeType, metadata: { approved: true, reviewStatus: input.reviewStatus } } });
+    asset = await prisma.asset.create({ data: { id: issued.id, assetId: issued.id, ownerId: input.artwork.ownerId, workspaceId: input.artwork.workspaceId, itemId: input.artwork.itemId, artworkId: input.artwork.id, role: input.role, filePath: input.filePath, mimeType: input.mimeType, metadata } });
+  } else asset = await prisma.asset.update({ where: { id: asset.id }, data: { filePath: input.filePath, mimeType: input.mimeType, metadata } });
   const contents = await readFile(input.filePath);
-  const version = await createAssetVersion({ assetId: asset.id, createdByProfileId: input.profileId, storageLocationId: input.storageLocationId, relativePath: path.relative(input.storageBasePath, input.filePath).split(path.sep).join('/'), sha256: createHash('sha256').update(contents).digest('hex'), byteLength: contents.byteLength, mimeType: input.mimeType, status: 'APPROVED', verifiedAt: new Date(), metadata: { approvedOutput: true, role: input.role } });
+  const version = await createAssetVersion({ assetId: asset.id, createdByProfileId: input.profileId, storageLocationId: input.storageLocationId, relativePath: path.relative(input.storageBasePath, input.filePath).split(path.sep).join('/'), sha256: createHash('sha256').update(contents).digest('hex'), byteLength: contents.byteLength, mimeType: input.mimeType, status: 'APPROVED', verifiedAt: new Date(), metadata: { approvedOutput: true, role: input.role, sourceWorkingFile: input.sourceWorkingFile } });
   return { asset, version };
 }
 
@@ -82,7 +83,11 @@ function outputBaseName(value: string | null | undefined) {
     .replace(/-(?:edit|working)-v\d+$/i, '')
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
     .trim();
-  return base || null;
+  // Preview is an internal/generated name, never an appropriate durable
+  // customer output name. Existing artwork that inherited it will fall back
+  // to its artwork title on the next approved output.
+  if (!base || /^(preview|image|output|untitled)$/i.test(base)) return null;
+  return base;
 }
 
 /** Approve one direct artwork. No Batch, package, marketplace, ZIP, or listing records are created. */
@@ -105,9 +110,9 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
     const settings: PreviewTuneSettings = previewTuneSchema.parse(input.settings);
     const candidateId = input.candidateId;
     if (typeof candidateId !== 'string' || !/^[A-Za-z0-9-]+$/.test(candidateId)) throw new Error('Generate a vector preview before approving artwork');
-    const candidate = await prisma.semaCoreCommand.findFirst({ where: { id: candidateId, actorId: input.userId, commandType: 'vectorforge.artwork.vector-preview', status: 'SUCCESS' }, select: { subjectIds: true } });
+    const candidate = await getCoreCommand(candidateId);
     const subjectIds = candidate && Array.isArray(candidate.subjectIds) ? candidate.subjectIds : [];
-    if (!candidate || !subjectIds.some((subjectId) => subjectId === artwork.id)) throw new Error('The selected vector preview does not belong to this artwork');
+    if (!candidate || candidate.actorId !== input.userId || candidate.commandType !== 'vectorforge.artwork.vector-preview' || candidate.status !== 'SUCCESS' || !subjectIds.some((subjectId) => subjectId === artwork.id)) throw new Error('The selected vector preview does not belong to this artwork');
     const traceSvgPath = path.join(directory, 'vectorforge', 'vectorized', '.preview', `${candidateId}.svg`);
     const [svg, workingRaster] = await Promise.all([
       readFile(traceSvgPath, 'utf8'),
@@ -165,12 +170,12 @@ export async function approveDirectArtwork(input: { userId: string; artworkId: s
       preserveRasterPixels: true,
     });
     const outputs = await Promise.all([
-      recordApprovedOutput({ artwork, role: 'approved-svg', filePath: svgPath, mimeType: 'image/svg+xml', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus }),
-      recordApprovedOutput({ artwork, role: 'approved-png', filePath: pngPath, mimeType: 'image/png', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus }),
-      recordApprovedOutput({ artwork, role: 'approved-jpg', filePath: jpgPath, mimeType: 'image/jpeg', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus }),
+      recordApprovedOutput({ artwork, role: 'approved-svg', filePath: svgPath, mimeType: 'image/svg+xml', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus, sourceWorkingFile: path.basename(working.filePath) }),
+      recordApprovedOutput({ artwork, role: 'approved-png', filePath: pngPath, mimeType: 'image/png', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus, sourceWorkingFile: path.basename(working.filePath) }),
+      recordApprovedOutput({ artwork, role: 'approved-jpg', filePath: jpgPath, mimeType: 'image/jpeg', profileId: profile.id, storageLocationId: outputLocation.id, storageBasePath: outputLocation.basePath, reviewStatus, sourceWorkingFile: path.basename(working.filePath) }),
     ]);
     await writeFile(manifestPath, `${JSON.stringify({ manifestType: 'VECTORFORGE.ARTWORK', manifestVersion: 3, approvedAt: new Date().toISOString(), reviewStatus, references: { artworkId: artwork.artworkNumber, workingAssetId: working.assetId, approvedAssetIds: outputs.map(({ asset }) => asset.assetId), approvedAssetVersionIds: outputs.map(({ version }) => version.assetVersionId) }, outputs: { svg: path.relative(directory, svgPath), png: path.relative(directory, pngPath), jpg: path.relative(directory, jpgPath) }, tuning: settings }, null, 2)}\n`, 'utf8');
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { svgPath, pngPath, jpgPath, reviewStatus, commandId: command.id };
-  } catch (error) { await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined); throw error; }
+  } catch (error) { await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined); throw error; }
 }

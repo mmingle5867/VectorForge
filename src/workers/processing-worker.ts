@@ -28,7 +28,7 @@ import { exportImportedSvgPackage } from '../services/svg-import-export';
 import { upsertGeneratedAssetsForBatchItem } from '../services/sema-identity';
 import { getIncrementalFolderName } from '../lib/server-utils';
 import { settingsToConversionOptions } from '../lib/vtracer-presets';
-import { completeCoreExecution, createCoreCommand, startCoreExecution } from '../services/sema-core';
+import { completeCoreExecution, createCoreCommand, startCoreExecution, type CoreExecution } from '../services/sema-core';
 import config from '../lib/config';
 import { resolveSemaAccessContext } from '../services/sema-access-context';
 
@@ -50,7 +50,7 @@ const processingWorker = new Worker<ProcessingJobData>(
       baseName: data.baseName,
     });
 
-    let coreExecutionId: string | null = null;
+    let coreExecution: CoreExecution | null = null;
     try {
       // Resolve and verify the job against the same explicit user/workspace
       // context used by foreground commands. Legacy job producers may omit
@@ -79,11 +79,10 @@ const processingWorker = new Worker<ProcessingJobData>(
         subjectIds: [data.batchId, data.batchItemId],
         payload: { queueJobId: job.id ?? null, baseName: data.baseName },
       });
-      const coreExecution = await startCoreExecution({
+      coreExecution = await startCoreExecution({
         commandId: coreCommand.id,
         providerId: 'vectorforge.local.processing-worker',
       });
-      coreExecutionId = coreExecution.id;
       // ====================================================================
       // Step 1: Update status to UPSCALING
       // ====================================================================
@@ -182,7 +181,7 @@ const processingWorker = new Worker<ProcessingJobData>(
         });
 
         await completeCoreExecution({
-          executionId: coreExecutionId,
+          execution: coreExecution,
           status: 'SUCCESS',
           resultType: 'vectorforge.processing.completed',
           subjectIds: [data.batchId, data.batchItemId],
@@ -379,7 +378,7 @@ const processingWorker = new Worker<ProcessingJobData>(
       });
 
       await completeCoreExecution({
-        executionId: coreExecutionId,
+        execution: coreExecution,
         status: 'SUCCESS',
         resultType: 'vectorforge.processing.completed',
         subjectIds: [data.batchId, data.batchItemId],
@@ -424,9 +423,9 @@ const processingWorker = new Worker<ProcessingJobData>(
         processingTimeMs: processingTime,
       });
 
-      if (coreExecutionId) {
+      if (coreExecution) {
         await completeCoreExecution({
-          executionId: coreExecutionId,
+          execution: coreExecution,
           status: 'FAILED',
           resultType: 'vectorforge.processing.failed',
           subjectIds: [data.batchId, data.batchItemId],

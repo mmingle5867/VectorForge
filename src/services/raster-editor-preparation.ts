@@ -10,7 +10,7 @@ import { semaLocalToken } from '@/lib/sema-id';
 import { createAssetVersion } from '@/services/asset-versions';
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
 import { ensureBatchItemSemaContext } from '@/services/sema-identity';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
 import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
@@ -432,6 +432,23 @@ function directVersionPath(version: { locations: Array<{ storageLocation: { base
   return location ? path.resolve(location.storageLocation.basePath, location.relativePath) : null;
 }
 
+function directOutputFormat(role: string) {
+  if (role === 'approved-svg') return 'SVG';
+  if (role === 'approved-png') return 'PNG';
+  if (role === 'approved-jpg') return 'JPG';
+  return role.slice('raster-output-'.length).toUpperCase();
+}
+
+function directOutputKind(role: string) {
+  return role.startsWith('approved-') ? 'Approved artwork output' : 'Approved raster output';
+}
+
+function metadataValue(metadata: unknown, key: string) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
 export async function listDirectRasterWorkingVersions(input: { userId: string; artworkId: string }) {
   const { artwork, sourceAsset, originalAsset } = await getDirectRasterContext(input.userId, input.artworkId);
   const savedOutputAssets = await prisma.asset.findMany({
@@ -440,8 +457,14 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
       status: 'ACTIVE',
       role: { in: ['approved-svg', 'approved-png', 'approved-jpg', 'raster-output-jpg', 'raster-output-png', 'raster-output-png_mask', 'raster-output-pdf'] },
     },
-    select: { role: true, filePath: true },
+    select: {
+      role: true, filePath: true, metadata: true,
+      versions: { where: { status: 'APPROVED' }, orderBy: { versionNumber: 'desc' }, take: 1, select: { assetVersionId: true } },
+    },
   });
+  const settings = await prisma.userSettings.findUnique({ where: { userId: input.userId }, select: { defaultSubstitutions: true } });
+  const settingsRecord = settings?.defaultSubstitutions && typeof settings.defaultSubstitutions === 'object' && !Array.isArray(settings.defaultSubstitutions)
+    ? settings.defaultSubstitutions as Record<string, unknown> : {};
   const versions = await prisma.assetVersion.findMany({ where: { assetId: sourceAsset.id, status: { not: 'RETIRED' } }, orderBy: { versionNumber: 'desc' }, include: { locations: { where: { isPrimary: true }, include: { storageLocation: { select: { basePath: true } } }, take: 1 } } });
   const currentPath = path.resolve(sourceAsset.filePath!);
   const dimensions = async (filePath: string | null) => {
@@ -450,6 +473,11 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
     catch { return { width: null, height: null }; }
   };
   const originalPath = originalAsset?.filePath ?? null;
+  const logicalOutputBaseName = (() => {
+    const candidate = artwork.outputBaseName || artwork.title || 'artwork';
+    const base = path.parse(path.basename(candidate)).name.trim();
+    return /^(preview|image|output|untitled)$/i.test(base) ? (artwork.title || 'artwork') : base;
+  })();
   const availableVersions = (await Promise.all(versions.map(async (version) => {
     const filePath = directVersionPath(version);
     return {
@@ -471,6 +499,17 @@ export async function listDirectRasterWorkingVersions(input: { userId: string; a
     rasterOutputs: savedOutputAssets
       .filter((asset) => asset.role.startsWith('raster-output-') && Boolean(asset.filePath))
       .map((asset) => ({ format: asset.role.slice('raster-output-'.length).toUpperCase(), filePath: asset.filePath! })),
+    outputFiles: savedOutputAssets
+      .filter((asset) => Boolean(asset.filePath) && Boolean(asset.versions[0]?.assetVersionId))
+      .map((asset) => ({
+        format: directOutputFormat(asset.role), filePath: `${logicalOutputBaseName}${path.extname(asset.filePath!)}${path.basename(asset.filePath!) === `${logicalOutputBaseName}${path.extname(asset.filePath!)}` ? '' : ` (stored as ${path.basename(asset.filePath!)})`}`, kind: directOutputKind(asset.role),
+        displayName: `${logicalOutputBaseName}${path.extname(asset.filePath!)}`,
+        physicalFilename: path.basename(asset.filePath!),
+        sourceWorkingFile: metadataValue(asset.metadata, 'sourceWorkingFile'),
+        assetVersionId: asset.versions[0].assetVersionId,
+      })),
+    lastExportDirectory: typeof settingsRecord.lastExportDirectory === 'string' && settingsRecord.lastExportDirectory.trim()
+      ? settingsRecord.lastExportDirectory : null,
   };
 }
 
@@ -532,11 +571,11 @@ export async function prepareDirectRasterForEditor(input: { userId: string; artw
   const versionStorage = await getWritableStorageLocationForFile({ profileId: storage.profile.id, workspaceId: storage.location.workspaceId, defaultLocation: storage.location, filePath: outputPath });
   const version = await createAssetVersion({ assetId: sourceAsset.id, createdByProfileId: storage.profile.id, storageLocationId: versionStorage.id, relativePath: relativeAssetPath(versionStorage.basePath, outputPath), sha256: createHash('sha256').update(contents).digest('hex'), byteLength: contents.byteLength, mimeType: sourceAsset.mimeType, status: 'DRAFT', verifiedAt: new Date(), metadata: { role: 'raster-editor-working-copy', blur, upscaleFactor: factor, derivedFromPath: sourcePath } });
   await prisma.asset.update({ where: { id: sourceAsset.id }, data: { filePath: outputPath } });
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { filePath: outputPath, prepared: true, assetVersionId: version.assetVersionId };
   } catch (error) {
     await rm(temporaryPath, { force: true }).catch(() => undefined);
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+    await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }

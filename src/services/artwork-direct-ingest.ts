@@ -11,7 +11,7 @@ import { createAssetVersion } from '@/services/asset-versions';
 import { reserveAvailableDirectoryName } from '@/services/artwork-ingest';
 import { configureDefaultImportStorageForUser, getVectorForgeStoragePaths } from '@/services/profile-storage';
 import { createArtworkSemaContext } from '@/services/sema-identity';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 
 const SUPPORTED_EXTENSIONS = new Map([
   ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'],
@@ -113,7 +113,7 @@ export async function ingestArtworkDirect(input: { userId: string; files: Direct
         await createAssetVersion({ assetId: context.workingAsset.id, createdByProfileId: storage.profile.id, storageLocationId: storage.location.id, relativePath: relative(storage.location.basePath, workingPath), ...digest, mimeType, status: 'DRAFT', verifiedAt: new Date(), metadata: { role: 'working-copy', derivedFromAssetId: context.originalAsset.assetId } });
         const dimensions = await sharp(workingPath).metadata().catch(() => null);
         await writeFile(layout.manifest, `${JSON.stringify({ manifestType: 'VECTORFORGE.ARTWORK', manifestVersion: 2, references: { itemId: context.item.itemId, artworkId: context.artwork.artworkNumber, originalAssetId: context.originalAsset.assetId, workingAssetId: context.workingAsset.assetId }, files: { original: relative(finalDirectory, originalPath), working: relative(finalDirectory, workingPath) }, dimensions: dimensions ? { width: dimensions.width ?? null, height: dimensions.height ?? null } : null, createdAt: new Date().toISOString() }, null, 2)}\n`);
-        await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+        await setCoreCommandStatus(command.id, 'SUCCESS');
         await unlink(staged.stagedPath).catch(() => undefined);
         files.push({ artworkId: context.artwork.id, itemId: context.item.id, originalFilename: filename, baseName: directoryName, previewUrl: `/api/artwork/${context.artwork.id}/preview` });
       } catch (error) {
@@ -122,10 +122,7 @@ export async function ingestArtworkDirect(input: { userId: string; files: Direct
         await prisma.$transaction(async (tx) => {
           await tx.artwork.delete({ where: { id: context.artwork.id } }).catch(() => undefined);
           await tx.item.delete({ where: { id: context.item.id } }).catch(() => undefined);
-          await tx.semaCoreCommand.update({
-            where: { id: command.id },
-            data: { status: 'FAILED' },
-          }).catch(() => undefined);
+          await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
         }).catch(() => undefined);
         throw error;
       }

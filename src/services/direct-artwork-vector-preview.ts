@@ -6,7 +6,7 @@ import sharp from 'sharp';
 import prisma from '@/lib/prisma';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 import { renderFixedCanvasSvgRaster } from '@/services/raster-export';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, getCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { generateTunedSvg, previewTuneSchema } from '@/services/tuned-svg';
 
 const MAX_VECTOR_PREVIEW_PIXELS = 64_000_000;
@@ -69,22 +69,19 @@ export async function generateDirectArtworkVectorPreview(input: {
     const filePath = candidatePath(directory, command.id);
     await mkdir(path.dirname(filePath), { recursive: true });
     await writeFile(filePath, trace.svg, 'utf8');
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { candidateId: command.id, diagnostics: trace.diagnostics, traceWidth: trace.traceWidth, traceHeight: trace.traceHeight };
   } catch (error) {
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+    await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }
 
 export async function readDirectArtworkVectorPreview(input: { userId: string; artworkId: string; candidateId: string }) {
   const { directory } = await ownedWorkingArtwork(input.userId, input.artworkId);
-  const candidate = await prisma.semaCoreCommand.findFirst({
-    where: { id: input.candidateId, actorId: input.userId, commandType: 'vectorforge.artwork.vector-preview', status: 'SUCCESS' },
-    select: { subjectIds: true },
-  });
+  const candidate = await getCoreCommand(input.candidateId);
   const subjectIds = candidate && Array.isArray(candidate.subjectIds) ? candidate.subjectIds : [];
-  if (!candidate || !subjectIds.some((subjectId) => subjectId === input.artworkId)) throw new Error('Vector preview was not found for this artwork');
+  if (!candidate || candidate.actorId !== input.userId || candidate.commandType !== 'vectorforge.artwork.vector-preview' || candidate.status !== 'SUCCESS' || !subjectIds.some((subjectId) => subjectId === input.artworkId)) throw new Error('Vector preview was not found for this artwork');
   return readFile(candidatePath(directory, input.candidateId), 'utf8');
 }
 

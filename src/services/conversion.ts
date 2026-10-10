@@ -105,7 +105,7 @@ export async function convertToSvg(
     );
 
     // Optimize SVG with SVGO
-    const { optimize } = await import('svgo').then(m => m.default || m);
+    const { optimize } = await import('svgo');
     const optimized = optimize(svgString, {
       multipass: true,
       plugins: [

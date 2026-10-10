@@ -80,7 +80,7 @@ export async function generateMarketplacePreview(
     const sourceHeight = sourceMetadata.height || 1000;
 
     // Step 1: Apply color tint if enabled
-    let processedImage: sharp.Sharp;
+    let processedImage: ReturnType<typeof sharp>;
     if (opts.enableColorTint && opts.tintColor !== '#FFFFFF') {
       const tintOpacity = Math.round(((opts.tintOpacity ?? 20) / 100) * 255);
       const tintHex = opts.tintColor.replace('#', '');

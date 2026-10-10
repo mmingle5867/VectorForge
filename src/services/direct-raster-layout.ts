@@ -11,7 +11,7 @@ import { createAssetVersion } from '@/services/asset-versions';
 import { ensureDirectWorkingJpeg } from '@/services/direct-working-raster';
 import { getWritableStorageLocationForFile, MAX_RASTER_EDITOR_PIXELS } from '@/services/raster-editor-preparation';
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 
 export type CanvasAnchor =
   | 'TOP_LEFT' | 'TOP' | 'TOP_RIGHT'
@@ -163,14 +163,12 @@ export async function prepareDirectRasterLayout(input: { userId: string; artwork
       mimeType: 'image/jpeg', status: 'DRAFT', verifiedAt: new Date(), metadata,
     });
     const sourceMetadata = asRecord(source.metadata);
-    await prisma.$transaction([
-      prisma.asset.update({ where: { id: source.id }, data: { filePath: target, mimeType: 'image/jpeg', metadata: { ...sourceMetadata, workingFormat: 'JPEG', jpegReadyForVectorizing: false } } }),
-      prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } }),
-    ]);
+    await prisma.asset.update({ where: { id: source.id }, data: { filePath: target, mimeType: 'image/jpeg', metadata: { ...sourceMetadata, workingFormat: 'JPEG', jpegReadyForVectorizing: false } } });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { filePath: target, assetVersionId: version.assetVersionId, imageOffset: { left, top } };
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined);
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+    await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }

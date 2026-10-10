@@ -51,6 +51,8 @@ type LayerSourceCandidates = {
   sourceLabel: string;
 };
 
+type SharpBlend = NonNullable<Parameters<ReturnType<typeof sharp>['composite']>[0][number]['blend']>;
+
 function normalizeRelativePath(relativePath: string) {
   return relativePath.split(path.sep).join('/');
 }
@@ -160,7 +162,7 @@ function dimensionTarget(
   };
 }
 
-function sharpFit(fit: CompositeLayerFit | undefined): keyof sharp.FitEnum {
+function sharpFit(fit: CompositeLayerFit | undefined): 'cover' | 'fill' | 'contain' {
   if (fit === 'cover' || fit === 'fill' || fit === 'contain') return fit;
   return 'contain';
 }
@@ -266,7 +268,7 @@ async function renderSupportedLayer(
     input: renderedLayer.buffer,
     left: basePosition.left + Math.round(layer.x || 0),
     top: basePosition.top + Math.round(layer.y || 0),
-    blend: layer.blendMode as sharp.Blend | undefined,
+    blend: layer.blendMode as SharpBlend | undefined,
   };
 }
 

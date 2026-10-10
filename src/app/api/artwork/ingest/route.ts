@@ -9,7 +9,7 @@ import { semaLocalToken } from '@/lib/sema-id';
 import { logger } from '@/lib/logger';
 import { ingestArtworkDirect } from '@/services/artwork-direct-ingest';
 import { configureDefaultImportStorageForUser, getVectorForgeStoragePaths } from '@/services/profile-storage';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 
 export const runtime = 'nodejs';
 
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       const stagedPath = path.join(storagePaths.processing, `.intake-${semaLocalToken(stageCommand.id)}-${safeFilename(file.name)}`);
       await writeFile(stagedPath, Buffer.from(await file.arrayBuffer()), { flag: 'wx' });
       stagedPaths.push(stagedPath);
-      await (await import('@/lib/prisma')).default.semaCoreCommand.update({ where: { id: stageCommand.id }, data: { status: 'SUCCESS' } });
+      await setCoreCommandStatus(stageCommand.id, 'SUCCESS');
       staged.push({ stagedPath, originalFilename: file.name, mimeType: file.type });
     }
     const result = await ingestArtworkDirect({ userId: user.id, files: staged });

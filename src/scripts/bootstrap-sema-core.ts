@@ -2,7 +2,7 @@
 import { getSemaCoreIdentityState } from '../services/sema-core-identity';
 import { registerCoreCapability } from '../services/sema-core';
 import { registerLocalGraphicsCapabilities } from '../capabilities/graphics/registry';
-import prisma from '../lib/prisma';
+import { registerFoundationAssetCatalogCapability } from '../capabilities/foundation-asset-catalog/registry';
 
 const capabilities = [
   ['sema.document.create-text', 'Create Text Document', 'Creates a plain-text or Markdown Document reference.'],
@@ -10,20 +10,8 @@ const capabilities = [
 
 async function main() {
   const state = await getSemaCoreIdentityState();
-  await prisma.semaCoreCapability.updateMany({
-    where: {
-      capabilityKey: {
-        in: [
-          'sema.graphics.smooth-raster',
-          'sema.graphics.upscale-image',
-          'sema.graphics.vectorize-image',
-          'sema.graphics.composite-raster',
-        ],
-      },
-    },
-    data: { status: 'RETIRED' },
-  });
   const graphicsCapabilities = await registerLocalGraphicsCapabilities();
+  await registerFoundationAssetCatalogCapability();
   for (const [capabilityKey, displayName, description] of capabilities) {
     await registerCoreCapability({
       capabilityKey,
@@ -34,7 +22,7 @@ async function main() {
       metadata: { localFirst: true, referenceApplication: 'VectorForge' },
     });
   }
-  console.log(`SEMA Core ${state.installationId} bootstrapped with ${graphicsCapabilities.length + capabilities.length} local capabilities.`);
+  console.log(`SEMA Core ${state.installationId} bootstrapped with ${graphicsCapabilities.length + capabilities.length + 1} local capabilities.`);
 }
 
 main().catch((error) => {

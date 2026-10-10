@@ -10,7 +10,7 @@ import { createAssetVersion } from '@/services/asset-versions';
 import { getWritableStorageLocationForFile } from '@/services/raster-editor-preparation';
 import { exportRasterOutputs, type RasterOutputSpecification } from '@/services/raster-output';
 import { configureDefaultImportStorageForUser } from '@/services/profile-storage';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { issueSemaIdentifier } from '@/services/sema-core-identity';
 import { semaLocalToken } from '@/lib/sema-id';
 import { isHexColor } from '@/lib/tuning-defaults';
@@ -153,6 +153,7 @@ export async function exportDirectArtworkRasterOutputs(input: {
         pixels: { width: result.dimensions.width, height: result.dimensions.height },
         physicalSize: { widthInches: result.dimensions.inchesWide, heightInches: result.dimensions.inchesHigh },
         derivedFromAssetId: source.assetId,
+        sourceWorkingFile: path.basename(source.filePath),
       };
       const asset = existing
         ? await prisma.asset.update({
@@ -177,10 +178,10 @@ export async function exportDirectArtworkRasterOutputs(input: {
       });
       assets.push({ assetId: asset.assetId, format: output.format, path: output.path });
     }
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'SUCCESS' } });
+    await setCoreCommandStatus(command.id, 'SUCCESS');
     return { dimensions: result.dimensions, assets };
   } catch (error) {
-    await prisma.semaCoreCommand.update({ where: { id: command.id }, data: { status: 'FAILED' } }).catch(() => undefined);
+    await setCoreCommandStatus(command.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { getCoreCommand } from '@/services/sema-core';
 import { getManagedArtworkDirectory } from '@/lib/artwork-storage-paths';
 
 const execFileAsync = promisify(execFile);
@@ -88,12 +89,9 @@ async function resolveAssetPath(asset: { id: string; filePath: string | null }) 
 
 async function currentSvgCandidatePath(input: { artworkId: string; userId: string; workingPath: string; candidateId: unknown }) {
   if (typeof input.candidateId !== 'string' || !/^[A-Za-z0-9-]+$/.test(input.candidateId)) return null;
-  const candidate = await prisma.semaCoreCommand.findFirst({
-    where: { id: input.candidateId, actorId: input.userId, commandType: 'vectorforge.artwork.vector-preview', status: 'SUCCESS' },
-    select: { subjectIds: true },
-  });
+  const candidate = await getCoreCommand(input.candidateId);
   const subjects = candidate && Array.isArray(candidate.subjectIds) ? candidate.subjectIds : [];
-  if (!candidate || !subjects.includes(input.artworkId)) return null;
+  if (!candidate || candidate.actorId !== input.userId || candidate.commandType !== 'vectorforge.artwork.vector-preview' || candidate.status !== 'SUCCESS' || !subjects.includes(input.artworkId)) return null;
   const directory = getManagedArtworkDirectory(input.workingPath);
   if (!directory) return null;
   const candidatePath = path.join(directory, 'vectorforge', 'vectorized', '.preview', `${input.candidateId}.svg`);
@@ -105,9 +103,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const user = await requireAuth();
     const { artworkId } = await params;
-    const body = await request.json();
+    const body: { formats?: unknown; candidateId?: unknown } = await request.json();
     const formats = Array.isArray(body.formats)
-      ? [...new Set(body.formats.filter((format): format is ExportFormat => FORMATS.includes(format as ExportFormat)))]
+      ? [...new Set(body.formats.filter((format: unknown): format is ExportFormat => typeof format === 'string' && FORMATS.includes(format as ExportFormat)))]
       : [];
     if (formats.length === 0) return NextResponse.json({ success: false, error: 'Check at least one image format to export.' }, { status: 400 });
 

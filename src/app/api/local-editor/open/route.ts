@@ -201,10 +201,10 @@ export async function POST(req: NextRequest) {
       const artworkId = typeof body.artworkId === 'string' ? body.artworkId : '';
       const artwork = await prisma.artwork.findFirst({
         where: { id: artworkId, userId: user.id, status: 'ACTIVE', batchItems: { none: {} } },
-        include: { assets: { where: { role: { startsWith: 'raster-output-' }, status: 'ACTIVE' }, take: 1 } },
+        include: { assets: { where: { role: { in: ['approved-svg', 'approved-png', 'approved-jpg', 'raster-output-jpg', 'raster-output-png', 'raster-output-png_mask', 'raster-output-pdf'] }, status: 'ACTIVE' }, take: 1 } },
       });
       const output = artwork?.assets[0];
-      if (!output?.filePath) return NextResponse.json({ success: false, error: 'Create an output file before opening its folder' }, { status: 404 });
+      if (!output?.filePath) return NextResponse.json({ success: false, error: 'Create or approve an output file before opening its folder' }, { status: 404 });
       const outputFolder = path.dirname(output.filePath);
       await assertExistingPath(outputFolder, 'directory');
       await openFolder(outputFolder);

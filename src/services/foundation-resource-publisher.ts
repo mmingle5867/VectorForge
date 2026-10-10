@@ -3,8 +3,9 @@ import { resolve } from 'node:path';
 
 import prisma from '@/lib/prisma';
 
-const facilityUrl = () => (process.env.SEMA_RESOURCE_FACILITY_URL ?? 'http://127.0.0.1:4330').replace(/\/$/, '');
-const facilityKey = () => process.env.SEMA_RESOURCE_ADMIN_KEY ?? '';
+// SEMA_RESOURCE_FACILITY_URL is the former name and is still accepted.
+const resourceUrl = () => (process.env.SEMA_RESOURCE_URL ?? process.env.SEMA_RESOURCE_FACILITY_URL ?? 'http://127.0.0.1:4330').replace(/\/$/, '');
+const resourceKey = () => process.env.SEMA_RESOURCE_ADMIN_KEY ?? '';
 
 async function publishVersion(assetVersionId: string, expectedUserId: string) {
   const version = await prisma.assetVersion.findUnique({
@@ -28,10 +29,10 @@ async function publishVersion(assetVersionId: string, expectedUserId: string) {
     mimeType: version.mimeType ?? version.asset.mimeType ?? 'application/octet-stream',
     source: { applicationKey: 'vectorforge', assetId: version.asset.assetId, assetVersionId: version.assetVersionId },
   };
-  const response = await fetch(`${facilityUrl()}/v1/resources/publish`, {
+  const response = await fetch(`${resourceUrl()}/v1/resources/publish`, {
     method: 'POST',
     headers: {
-      'x-sema-admin-key': facilityKey(),
+      'x-sema-admin-key': resourceKey(),
       'x-sema-resource': Buffer.from(JSON.stringify(metadata)).toString('base64url'),
       'content-type': metadata.mimeType,
     },

@@ -107,15 +107,15 @@ On Windows, you can also use the desktop launcher:
 
 Local-first and SEMA identity rules are documented in [docs/SEMA_FOUNDATION.md](docs/SEMA_FOUNDATION.md).
 
-## Resource Facility publishing
+## Foundation Resource publishing
 
-After finalizing approved artwork outputs, use **View Files and/or Publish to Resource Facility** on the artwork review page. Only approved outputs are copied to the Foundation Resource Facility; originals, working images, private paths, and the VectorForge database remain private. Publishing intentionally creates no ListingForge, user, group, or workspace grant until those SEMA identities and access rules have been defined.
+After finalizing approved artwork outputs, use **View Files and/or Publish to Foundation Resource** on the artwork review page. Only approved outputs are copied to the Foundation Resource; originals, working images, private paths, and the VectorForge database remain private. Publishing intentionally creates no ListingForge, user, group, or workspace grant until those SEMA identities and access rules have been defined.
 
 ## Output folders and approved-file history
 
 - **Open Output Folder** remains available whenever this artwork has a current approved or completed output, including SVG, JPG, PNG, PNG Mask, and PDF.
 - **Open Export Folder** remembers the last export destination across restarts.
-- **View Files and/or Publish to Resource Facility** lists the current approved or completed output files, lets you select any combination, and publishes only those selections to the Resource Facility. It includes Select All/Deselect All and shows the working-file version that produced each output. Outputs created by earlier VectorForge releases remain listed; their source working file is shown as not recorded when that information was not available.
+- **View Files and/or Publish to Foundation Resource** lists the current approved or completed output files, lets you select any combination, and publishes only those selections to the Foundation Resource. It includes Select All/Deselect All and shows the working-file version that produced each output. Outputs created by earlier VectorForge releases remain listed; their source working file is shown as not recorded when that information was not available.
 
 ## Background Jobs (BullMQ + Redis)
 

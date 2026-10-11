@@ -258,9 +258,11 @@ export async function prepareRasterForEditor(input: {
     } catch {
       // Legacy artwork may not have an ingest manifest; the database remains authoritative.
     }
+    await setCoreCommandStatus(preparationOperation.id, 'SUCCESS').catch(() => undefined);
     return { filePath: outputPath, prepared: true, assetVersionId: version.assetVersionId };
   } catch (error) {
     await rm(temporaryPath, { force: true }).catch(() => undefined);
+    await setCoreCommandStatus(preparationOperation.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }
@@ -382,19 +384,25 @@ export async function activateRasterWorkingVersion(input: {
   if (!filePath) throw new Error('Selected raster version is unavailable');
   await access(filePath);
 
-  await createCoreCommand({
+  const activation = await createCoreCommand({
     commandType: 'vectorforge.raster.activate-version',
     actorId: input.userId,
     subjectIds: [context.sourceAsset.id],
     payload: { batchId: input.batchId, itemId: input.itemId, versionKey: input.versionKey },
   });
-  await prisma.$transaction([
-    prisma.asset.update({ where: { id: context.sourceAsset.id }, data: { filePath } }),
-    prisma.batchItem.update({
-      where: { id: context.item.id },
-      data: { uploadPath: filePath, upscaleApplied: false, upscaledPath: null, upscaledWidth: null, upscaledHeight: null },
-    }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.asset.update({ where: { id: context.sourceAsset.id }, data: { filePath } }),
+      prisma.batchItem.update({
+        where: { id: context.item.id },
+        data: { uploadPath: filePath, upscaleApplied: false, upscaledPath: null, upscaledWidth: null, upscaledHeight: null },
+      }),
+    ]);
+  } catch (error) {
+    await setCoreCommandStatus(activation.id, 'FAILED').catch(() => undefined);
+    throw error;
+  }
+  await setCoreCommandStatus(activation.id, 'SUCCESS').catch(() => undefined);
 
   const artworkDirectory = getManagedArtworkDirectory(filePath);
   if (artworkDirectory) {
@@ -533,7 +541,8 @@ export async function activateDirectRasterWorkingVersion(input: { userId: string
     ? sourceAsset.metadata as Record<string, unknown>
     : {};
   await prisma.asset.update({ where: { id: sourceAsset.id }, data: { filePath, mimeType, metadata: { ...metadata, jpegReadyForVectorizing: false } } });
-  await createCoreCommand({ commandType: 'vectorforge.raster.activate-version', actorId: input.userId, subjectIds: [input.artworkId, sourceAsset.id], payload: { versionKey: input.versionKey } });
+  const activation = await createCoreCommand({ commandType: 'vectorforge.raster.activate-version', actorId: input.userId, subjectIds: [input.artworkId, sourceAsset.id], payload: { versionKey: input.versionKey } });
+  await setCoreCommandStatus(activation.id, 'SUCCESS').catch(() => undefined);
   return { filePath };
 }
 

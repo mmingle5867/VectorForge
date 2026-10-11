@@ -8,7 +8,7 @@ import { getManagedArtworkDirectory, isPathInside, remapPathWithinDirectory } fr
 import prisma from '@/lib/prisma';
 import { semaLocalToken } from '@/lib/sema-id';
 import { configureAdditionalStorageForUser } from '@/services/profile-storage';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 
 const PATH_FIELDS = [
   'uploadPath', 'upscaledPath', 'svgPath', 'aiPath', 'dxfPath', 'epsPath',
@@ -217,10 +217,12 @@ async function moveArtworkUnlocked(input: {
         await rm(sourcePath, { recursive: true, force: true }).catch((error) => warnings.push(`Could not remove old path ${sourcePath}: ${String(error)}`));
       }
     }
+    await setCoreCommandStatus(moveOperation.id, 'SUCCESS').catch(() => undefined);
     return { changed: true, targetDirectory, warnings };
   } catch (error) {
     await rm(stagedDirectory, { recursive: true, force: true }).catch(() => undefined);
     await rm(targetDirectory, { recursive: true, force: true }).catch(() => undefined);
+    await setCoreCommandStatus(moveOperation.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }

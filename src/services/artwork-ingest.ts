@@ -30,7 +30,7 @@ import {
   upsertAssetForBatchItem,
 } from '@/services/sema-identity';
 import { semaLocalToken } from '@/lib/sema-id';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { GRAPHICS_CAPABILITIES, resolveLocalGraphicsCapability } from '@/capabilities/graphics/registry';
 
 const SUPPORTED_EXTENSIONS = new Map([
@@ -413,6 +413,7 @@ async function ingestOne(input: {
       workingRelativePath: relativeAssetPath(finalDirectory, workingPath),
     });
     await unlink(stagedPath);
+    await setCoreCommandStatus(ingestOperation.id, 'SUCCESS').catch(() => undefined);
 
     return {
       id: batchItem.id,
@@ -427,6 +428,7 @@ async function ingestOne(input: {
   } catch (error) {
     await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
     await rm(finalDirectory, { recursive: true, force: true }).catch(() => undefined);
+    await setCoreCommandStatus(ingestOperation.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 }

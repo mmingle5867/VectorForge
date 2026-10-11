@@ -5,7 +5,7 @@ import prisma from '@/lib/prisma';
 import { semaLocalToken } from '@/lib/sema-id';
 import { withArtworkMutationLock } from '@/lib/artwork-mutation-lock';
 import { getManagedArtworkDirectory, remapPathWithinDirectory } from '@/lib/artwork-storage-paths';
-import { createCoreCommand } from '@/services/sema-core';
+import { createCoreCommand, setCoreCommandStatus } from '@/services/sema-core';
 import { reserveAvailableDirectoryName } from '@/services/artwork-ingest';
 
 const PATH_FIELDS = [
@@ -108,6 +108,7 @@ async function renameArtworkUnlocked(input: {
     await rename(stagedDirectory, targetDirectory);
   } catch (error) {
     await rm(stagedDirectory, { recursive: true, force: true }).catch(() => undefined);
+    await setCoreCommandStatus(renameOperation.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 
@@ -179,6 +180,7 @@ async function renameArtworkUnlocked(input: {
     });
   } catch (error) {
     await rm(targetDirectory, { recursive: true, force: true }).catch(() => undefined);
+    await setCoreCommandStatus(renameOperation.id, 'FAILED').catch(() => undefined);
     throw error;
   }
 
@@ -187,6 +189,7 @@ async function renameArtworkUnlocked(input: {
     warnings.push(`Rename completed, but the old directory could not be removed: ${String(error)}`);
   });
 
+  await setCoreCommandStatus(renameOperation.id, 'SUCCESS').catch(() => undefined);
   return { changed: true, baseName: allocatedBaseName, originalFilename: newOriginalFilename, warnings };
 }
 

@@ -436,6 +436,8 @@ model Artwork {
   artworkNumber   String        @unique
   numericSequence Int
   title           String
+  /// What the artwork is, in words. Sent with it when it is shared, so ListingForge can use it.
+  description     String?
   /// Stable human-facing base used for completed SVG/PNG/JPG filenames.
   /// Working raster version filenames never change this value.
   outputBaseName  String?

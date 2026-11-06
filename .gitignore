@@ -17,7 +17,9 @@
 *.tsbuildinfo
 next-env.d.ts
 
-# Environment Files
+# Environment Files and VectorForge's own signing key (never committed or copied)
+
+/keys/
 
 .env
 .env.local

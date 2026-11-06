@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import config from '@/lib/config';
+import { coreSigning } from './sema-core-signing';
 
 export type CoreLifecycleStatus = 'PENDING' | 'RUNNING' | 'WAITING' | 'CANCELLED' | 'FAILED' | 'SUCCESS';
 export type JsonObject = Record<string, Prisma.JsonValue>;
@@ -10,11 +11,17 @@ export interface CoreExecution { id: string; commandId: string; providerId: stri
 function deserializeIdentifier(value: Omit<CoreIdentifier, 'localValue'> & { localValue: string | number | bigint }): CoreIdentifier { return { ...value, localValue: BigInt(value.localValue) }; }
 
 export async function callSemaCoreHost<T>(path: string, init: { method?: 'GET' | 'POST'; body?: unknown; actorId?: string | null } = {}): Promise<T> {
-  // An empty credential preserves the current Core only during the one-time
-  // staged upgrade. Core policy mode rejects it, so this is never a fallback.
-  // This credential represents the registered VectorForge service. The local
-  // user remains the actor recorded inside each command or audit payload.
-  const response = await fetch(`${config.sema.hostUrl}${path}`, { method: init.method ?? 'GET', headers: { accept: 'application/json', ...(config.sema.applicationSecret ? { 'x-sema-application-key': config.sema.applicationKey, 'x-sema-application-secret': config.sema.applicationSecret } : {}), ...(init.body === undefined ? {} : { 'content-type': 'application/json' }) }, body: init.body === undefined ? undefined : JSON.stringify(init.body), cache: 'no-store' });
+  // VectorForge signs each request with its own key (sema-core-signing.ts); until
+  // that key can be opened it sends its key and secret. Either way the credential
+  // represents the registered VectorForge service. The local user remains the
+  // actor recorded inside each command or audit payload.
+  const method = init.method ?? 'GET';
+  const body = init.body === undefined ? undefined : JSON.stringify(init.body);
+  const headers: Record<string, string> = { accept: 'application/json', ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
+  const signing = await coreSigning();
+  const response = signing
+    ? await signing.fetch(method, new URL(`${config.sema.hostUrl}${path}`), body === undefined ? undefined : Buffer.from(body, 'utf8'), headers, 120_000)
+    : await fetch(`${config.sema.hostUrl}${path}`, { method, headers: { ...headers, ...(config.sema.applicationSecret ? { 'x-sema-application-key': config.sema.applicationKey, 'x-sema-application-secret': config.sema.applicationSecret } : {}) }, body, cache: 'no-store' });
   const payload = await response.json().catch(() => null) as T | { error?: { message?: string } } | null;
   if (!response.ok) { const message = payload && typeof payload === 'object' && 'error' in payload ? payload.error?.message : undefined; throw new Error(message || `SEMA Core request failed (${response.status})`); }
   return payload as T;
